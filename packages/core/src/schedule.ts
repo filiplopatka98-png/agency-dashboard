@@ -15,3 +15,9 @@ export function isNightInBratislava(date: Date): boolean {
 
 /** Typy alertov, ktoré sa v noci odkladajú do rannej správy. */
 export const NIGHT_DEFERRED_TYPES = new Set(['site_up', 'region_outage']);
+
+/** UTC hodinový bucket 'YYYY-MM-DD-HH' pre dedupe_key region_outage alertu. */
+export function hourBucketUtc(date: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${p(date.getUTCMonth() + 1)}-${p(date.getUTCDate())}-${p(date.getUTCHours())}`;
+}

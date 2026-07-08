@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isNightInBratislava, NIGHT_DEFERRED_TYPES } from './schedule';
+import { isNightInBratislava, NIGHT_DEFERRED_TYPES, hourBucketUtc } from './schedule';
 
 describe('isNightInBratislava', () => {
   // Zima: Bratislava = UTC+1. 03:00 UTC = 04:00 lokál → noc.
@@ -25,6 +25,13 @@ describe('isNightInBratislava', () => {
   // Leto: 04:00 UTC = 06:00 lokál → hranica, deň (>=06:00).
   it('06:00 lokálneho času už NIE je noc', () => {
     expect(isNightInBratislava(new Date('2026-07-15T04:00:00Z'))).toBe(false);
+  });
+});
+
+describe('hourBucketUtc', () => {
+  it('formátuje UTC hodinu ako YYYY-MM-DD-HH', () => {
+    expect(hourBucketUtc(new Date('2026-07-08T14:37:00Z'))).toBe('2026-07-08-14');
+    expect(hourBucketUtc(new Date('2026-01-05T03:05:00Z'))).toBe('2026-01-05-03');
   });
 });
 

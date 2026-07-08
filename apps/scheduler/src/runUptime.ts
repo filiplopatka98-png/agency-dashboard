@@ -1,4 +1,4 @@
-import { decideIncidents, LocalPinger, type UptimeProvider } from '@agency/core';
+import { decideIncidents, hourBucketUtc, LocalPinger, type UptimeProvider } from '@agency/core';
 import type { SiteForCheck } from '@agency/shared';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
@@ -54,14 +54,28 @@ export async function runUptime(env: Env): Promise<void> {
   const decision = decideIncidents({ results, sites: stateMap });
 
   if (decision.regionOutage) {
-    // Problém je u nás — nič nezapisuj, nič neotváraj. Alert rieši krok 8.
-    console.log(
-      JSON.stringify({
-        ev: 'region_outage',
-        down: results.filter((r) => !r.ok).length,
-        total: results.length,
-      }),
-    );
+    // Problém je u nás — checky nezapisuj (nešpini uptime klientov), incidenty
+    // neotváraj. Ale vlož region_outage alert (per org, dedupe na hodinu) —
+    // odošle ho runAlerts (v noci odložený, warning).
+    const down = results.filter((r) => !r.ok).length;
+    const total = results.length;
+    const bucket = hourBucketUtc(new Date());
+    const orgs = [...new Set(rows.map((r) => r.org_id))];
+    const alertRows = orgs.map((orgId) => ({
+      org_id: orgId,
+      site_id: null,
+      type: 'region_outage',
+      severity: 'warning',
+      title: 'Možný výpadok regiónu',
+      body: `Viac než polovica sledovaných webov je nedostupná (${down}/${total}) — pravdepodobne problém na strane monitoringu/CDN, nie klientov.`,
+      dedupe_key: `region:${bucket}:${orgId}`,
+    }));
+    const { error: aErr } = await supabase
+      .from('alerts')
+      .upsert(alertRows, { onConflict: 'dedupe_key', ignoreDuplicates: true });
+    if (aErr) throw new Error(`region alert: ${aErr.message}`);
+
+    console.log(JSON.stringify({ ev: 'region_outage', down, total, orgs: orgs.length }));
     return;
   }
 
