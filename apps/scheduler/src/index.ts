@@ -1,6 +1,8 @@
 import type { Env } from './env';
 import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
+import { runDomains } from './runDomains';
+import { defaultDomainResolver } from './domainResolver';
 
 /**
  * Cloudflare Worker — jeden cron trigger, každých 5 minút. Vetvenie podľa času vnútri.
@@ -14,6 +16,7 @@ export default {
       (async () => {
         try {
           await runUptime(env); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
+          await runDomains(env, defaultDomainResolver, { limit: 3 }); // round-robin doména (>20 h)
           await runAlerts(env); // odoslanie nevyslaných alertov (dedupe už v DB)
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
@@ -22,7 +25,6 @@ export default {
         }
       })(),
     );
-    // TODO(krok 7): round-robin doména/TLS podľa najstaršieho checked_at
-    // TODO(krok 8): region_outage alert + runExpiryAlerts(env)
+    // TODO(krok 8): region_outage alert (insert) + expiry alerty (GitHub Action alebo tu)
   },
 } satisfies ExportedHandler<Env>;

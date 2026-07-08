@@ -1,0 +1,22 @@
+name: tls-probe
+
+# Týždenný TLS probe (zdroj pravdy pre tls_certs.valid_to). Beží v Node — Worker
+# peer certifikát prečítať nevie. Bez pnpm install: skript používa len node:tls + fetch.
+on:
+  schedule:
+    - cron: '0 3 * * 1' # každý pondelok 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run TLS probe
+        run: node tools/tls-probe/index.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
