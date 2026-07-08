@@ -1,65 +1,89 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Shell } from './components/Shell';
+import { supabase, type Site } from './lib/supabase';
+import { relativeTime, uptimePct } from './lib/format';
+
+interface Card {
+  site: Site;
+  uptime30: number | null;
+}
+
+function dotColor(site: Site): string {
+  if (!site.last_checked_at) return 'var(--dot-unknown)';
+  if (site.consecutive_failures >= 2) return 'var(--dot-down)';
+  if (site.consecutive_failures >= 1) return 'var(--dot-warn)';
+  return 'var(--dot-ok)';
+}
+
+export default function OverviewPage() {
+  const [cards, setCards] = useState<Card[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+      const [sitesRes, dailyRes] = await Promise.all([
+        supabase.from('sites').select('*').eq('is_active', true).order('name'),
+        supabase.from('uptime_daily').select('site_id, checks, up').gte('day', since),
+      ]);
+      if (sitesRes.error) return setError(sitesRes.error.message);
+      if (dailyRes.error) return setError(dailyRes.error.message);
+
+      const agg = new Map<string, { checks: number; up: number }>();
+      for (const d of dailyRes.data ?? []) {
+        const a = agg.get(d.site_id) ?? { checks: 0, up: 0 };
+        a.checks += d.checks;
+        a.up += d.up;
+        agg.set(d.site_id, a);
+      }
+      setCards(
+        (sitesRes.data ?? []).map((site) => {
+          const a = agg.get(site.id);
+          return {
+            site,
+            uptime30: a && a.checks > 0 ? Math.round((10000 * a.up) / a.checks) / 100 : null,
+          };
+        }),
+      );
+    })();
+  }, []);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <Shell>
+      <h1 className="mb-4 text-lg font-semibold">Prehľad</h1>
+      {error && (
+        <p className="text-sm" style={{ color: 'var(--dot-down)' }} role="alert">
+          {error}
+        </p>
+      )}
+      {!cards && !error && <p className="text-muted">Načítavam…</p>}
+      {cards && cards.length === 0 && <p className="text-muted">Zatiaľ žiadne weby.</p>}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {cards?.map(({ site, uptime30 }) => (
+          <Link
+            key={site.id}
+            href={`/sites?id=${site.id}`}
+            className="flex items-center gap-3 rounded-xl border border-border bg-card p-4"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+            <span
+              aria-hidden
+              className="h-3 w-3 shrink-0 rounded-full"
+              style={{ background: dotColor(site) }}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{site.name}</span>
+              <span className="block truncate text-xs text-muted">{site.domain}</span>
+            </span>
+            <span className="text-right text-sm">
+              <span className="block tabular-nums">{uptimePct(uptime30)}</span>
+              <span className="block text-xs text-muted">{relativeTime(site.last_checked_at)}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </Shell>
   );
 }
