@@ -20,11 +20,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      if (!data.session) router.replace('/login');
-      else setReady(true);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active) return;
+        if (!data.session) router.replace('/login');
+        else setReady(true);
+      })
+      .catch(() => {
+        if (active) router.replace('/login');
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       if (!session) router.replace('/login');
     });

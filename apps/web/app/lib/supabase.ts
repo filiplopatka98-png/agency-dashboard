@@ -8,6 +8,16 @@ import type { Database } from '@agency/db';
 export const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  {
+    auth: {
+      // Implicit flow: magic-link token príde v URL hashi (bez PKCE code_verifier
+      // viazaného na origin) → odolné voči localhost/127.0.0.1 zámene.
+      flowType: 'implicit',
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  },
 );
 
 export type Tables = Database['public']['Tables'];
