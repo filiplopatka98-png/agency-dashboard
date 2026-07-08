@@ -1,5 +1,6 @@
 import type { Env } from './env';
 import { runUptime } from './runUptime';
+import { runAlerts } from './runAlerts';
 
 /**
  * Cloudflare Worker — jeden cron trigger, každých 5 minút. Vetvenie podľa času vnútri.
@@ -10,13 +11,18 @@ export default {
     const now = new Date(event.scheduledTime);
     console.log(JSON.stringify({ ev: 'scheduled.tick', at: now.toISOString() }));
     ctx.waitUntil(
-      runUptime(env).catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        console.log(JSON.stringify({ ev: 'uptime.error', message }));
-        throw err;
-      }),
+      (async () => {
+        try {
+          await runUptime(env); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
+          await runAlerts(env); // odoslanie nevyslaných alertov (dedupe už v DB)
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.log(JSON.stringify({ ev: 'scheduled.error', message }));
+          throw err;
+        }
+      })(),
     );
     // TODO(krok 7): round-robin doména/TLS podľa najstaršieho checked_at
-    // TODO(krok 8): await runExpiryAlerts(env);
+    // TODO(krok 8): region_outage alert + runExpiryAlerts(env)
   },
 } satisfies ExportedHandler<Env>;

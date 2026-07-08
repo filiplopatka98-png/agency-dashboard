@@ -10,4 +10,7 @@ export {
 
 export { LocalPinger, type LocalPingerDeps } from './localPinger';
 
-// ResendNotifier (krok 5), pickDomainStrategy + parseWhoisSk (krok 7) sa doplnia neskôr.
+export { ResendNotifier, renderAlertHtml, type ResendConfig } from './resendNotifier';
+export { isNightInBratislava, NIGHT_DEFERRED_TYPES } from './schedule';
+
+// pickDomainStrategy + parseWhoisSk (krok 7) sa doplnia neskôr.
