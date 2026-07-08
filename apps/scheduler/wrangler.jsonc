@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "agency-dashboard-scheduler",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // JEDEN cron trigger (limit je 5 na účet). Vetvenie podľa času vnútri handleru.
+  "triggers": { "crons": ["*/5 * * * *"] }
+}

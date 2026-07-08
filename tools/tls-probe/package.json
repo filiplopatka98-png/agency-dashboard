@@ -1,0 +1,10 @@
+{
+  "name": "@agency/tls-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node skript pre GitHub Action — týždenný TLS probe (tls.connect na port 443). Zdroj pravdy pre tls_certs.valid_to.",
+  "scripts": {
+    "probe": "node index.mjs"
+  }
+}

@@ -1,0 +1,14 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'tools/*'
+
+# Native deps, ktoré nechceme buildiť pri inštalácii (pnpm 10 build-approval).
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# Tieto build skripty POVOLIŤ — wrangler/esbuild bez nich nefungujú.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
