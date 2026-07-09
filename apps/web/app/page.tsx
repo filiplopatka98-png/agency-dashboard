@@ -6,7 +6,7 @@ import { Shell } from './components/Shell';
 import { loadDashboard, type SiteVM } from './lib/data';
 import type { Client } from './lib/supabase';
 
-const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, unknown: 2, up: 3 };
+const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
 
 export default function OverviewPage() {
   const router = useRouter();

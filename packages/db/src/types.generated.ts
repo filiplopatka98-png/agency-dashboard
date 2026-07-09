@@ -628,6 +628,7 @@ export type Database = {
           is_active: boolean
           is_free: boolean
           last_checked_at: string | null
+          maintenance: boolean
           name: string
           notes: string | null
           org_id: string
@@ -648,6 +649,7 @@ export type Database = {
           is_active?: boolean
           is_free?: boolean
           last_checked_at?: string | null
+          maintenance?: boolean
           name: string
           notes?: string | null
           org_id: string
@@ -668,6 +670,7 @@ export type Database = {
           is_active?: boolean
           is_free?: boolean
           last_checked_at?: string | null
+          maintenance?: boolean
           name?: string
           notes?: string | null
           org_id?: string

@@ -3,12 +3,13 @@
  * Farby cez CSS premenné → light/dark funguje automaticky.
  */
 
-export type StatusKey = 'up' | 'degraded' | 'down' | 'unknown';
+export type StatusKey = 'up' | 'degraded' | 'down' | 'maintenance' | 'unknown';
 
 export const STATUS: Record<StatusKey, { color: string; bg: string; short: string; label: string }> = {
   up: { color: 'var(--ok-color)', bg: 'var(--ok-bg)', short: 'OK', label: '✓ Dostupné' },
   degraded: { color: 'var(--warning-color)', bg: 'var(--warning-bg)', short: 'Pozor', label: '⚠ Degradované' },
   down: { color: 'var(--critical-color)', bg: 'var(--critical-bg)', short: 'Down', label: '✗ Nedostupné' },
+  maintenance: { color: 'var(--accent-primary)', bg: 'var(--accent-soft)', short: 'Údržba', label: '🔧 Údržba' },
   unknown: { color: 'var(--unknown-color)', bg: 'var(--unknown-bg)', short: 'Nezistené', label: '? Nezistené' },
 };
 

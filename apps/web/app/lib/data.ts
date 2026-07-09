@@ -300,7 +300,7 @@ export async function loadDashboard(): Promise<{
   };
 
   const sites: SiteVM[] = (sitesRes.data ?? []).map((s) => {
-    const key = statusKey(s.consecutive_failures, s.last_checked_at);
+    const key = s.maintenance ? 'maintenance' : statusKey(s.consecutive_failures, s.last_checked_at);
     const st = STATUS[key];
     const client = s.client_id ? clientById.get(s.client_id) : null;
     const clientName = client?.name ?? '—';
