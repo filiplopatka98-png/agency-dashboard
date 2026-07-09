@@ -30,7 +30,9 @@ export class LocalPinger implements UptimeProvider {
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(deps: LocalPingerDeps = {}) {
-    this.fetchImpl = deps.fetchImpl ?? globalThis.fetch;
+    // .bind(globalThis) je nutné: na Cloudflare Workers musí byť `fetch` volaný s
+    // `this===globalThis`, inak „Illegal invocation" (uložená referencia stráca väzbu).
+    this.fetchImpl = deps.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.now = deps.now ?? Date.now;
     this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
