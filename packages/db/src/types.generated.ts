@@ -360,6 +360,36 @@ export type Database = {
           },
         ]
       }
+      job_runs: {
+        Row: {
+          error: string | null
+          failed: number | null
+          finished_at: string
+          id: number
+          job: string
+          ok: number | null
+          status: string
+        }
+        Insert: {
+          error?: string | null
+          failed?: number | null
+          finished_at?: string
+          id?: never
+          job: string
+          ok?: number | null
+          status: string
+        }
+        Update: {
+          error?: string | null
+          failed?: number | null
+          finished_at?: string
+          id?: never
+          job?: string
+          ok?: number | null
+          status?: string
+        }
+        Relationships: []
+      }
       memberships: {
         Row: {
           created_at: string

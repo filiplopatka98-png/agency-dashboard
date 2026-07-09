@@ -9,6 +9,8 @@ import { fetchPsi } from '../../packages/core/dist/psi.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
@@ -59,6 +61,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'psi.done', ok, failed }));
+  await recordJobRun(url, srv, 'psi', ok, failed);
 }
 
 main().catch((e) => {

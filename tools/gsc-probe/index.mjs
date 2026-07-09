@@ -16,6 +16,8 @@ const TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const RANGE_DAYS = 28;
 const LAG_DAYS = 3; // GSC dáta majú ~2-3 dňové oneskorenie
 
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
@@ -145,6 +147,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'gsc.upsert_fail', url: s.url, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'gsc.done', ok, missing, failed }));
+  await recordJobRun(url, srv, 'gsc', ok, failed);
 }
 
 main().catch((e) => {

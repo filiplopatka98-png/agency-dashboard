@@ -39,6 +39,15 @@ const toAlert = (r: AlertRow): Alert => ({
  */
 export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<void> {
   const supabase = deps.supabase ?? serviceClient(env);
+
+  // Resend ešte nenakonfigurovaný (placeholder / nie 're_…') → neposielaj, ale nezhoď
+  // tick. Alerty ostanú nevyslané (sent_at NULL) a odídu, keď sa doplní reálny kľúč.
+  if (!deps.notifier && (!env.RESEND_API_KEY || !env.RESEND_API_KEY.startsWith('re_'))) {
+    const { count } = await supabase.from('alerts').select('id', { count: 'exact', head: true }).is('sent_at', null);
+    console.log(JSON.stringify({ ev: 'alerts.skipped_no_resend', pending: count ?? 0 }));
+    return;
+  }
+
   const notifier =
     deps.notifier ??
     new ResendNotifier({

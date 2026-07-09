@@ -32,6 +32,8 @@ export function probeTls(host) {
   });
 }
 
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 function restHeaders(key) {
   return {
     apikey: key,
@@ -105,6 +107,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'tls.done', ok, failed, total: sites.length }));
+  await recordJobRun(url, key, 'tls', ok, failed);
 }
 
 // Spusti main len keď je skript volaný priamo (nie pri importe v teste).

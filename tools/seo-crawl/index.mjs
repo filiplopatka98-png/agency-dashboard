@@ -74,6 +74,8 @@ export async function crawlSite(domain) {
   return { pages_crawled: pages.length, sitemap_ok: sitemapOk, robots_ok: robotsOk, canonical_ok: canonicalOk, issues };
 }
 
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
@@ -114,6 +116,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'seo.upsert_fail', domain: s.domain, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'seo.done', ok, failed, total: sites.length }));
+  await recordJobRun(url, key, 'seo', ok, failed);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

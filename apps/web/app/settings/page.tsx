@@ -4,18 +4,67 @@ import { useEffect, useState } from 'react';
 import { Shell } from '../components/Shell';
 import { supabase } from '../lib/supabase';
 
+type JobRun = { status: string; ok: number | null; failed: number | null; finished_at: string };
+type Sched = { kind: 'every5' } | { kind: 'daily'; hh: number; mm: number } | { kind: 'weekly'; dow: number; hh: number; mm: number };
+
+const JOBS: { key: string; label: string; desc: string; sched: Sched }[] = [
+  { key: 'scheduler', label: 'Scheduler — uptime + domény', desc: 'každých 5 minút', sched: { kind: 'every5' } },
+  { key: 'psi', label: 'PageSpeed / výkon', desc: 'denne 02:00 UTC', sched: { kind: 'daily', hh: 2, mm: 0 } },
+  { key: 'tls', label: 'TLS certifikáty', desc: 'pondelok 03:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 0 } },
+  { key: 'security', label: 'Security + Safe Browsing', desc: 'pondelok 03:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 0 } },
+  { key: 'aeo', label: 'AEO analýza', desc: 'pondelok 03:30 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 30 } },
+  { key: 'gsc', label: 'Search Console', desc: 'pondelok 03:30 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 30 } },
+  { key: 'seo', label: 'SEO crawl', desc: 'pondelok 04:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 4, mm: 0 } },
+];
+
+function nextRun(sched: Sched, from: Date): Date {
+  const n = new Date(from.getTime());
+  if (sched.kind === 'every5') {
+    n.setUTCSeconds(0, 0);
+    n.setUTCMinutes(Math.floor(from.getUTCMinutes() / 5) * 5 + 5);
+    return n;
+  }
+  n.setUTCHours(sched.hh, sched.mm, 0, 0);
+  if (sched.kind === 'daily') {
+    if (n <= from) n.setUTCDate(n.getUTCDate() + 1);
+    return n;
+  }
+  let delta = (sched.dow - n.getUTCDay() + 7) % 7;
+  if (delta === 0 && n <= from) delta = 7;
+  n.setUTCDate(n.getUTCDate() + delta);
+  return n;
+}
+
+// „5 min", „3 h", „2 d" — hrubá relatívna vzdialenosť v čase.
+function rel(ms: number): string {
+  const min = Math.round(Math.abs(ms) / 60000);
+  if (min < 1) return 'teraz';
+  if (min < 60) return `${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h} h`;
+  return `${Math.round(h / 24)} d`;
+}
+
+const jobStatusColor: Record<string, [string, string]> = {
+  ok: ['var(--ok-color)', 'var(--ok-bg)'],
+  partial: ['var(--warning-color)', 'var(--warning-bg)'],
+  error: ['var(--critical-color)', 'var(--critical-bg)'],
+};
+
 export default function SettingsPage() {
   const [orgName, setOrgName] = useState<string>('—');
   const [email, setEmail] = useState<string>('—');
   const [orgSiteCount, setOrgSiteCount] = useState<number>(0);
   const [conn, setConn] = useState<Record<string, number>>({});
+  const [jobs, setJobs] = useState<Record<string, JobRun> | null>(null);
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
     let active = true;
     const headCount = (table: 'perf_snapshots' | 'gsc_snapshots' | 'security_snapshots' | 'aeo_snapshots' | 'seo_snapshots') =>
       supabase.from(table).select('site_id', { count: 'exact', head: true });
     (async () => {
-      const [o, u, s, perf, gsc, sec, aeo, seo] = await Promise.all([
+      const [o, u, s, perf, gsc, sec, aeo, seo, jr] = await Promise.all([
         supabase.from('organizations').select('name').limit(1).maybeSingle(),
         supabase.auth.getUser(),
         supabase.from('sites').select('id', { count: 'exact', head: true }).eq('is_active', true),
@@ -24,6 +73,7 @@ export default function SettingsPage() {
         headCount('security_snapshots'),
         headCount('aeo_snapshots'),
         headCount('seo_snapshots'),
+        supabase.from('job_runs').select('job, status, ok, failed, finished_at').order('finished_at', { ascending: false }).limit(300),
       ]);
       if (!active) return;
       setOrgName(o.data?.name ?? '—');
@@ -36,6 +86,10 @@ export default function SettingsPage() {
         aeo_snapshots: aeo.count ?? 0,
         seo_snapshots: seo.count ?? 0,
       });
+      const latest: Record<string, JobRun> = {};
+      for (const r of jr.data ?? []) if (!latest[r.job]) latest[r.job] = r as JobRun; // prvý = najnovší (order desc)
+      setJobs(latest);
+      setNow(new Date());
     })();
     return () => {
       active = false;
@@ -57,6 +111,36 @@ export default function SettingsPage() {
             Nastavenia
           </h1>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Beh úloh (cron) */}
+            <div style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: '20px', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '14px' }}>
+                <h3 style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>Beh úloh (cron)</h3>
+                <span style={{ fontSize: '11.5px', color: 'var(--text-tertiary)' }}>časy v UTC</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {JOBS.map((j) => {
+                  const run = jobs?.[j.key];
+                  const [c, bg] = run ? jobStatusColor[run.status] ?? ['var(--text-tertiary)', 'var(--surface-secondary)'] : ['var(--text-tertiary)', 'var(--surface-secondary)'];
+                  const last = run && now ? `pred ${rel(now.getTime() - new Date(run.finished_at).getTime())}` : 'nikdy';
+                  const next = now ? `o ${rel(nextRun(j.sched, now).getTime() - now.getTime())}` : '—';
+                  const cnt = run && (run.ok != null || run.failed != null) ? ` · ${run.ok ?? 0}✓${run.failed ? ` ${run.failed}✗` : ''}` : '';
+                  return (
+                    <div key={j.key} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px', alignItems: 'center', padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: '10px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>{j.label}</div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-tertiary)' }}>{j.desc} · ďalší {next}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{last}{cnt}</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: c, background: bg, padding: '3px 9px', borderRadius: '20px', minWidth: '52px', textAlign: 'center' }}>{run ? run.status : '—'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {!jobs && <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '8px' }}>Načítavam…</div>}
+            </div>
+
             {/* Organizácia */}
             <div
               style={{

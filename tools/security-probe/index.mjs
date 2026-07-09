@@ -9,6 +9,8 @@ import { scoreSecurityHeaders, fetchSafeBrowsing } from '../../packages/core/dis
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
@@ -58,6 +60,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'sec.upsert_fail', url: s.url, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'sec.done', ok, failed }));
+  await recordJobRun(url, srv, 'security', ok, failed);
 }
 
 main().catch((e) => {

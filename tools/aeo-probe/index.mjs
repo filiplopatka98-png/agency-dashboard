@@ -37,6 +37,8 @@ export async function probeAeo(domain) {
   return scoreAeo({ html, robotsTxt, hasLlmsTxt });
 }
 
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
@@ -82,6 +84,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'aeo.upsert_fail', domain: s.domain, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'aeo.done', ok, failed, total: sites.length }));
+  await recordJobRun(url, key, 'aeo', ok, failed);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
