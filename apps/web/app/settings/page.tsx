@@ -8,19 +8,34 @@ export default function SettingsPage() {
   const [orgName, setOrgName] = useState<string>('—');
   const [email, setEmail] = useState<string>('—');
   const [orgSiteCount, setOrgSiteCount] = useState<number>(0);
+  const [conn, setConn] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let active = true;
+    const headCount = (table: 'perf_snapshots' | 'gsc_snapshots' | 'security_snapshots' | 'aeo_snapshots' | 'seo_snapshots') =>
+      supabase.from(table).select('site_id', { count: 'exact', head: true });
     (async () => {
-      const [o, u, s] = await Promise.all([
+      const [o, u, s, perf, gsc, sec, aeo, seo] = await Promise.all([
         supabase.from('organizations').select('name').limit(1).maybeSingle(),
         supabase.auth.getUser(),
         supabase.from('sites').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        headCount('perf_snapshots'),
+        headCount('gsc_snapshots'),
+        headCount('security_snapshots'),
+        headCount('aeo_snapshots'),
+        headCount('seo_snapshots'),
       ]);
       if (!active) return;
       setOrgName(o.data?.name ?? '—');
       setEmail(u.data.user?.email ?? '—');
       setOrgSiteCount(s.count ?? 0);
+      setConn({
+        perf_snapshots: perf.count ?? 0,
+        gsc_snapshots: gsc.count ?? 0,
+        security_snapshots: sec.count ?? 0,
+        aeo_snapshots: aeo.count ?? 0,
+        seo_snapshots: seo.count ?? 0,
+      });
     })();
     return () => {
       active = false;
@@ -133,121 +148,37 @@ export default function SettingsPage() {
               >
                 Integrácie / API kľúče
               </h3>
-              <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '10px', padding: '9px 13px', marginBottom: '12px' }}>
-                🧪 <strong style={{ color: 'var(--text-primary)' }}>Ukážkové stavy.</strong> Reálne pripojenie pribudne s integráciami (PSI, GSC, Resend).
+              <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                Stav sa odvodzuje z reálnych dát — „Pripojené" znamená, že collector už zapísal aspoň jeden snímok.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 14px',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: '10px',
-                  }}
-                >
+                {([
+                  ['PageSpeed Insights', 'Lab + Field (CrUX) performance', conn.perf_snapshots],
+                  ['Google Search Console', 'SEO kliknutia / impresie / pozície', conn.gsc_snapshots],
+                  ['Security + Safe Browsing', 'Bezpečnostné hlavičky + blacklist', conn.security_snapshots],
+                  ['AEO analýza', 'Pripravenosť pre AI / answer engines', conn.aeo_snapshots],
+                  ['SEO crawl', 'Technické SEO issues z crawlu', conn.seo_snapshots],
+                ] as const).map(([name, desc, count]) => {
+                  const on = (count ?? 0) > 0;
+                  return (
+                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--surface-secondary)', borderRadius: '10px' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>{name}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{desc}</div>
+                      </div>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: on ? 'var(--ok-color)' : 'var(--text-tertiary)', background: on ? 'var(--ok-bg)' : 'var(--surface-primary)', border: on ? 'none' : '1px solid var(--border-primary)', padding: '4px 11px', borderRadius: '20px' }}>
+                        {on ? `Pripojené · ${count}` : 'Nenastavené'}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--surface-secondary)', borderRadius: '10px' }}>
                   <div>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: '13.5px',
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      PageSpeed Insights
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                      Lab performance dáta
-                    </div>
+                    <div style={{ fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>Resend</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Odosielanie e-mailov &amp; reportov</div>
                   </div>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: 'var(--ok-color)',
-                      background: 'var(--ok-bg)',
-                      padding: '4px 11px',
-                      borderRadius: '20px',
-                    }}
-                  >
-                    Pripojené
-                  </span>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 14px',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: '10px',
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: '13.5px',
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      Google Search Console
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                      SEO výkonnostné dáta (OAuth)
-                    </div>
-                  </div>
-                  <button
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: 'var(--accent-primary)',
-                      background: 'var(--accent-soft)',
-                      padding: '5px 12px',
-                      borderRadius: '20px',
-                      border: 'none',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Pripojiť
-                  </button>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '12px 14px',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: '10px',
-                  }}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: '13.5px',
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      Resend
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                      Odosielanie e-mailov &amp; reportov
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: 'var(--ok-color)',
-                      background: 'var(--ok-bg)',
-                      padding: '4px 11px',
-                      borderRadius: '20px',
-                    }}
-                  >
-                    Pripojené
+                  <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', padding: '4px 11px', borderRadius: '20px' }}>
+                    Cez env / CI
                   </span>
                 </div>
               </div>

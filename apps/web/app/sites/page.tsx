@@ -778,19 +778,35 @@ function TabInfra({ site }: { site: SiteVM }) {
 }
 
 function TabClient({ site }: { site: SiteVM }) {
+  const c = site.client;
+  if (!c) {
+    return (
+      <div style={{ ...card, padding: 24 }}>
+        <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 28, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, marginBottom: 8 }}>👤</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Web nemá priradeného klienta</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Priraď klienta v sekcii Klienti.</div>
+        </div>
+      </div>
+    );
+  }
+  const fee = c.monthlyFeeEur && c.monthlyFeeEur > 0 ? `${c.monthlyFeeEur.toLocaleString('sk-SK')} €/mes` : c.hourlyRateEur ? `${c.hourlyRateEur.toLocaleString('sk-SK')} €/h` : '—';
+  const contact = c.email ?? c.phone ?? '—';
+  const billing = c.ico ? `IČO ${c.ico}` : '—';
+  const since = c.since ? new Date(c.since).toLocaleDateString('sk-SK') : '—';
+  const notionUrl = c.notionPageId ? `https://www.notion.so/${c.notionPageId.replace(/-/g, '')}` : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <MockBanner text="Meno klienta je reálne; tier, kontakt a fakturačné údaje sú zatiaľ ukážkové (napoja sa z karty klienta)." />
       <div style={{ ...card, padding: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
           <div style={{ width: 46, height: 46, borderRadius: 12, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', ...mono }}>{site.clientInitial}</div>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>{site.clientName}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Aktívny klient · zmluva na dobu neurčitú</div>
+            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>{c.company || site.clientName}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{c.contractType ? `Zmluva: ${c.contractType}` : 'Aktívny klient'}</div>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, fontSize: 13 }}>
-          {([['Tier / paušál', 'Premium · 59 €/mes'], ['Kontakt', 'peter@klient.sk'], ['Fakturácia', 'IČO 12345678'], ['Klient od', '3. 6. 2023']] as const).map(([k, v]) => (
+          {([['Tier / paušál', fee], ['Kontakt', contact], ['Fakturácia', billing], ['Klient od', since]] as const).map(([k, v]) => (
             <div key={k} style={{ padding: '12px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
               <div style={{ ...label, fontSize: 11, marginBottom: 5, color: 'var(--text-tertiary)' }}>{k}</div>
               <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{v}</div>
@@ -799,15 +815,20 @@ function TabClient({ site }: { site: SiteVM }) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {([['📓', 'Notion', 'Poznámky & história prác'], ['🔐', 'Bitwarden', 'Prístupy (len odkaz)']] as const).map(([icon, t, sub]) => (
-          <a key={t} href="#" style={{ flex: 1, minWidth: 140, textDecoration: 'none', ...card, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 20 }}>{icon}</span>
-            <div><div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{t}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{sub}</div></div>
+        {notionUrl ? (
+          <a href={notionUrl} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 140, textDecoration: 'none', ...card, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 20 }}>📓</span>
+            <div><div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>Notion</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Poznámky & história prác</div></div>
           </a>
-        ))}
+        ) : (
+          <div style={{ flex: 1, minWidth: 140, ...card, padding: 16, display: 'flex', alignItems: 'center', gap: 12, opacity: 0.6 }}>
+            <span style={{ fontSize: 20 }}>📓</span>
+            <div><div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>Notion</div><div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Odkaz nezadaný (karta klienta)</div></div>
+          </div>
+        )}
       </div>
       <div style={{ background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: 'var(--radius)', padding: '14px 18px', fontSize: 12.5, color: 'var(--text-secondary)' }}>
-        🔒 Žiadne heslá ani kľúče sa tu neukladajú — iba odkazy do Bitwarden / Notion.
+        🔒 Žiadne heslá ani kľúče sa tu neukladajú — iba odkazy do externých nástrojov.
       </div>
     </div>
   );

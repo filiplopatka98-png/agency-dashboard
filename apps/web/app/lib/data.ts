@@ -36,6 +36,18 @@ export interface SiteVM {
   clientId: string | null;
   clientName: string;
   clientInitial: string;
+  // Karta klienta — reálne z clients (fakturačné/kontaktné údaje)
+  client: {
+    company: string | null;
+    email: string | null;
+    phone: string | null;
+    ico: string | null;
+    monthlyFeeEur: number | null;
+    hourlyRateEur: number | null;
+    contractType: string | null;
+    notionPageId: string | null;
+    since: string | null;
+  } | null;
   statusKey: StatusKey;
   dotColor: string;
   tintBg: string;
@@ -316,6 +328,19 @@ export async function loadDashboard(): Promise<{
       clientId: s.client_id,
       clientName,
       clientInitial: (clientName || '—').replace(/^Klient\s*/i, '').charAt(0).toUpperCase() || '—',
+      client: client
+        ? {
+            company: client.company,
+            email: client.email,
+            phone: client.phone,
+            ico: client.ico,
+            monthlyFeeEur: client.monthly_fee_eur === null ? null : Number(client.monthly_fee_eur),
+            hourlyRateEur: client.hourly_rate_eur === null ? null : Number(client.hourly_rate_eur),
+            contractType: client.contract_type,
+            notionPageId: client.notion_page_id,
+            since: client.created_at,
+          }
+        : null,
       statusKey: key,
       dotColor: st.color,
       tintBg: st.bg,
