@@ -58,6 +58,12 @@ export interface SiteVM {
   tlsDaysLeft: number | null;
   tlsExpiryColor: string;
   incidents: IncidentVM[];
+  // reálne uptime metriky (z uptime_daily + incidents)
+  p95Series: number[];
+  incidentCount30: number;
+  mttrMin: number | null;
+  daysSinceIncident: number | null;
+  slaOk: boolean;
   // mock (budúce fázy)
   perfScore: number | null;
   openIssues: number;
@@ -98,7 +104,7 @@ export async function loadDashboard(): Promise<{
   const since90 = isoDay(90);
   const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
-    supabase.from('uptime_daily').select('site_id, day, uptime_pct').gte('day', since90),
+    supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
     supabase.from('tls_certs').select('site_id, valid_to, issuer'),
     supabase.from('incidents').select('*').order('started_at', { ascending: false }).limit(200),
@@ -109,12 +115,18 @@ export async function loadDashboard(): Promise<{
   const clients = (cliRes.data ?? []) as Client[];
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
-  // uptime_daily → map[siteId][day] = pct
+  // uptime_daily → map[siteId][day] = pct  a  map[siteId][day] = p95_ms
   const dailyBySite = new Map<string, Map<string, number>>();
+  const p95BySite = new Map<string, Map<string, number>>();
   for (const d of dailyRes.data ?? []) {
     const m = dailyBySite.get(d.site_id) ?? new Map<string, number>();
     m.set(d.day as string, Number(d.uptime_pct));
     dailyBySite.set(d.site_id, m);
+    if (d.p95_ms != null) {
+      const p = p95BySite.get(d.site_id) ?? new Map<string, number>();
+      p.set(d.day as string, Number(d.p95_ms));
+      p95BySite.set(d.site_id, p);
+    }
   }
   const domBySite = new Map((domRes.data ?? []).map((d) => [d.site_id, d]));
   const tlsBySite = new Map((tlsRes.data ?? []).map((t) => [t.site_id, t]));
@@ -132,6 +144,22 @@ export async function loadDashboard(): Promise<{
       });
     }
     incBySite.set(i.site_id, list);
+  }
+
+  // Incident metriky per site (posledných 30 dní).
+  const cut30 = Date.now() - 30 * 86400000;
+  interface IncStats { count30: number; durSum: number; durN: number; lastStart: number | null }
+  const incStats = new Map<string, IncStats>();
+  for (const i of incRes.data ?? []) {
+    const st = incStats.get(i.site_id) ?? { count30: 0, durSum: 0, durN: 0, lastStart: null };
+    const started = new Date(i.started_at).getTime();
+    if (started >= cut30) st.count30++;
+    if (i.duration_seconds != null) {
+      st.durSum += i.duration_seconds;
+      st.durN++;
+    }
+    st.lastStart = st.lastStart === null ? started : Math.max(st.lastStart, started);
+    incStats.set(i.site_id, st);
   }
 
   const agg = (siteId: string, days: number): number | null => {
@@ -155,6 +183,16 @@ export async function loadDashboard(): Promise<{
       const day = isoDay(i);
       const pct = m?.get(day) ?? null;
       out.push({ color: segColor(pct), date: day, value: pct });
+    }
+    return out;
+  };
+  const buildP95Series = (siteId: string): number[] => {
+    const m = p95BySite.get(siteId);
+    if (!m) return [];
+    const out: number[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const v = m.get(isoDay(i));
+      if (v !== undefined) out.push(v);
     }
     return out;
   };
@@ -210,6 +248,17 @@ export async function loadDashboard(): Promise<{
       tlsDaysLeft,
       tlsExpiryColor: tlsExpiryColor(tlsDaysLeft),
       incidents: incBySite.get(s.id) ?? [],
+      p95Series: buildP95Series(s.id),
+      incidentCount30: incStats.get(s.id)?.count30 ?? 0,
+      mttrMin: (() => {
+        const st = incStats.get(s.id);
+        return st && st.durN > 0 ? Math.round(st.durSum / st.durN / 60) : null;
+      })(),
+      daysSinceIncident: (() => {
+        const st = incStats.get(s.id);
+        return st?.lastStart ? Math.floor((Date.now() - st.lastStart) / 86400000) : null;
+      })(),
+      slaOk: (u30 ?? 0) >= 99.5,
       // mock — budúce fázy (deterministické podľa seedu)
       perfScore: key === 'unknown' ? null : 60 + Math.floor(rnd() * 39),
       openIssues: key === 'unknown' ? 0 : Math.floor(rnd() * 8),

@@ -72,6 +72,23 @@ export function buildSparkline(seed: number): { points: string; area: string; p9
   return { points: pts, area: `0,${H} ${pts} ${W},${H}`, p95: Math.round(base + 30) };
 }
 
+/** Sparkline z reálnych hodnôt (napr. p95 odozva z uptime_daily). */
+export function sparklineFromValues(vals: number[]): { points: string; area: string; p95: number } | null {
+  if (vals.length < 2) return null;
+  const maxV = Math.max(...vals);
+  const minV = Math.min(...vals);
+  const W = 560;
+  const H = 70;
+  const pts = vals
+    .map((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      const y = H - ((v - minV) / (maxV - minV || 1)) * (H - 8) - 4;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return { points: pts, area: `0,${H} ${pts} ${W},${H}`, p95: vals[vals.length - 1]! };
+}
+
 /** Perf mock (Lighthouse skóre + CWV) podľa device. Port z predlohy. */
 export interface PerfCwv {
   val: string;

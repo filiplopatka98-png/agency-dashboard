@@ -7,6 +7,7 @@ import { Shell } from '../components/Shell';
 import { loadDashboard, type SiteVM } from '../lib/data';
 import {
   buildSparkline,
+  sparklineFromValues,
   buildPerf,
   BOT_DEFS,
   botMeta,
@@ -233,15 +234,37 @@ function TabOverview({ site }: { site: SiteVM }) {
 }
 
 function TabUptime({ site }: { site: SiteVM }) {
-  const spark = buildSparkline(site.seed);
+  const spark = sparklineFromValues(site.p95Series) ?? buildSparkline(site.seed);
   const figures: [string, string][] = [
     ['24 hodín', site.uptime24h === null ? '—' : `${site.uptime24h}%`],
     ['7 dní', site.uptime7d === null ? '—' : `${site.uptime7d}%`],
     ['30 dní', site.uptimeDisplay],
     ['90 dní', site.uptime90d],
   ];
+  const strip: [string, string, string, string][] = [
+    ['🟢', 'var(--ok-bg)', site.daysSinceIncident === null ? '—' : `${site.daysSinceIncident} dní`, 'bez výpadku'],
+    ['⏱', 'var(--surface-secondary)', site.mttrMin === null ? '—' : `${site.mttrMin} min`, 'priem. MTTR'],
+    ['📉', 'var(--surface-secondary)', String(site.incidentCount30), 'incident (30d)'],
+    [site.slaOk ? '🎯' : '⚠️', site.slaOk ? 'var(--ok-bg)' : 'var(--warning-bg)', site.slaOk ? 'SLA ✓' : 'SLA ✗', 'cieľ 99,5 %'],
+  ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Summary strip (reálne) */}
+      <div style={{ ...card, padding: 4, display: 'flex', flexWrap: 'wrap' }}>
+        {strip.map(([icon, iconBg, val, sub], i) => (
+          <div key={i} style={{ display: 'contents' }}>
+            {i > 0 && <div style={{ width: 1, background: 'var(--border-primary)', margin: '10px 0' }} />}
+            <div style={{ flex: 1, minWidth: 130, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>{icon}</div>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 800, ...mono, color: i === 3 && site.slaOk ? 'var(--ok-color)' : 'var(--text-primary)', lineHeight: 1 }}>{val}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 3 }}>{sub}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 14 }}>
         {figures.map(([k, v], i) => (
           <div key={k} style={{ ...card, padding: 16 }}>
