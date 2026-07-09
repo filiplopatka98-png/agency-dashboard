@@ -130,6 +130,16 @@ export async function loadDashboard(): Promise<{
   }
   const domBySite = new Map((domRes.data ?? []).map((d) => [d.site_id, d]));
   const tlsBySite = new Map((tlsRes.data ?? []).map((t) => [t.site_id, t]));
+
+  // Otvorené issues per site = otvorené incidenty + nevyriešené alerty.
+  const openIssuesBySite = new Map<string, number>();
+  for (const i of incRes.data ?? []) {
+    if (!i.resolved_at) openIssuesBySite.set(i.site_id, (openIssuesBySite.get(i.site_id) ?? 0) + 1);
+  }
+  for (const a of alRes.data ?? []) {
+    if (!a.resolved_at && a.site_id)
+      openIssuesBySite.set(a.site_id, (openIssuesBySite.get(a.site_id) ?? 0) + 1);
+  }
   const incBySite = new Map<string, IncidentVM[]>();
   for (const i of incRes.data ?? []) {
     const list = incBySite.get(i.site_id) ?? [];
@@ -261,7 +271,7 @@ export async function loadDashboard(): Promise<{
       slaOk: (u30 ?? 0) >= 99.5,
       // mock — budúce fázy (deterministické podľa seedu)
       perfScore: key === 'unknown' ? null : 60 + Math.floor(rnd() * 39),
-      openIssues: key === 'unknown' ? 0 : Math.floor(rnd() * 8),
+      openIssues: openIssuesBySite.get(s.id) ?? 0,
       isWordPress: s.cms === 'wordpress',
       gscConnected: seed % 2 === 1,
       seed,
