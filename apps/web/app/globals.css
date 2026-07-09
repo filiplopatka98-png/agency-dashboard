@@ -1,65 +1,149 @@
 @import "tailwindcss";
 
+/* ── Monitorix design tokens (z predlohy Agency Dashboard.dc.html) ── */
 :root {
-  --background: #f7f7f8;
-  --card: #ffffff;
-  --foreground: #171717;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --accent: #2563eb;
-  --dot-ok: #16a34a;
-  --dot-warn: #d97706;
-  --dot-down: #dc2626;
-  --dot-unknown: #9ca3af;
+  --bg-base: #f7f8fa;
+  --surface-primary: #ffffff;
+  --surface-secondary: #f1f3f6;
+  --surface-hover: #f7f8fa;
+  --text-primary: #0d1117;
+  --text-secondary: #5b6470;
+  --text-tertiary: #8b95a3;
+  --border-primary: #e6e9ee;
+  --border-strong: #d4d9e0;
+  --accent-primary: #0d7d8f;
+  --accent-soft: #e6f4f6;
+  --ok-color: #16a34a;
+  --ok-bg: #ecfdf3;
+  --warning-color: #d97706;
+  --warning-bg: #fff7ed;
+  --warning-border: #fed7aa;
+  --critical-color: #dc2626;
+  --critical-bg: #fef2f2;
+  --unknown-color: #94a3b8;
+  --unknown-bg: #f1f5f9;
+  --shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.04), 0 1px 3px rgba(13, 17, 23, 0.06);
+  --shadow-md: 0 4px 12px rgba(13, 17, 23, 0.06), 0 2px 4px rgba(13, 17, 23, 0.04);
+  --shadow-lg: 0 12px 32px rgba(13, 17, 23, 0.1), 0 4px 8px rgba(13, 17, 23, 0.05);
+  --radius: 14px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-accent: var(--accent);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0b;
-    --card: #161618;
-    --foreground: #ededed;
-    --muted: #9ca3af;
-    --border: #262629;
-    --accent: #3b82f6;
-  }
+html.dark {
+  --bg-base: #0a0e14;
+  --surface-primary: #141a22;
+  --surface-secondary: #1c242e;
+  --surface-hover: #1c242e;
+  --text-primary: #eef2f6;
+  --text-secondary: #9aa5b4;
+  --text-tertiary: #6b7684;
+  --border-primary: #232c37;
+  --border-strong: #2f3a47;
+  --accent-primary: #2dd4bf;
+  --accent-soft: #10312f;
+  --ok-color: #34d399;
+  --ok-bg: #0d2a1e;
+  --warning-color: #d97706;
+  --warning-bg: #2a1f0d;
+  --warning-border: #4a3410;
+  --critical-color: #f87171;
+  --critical-bg: #2a1315;
+  --unknown-color: #64748b;
+  --unknown-bg: #1a222c;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --radius: 14px;
 }
 
 * {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
 }
 
-/* Skip-link (a11y) */
+a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* Interaktívne karty — hover efekty (namiesto prototypového style-hover) */
+.mx-card {
+  transition: all 0.18s;
+}
+.mx-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
+  border-color: var(--border-strong);
+}
+.mx-card-soft {
+  transition: all 0.18s;
+}
+.mx-card-soft:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.mx-row:hover {
+  background: var(--surface-hover);
+}
+.mx-list-row {
+  transition: all 0.18s;
+}
+.mx-list-row:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* a11y */
 .skip-link {
   position: absolute;
   left: -9999px;
   top: 0;
-  background: var(--accent);
+  background: var(--accent-primary);
   color: #fff;
   padding: 0.5rem 1rem;
-  z-index: 50;
+  z-index: 2000;
   border-radius: 0 0 0.5rem 0;
 }
 .skip-link:focus {
   left: 0;
 }
-
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent-primary) !important;
+}
+
+/* nav pill hover */
+.mx-nav-btn:hover {
+  color: var(--text-primary);
 }

@@ -1,0 +1,223 @@
+import { supabase, type Alert, type Client } from './supabase';
+import {
+  STATUS,
+  statusKey,
+  domainExpiryColor,
+  tlsExpiryColor,
+  expiryBadgeColor,
+  segColor,
+  seeded,
+  type StatusKey,
+} from './design';
+import { relativeTime } from './format';
+
+export interface ExpiryIssue {
+  label: string;
+  color: string;
+}
+export interface UptimeSeg {
+  color: string;
+  date: string;
+  value: number | null;
+}
+export interface IncidentVM {
+  title: string;
+  startTime: string;
+  duration: string;
+  color: string;
+  statusCode: string;
+}
+
+export interface SiteVM {
+  id: string;
+  name: string;
+  domain: string;
+  url: string;
+  clientId: string | null;
+  clientName: string;
+  clientInitial: string;
+  statusKey: StatusKey;
+  dotColor: string;
+  tintBg: string;
+  statusShort: string;
+  statusLabel: string;
+  pulseClass: string;
+  lastCheckTime: string;
+  lastStatusChange: string;
+  uptime24h: number | null;
+  uptime7d: number | null;
+  uptime30d: number | null;
+  uptime90d: string;
+  uptimeDisplay: string;
+  uptimeSegments: UptimeSeg[];
+  uptimeCalendar: UptimeSeg[];
+  hasExpiry: boolean;
+  expiryIssues: ExpiryIssue[];
+  domainDaysLeft: number | null;
+  domainExpiryColor: string;
+  tlsDaysLeft: number | null;
+  tlsExpiryColor: string;
+  incidents: IncidentVM[];
+  // mock (budúce fázy)
+  perfScore: number | null;
+  openIssues: number;
+  isWordPress: boolean;
+  gscConnected: boolean;
+  seed: number;
+}
+
+function hashSeed(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h) || 1;
+}
+
+function daysUntilDate(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  const t = new Date(dateStr).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.ceil((t - Date.now()) / 86400000);
+}
+
+function isoDay(offsetDays: number): string {
+  return new Date(Date.now() - offsetDays * 86400000).toISOString().slice(0, 10);
+}
+
+function fmtDuration(sec: number | null): string {
+  if (!sec) return '—';
+  if (sec < 3600) return `${Math.round(sec / 60)} min`;
+  return `${(sec / 3600).toFixed(1)} h`;
+}
+
+/** Načíta všetko pre dashboard: reálna fáza 1 + mock budúce polia. */
+export async function loadDashboard(): Promise<{
+  sites: SiteVM[];
+  clients: Client[];
+  alerts: Alert[];
+}> {
+  const since90 = isoDay(90);
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes] = await Promise.all([
+    supabase.from('sites').select('*').eq('is_active', true).order('name'),
+    supabase.from('uptime_daily').select('site_id, day, uptime_pct').gte('day', since90),
+    supabase.from('domains').select('site_id, expires_at, registrar'),
+    supabase.from('tls_certs').select('site_id, valid_to, issuer'),
+    supabase.from('incidents').select('*').order('started_at', { ascending: false }).limit(200),
+    supabase.from('clients').select('*').order('name'),
+    supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(100),
+  ]);
+
+  const clients = (cliRes.data ?? []) as Client[];
+  const clientById = new Map(clients.map((c) => [c.id, c]));
+
+  // uptime_daily → map[siteId][day] = pct
+  const dailyBySite = new Map<string, Map<string, number>>();
+  for (const d of dailyRes.data ?? []) {
+    const m = dailyBySite.get(d.site_id) ?? new Map<string, number>();
+    m.set(d.day as string, Number(d.uptime_pct));
+    dailyBySite.set(d.site_id, m);
+  }
+  const domBySite = new Map((domRes.data ?? []).map((d) => [d.site_id, d]));
+  const tlsBySite = new Map((tlsRes.data ?? []).map((t) => [t.site_id, t]));
+  const incBySite = new Map<string, IncidentVM[]>();
+  for (const i of incRes.data ?? []) {
+    const list = incBySite.get(i.site_id) ?? [];
+    if (list.length < 10) {
+      const open = !i.resolved_at;
+      list.push({
+        title: open ? 'Prebiehajúci výpadok' : 'Výpadok · vyriešené',
+        startTime: new Date(i.started_at).toLocaleString('sk-SK', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        duration: open ? 'prebieha' : fmtDuration(i.duration_seconds),
+        color: open ? 'var(--critical-color)' : 'var(--warning-color)',
+        statusCode: String(i.last_status_code ?? '—'),
+      });
+    }
+    incBySite.set(i.site_id, list);
+  }
+
+  const agg = (siteId: string, days: number): number | null => {
+    const m = dailyBySite.get(siteId);
+    if (!m) return null;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < days; i++) {
+      const pct = m.get(isoDay(i));
+      if (pct !== undefined) {
+        sum += pct;
+        n++;
+      }
+    }
+    return n === 0 ? null : Math.round((sum / n) * 100) / 100;
+  };
+  const buildSegs = (siteId: string, days: number): UptimeSeg[] => {
+    const m = dailyBySite.get(siteId);
+    const out: UptimeSeg[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const day = isoDay(i);
+      const pct = m?.get(day) ?? null;
+      out.push({ color: segColor(pct), date: day, value: pct });
+    }
+    return out;
+  };
+
+  const sites: SiteVM[] = (sitesRes.data ?? []).map((s) => {
+    const key = statusKey(s.consecutive_failures, s.last_checked_at);
+    const st = STATUS[key];
+    const client = s.client_id ? clientById.get(s.client_id) : null;
+    const clientName = client?.name ?? '—';
+    const dom = domBySite.get(s.id);
+    const tls = tlsBySite.get(s.id);
+    const domainDaysLeft = daysUntilDate(dom?.expires_at ?? null);
+    const tlsDaysLeft = daysUntilDate(tls?.valid_to ?? null);
+
+    const expiryIssues: ExpiryIssue[] = [];
+    if (tlsDaysLeft !== null && tlsDaysLeft <= 45)
+      expiryIssues.push({ label: `TLS: ${tlsDaysLeft}d`, color: expiryBadgeColor(tlsDaysLeft, 21) });
+    if (domainDaysLeft !== null && domainDaysLeft <= 45)
+      expiryIssues.push({ label: `Doména: ${domainDaysLeft}d`, color: expiryBadgeColor(domainDaysLeft, 30) });
+
+    const u30 = agg(s.id, 30);
+    const u90 = agg(s.id, 90);
+    const seed = hashSeed(s.id);
+    const rnd = seeded(seed);
+
+    return {
+      id: s.id,
+      name: s.name,
+      domain: s.domain,
+      url: s.url,
+      clientId: s.client_id,
+      clientName,
+      clientInitial: (clientName || '—').replace(/^Klient\s*/i, '').charAt(0).toUpperCase() || '—',
+      statusKey: key,
+      dotColor: st.color,
+      tintBg: st.bg,
+      statusShort: st.short,
+      statusLabel: st.label,
+      pulseClass: key === 'down' ? 'pulse-dot' : '',
+      lastCheckTime: relativeTime(s.last_checked_at),
+      lastStatusChange: relativeTime(s.last_checked_at),
+      uptime24h: agg(s.id, 1),
+      uptime7d: agg(s.id, 7),
+      uptime30d: u30,
+      uptime90d: u90 === null ? '—' : `${u90}%`,
+      uptimeDisplay: u30 === null ? '—' : `${u30}%`,
+      uptimeSegments: buildSegs(s.id, 30),
+      uptimeCalendar: buildSegs(s.id, 90),
+      hasExpiry: expiryIssues.length > 0,
+      expiryIssues,
+      domainDaysLeft,
+      domainExpiryColor: domainExpiryColor(domainDaysLeft),
+      tlsDaysLeft,
+      tlsExpiryColor: tlsExpiryColor(tlsDaysLeft),
+      incidents: incBySite.get(s.id) ?? [],
+      // mock — budúce fázy (deterministické podľa seedu)
+      perfScore: key === 'unknown' ? null : 60 + Math.floor(rnd() * 39),
+      openIssues: key === 'unknown' ? 0 : Math.floor(rnd() * 8),
+      isWordPress: s.cms === 'wordpress',
+      gscConnected: seed % 2 === 1,
+      seed,
+    };
+  });
+
+  return { sites, clients, alerts: (alRes.data ?? []) as Alert[] };
+}

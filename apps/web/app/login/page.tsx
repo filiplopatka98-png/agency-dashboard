@@ -4,6 +4,26 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../lib/supabase';
 
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '11px 14px',
+  background: 'var(--bg-base)',
+  border: '1px solid var(--border-primary)',
+  borderRadius: 10,
+  color: 'var(--text-primary)',
+  fontSize: 14,
+  outline: 'none',
+};
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--text-secondary)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  marginBottom: 7,
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -35,70 +55,43 @@ export default function LoginPage() {
   };
 
   return (
-    <main id="main" className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4">
-      <h1 className="mb-1 text-xl font-semibold">Agency Dashboard</h1>
-      <p className="mb-6 text-sm text-muted">Prihlásenie.</p>
+    <main
+      id="main"
+      style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: 20, background: 'var(--bg-base)' }}
+    >
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 16 }}>◈</div>
+          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>Monitorix</h1>
+        </div>
+        <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 24 }}>Prihlásenie do dashboardu.</p>
 
-      {sent ? (
-        <p className="rounded-lg border border-border bg-card p-4 text-sm">
-          Poslali sme prihlasovací odkaz na <strong>{email}</strong>. Lokálne ho nájdeš v Mailpite
-          (http://127.0.0.1:54324).
-        </p>
-      ) : (
-        <form onSubmit={loginPassword} className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm" htmlFor="email">
-              E-mail
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="rounded-lg border border-border bg-card px-3 py-2"
-              placeholder="ty@lopatka.sk"
-            />
+        {sent ? (
+          <div style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: 18, fontSize: 13.5, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-sm)' }}>
+            Poslali sme prihlasovací odkaz na <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>. Lokálne ho nájdeš v Mailpite (127.0.0.1:54324).
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm" htmlFor="password">
-              Heslo
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="rounded-lg border border-border bg-card px-3 py-2"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-lg px-3 py-2 font-medium text-white disabled:opacity-50"
-            style={{ background: 'var(--accent)' }}
-          >
-            {loading ? 'Prihlasujem…' : 'Prihlásiť heslom'}
-          </button>
-
-          <button
-            type="button"
-            onClick={sendMagicLink}
-            disabled={loading || !email}
-            className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50"
-          >
-            …alebo poslať magic link
-          </button>
-
-          {error && (
-            <p className="text-sm" style={{ color: 'var(--dot-down)' }} role="alert">
-              {error}
-            </p>
-          )}
-        </form>
-      )}
+        ) : (
+          <form onSubmit={loginPassword} style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: 22, boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label htmlFor="email" style={labelStyle}>E-mail</label>
+              <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ty@lopatka.sk" style={inputStyle} />
+            </div>
+            <div>
+              <label htmlFor="password" style={labelStyle}>Heslo</label>
+              <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={inputStyle} />
+            </div>
+            <button type="submit" disabled={loading} style={{ padding: '11px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: loading ? 0.6 : 1 }}>
+              {loading ? 'Prihlasujem…' : 'Prihlásiť heslom'}
+            </button>
+            <button type="button" onClick={sendMagicLink} disabled={loading || !email} style={{ padding: '10px 16px', background: 'var(--surface-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-primary)', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: loading || !email ? 0.5 : 1 }}>
+              …alebo poslať magic link
+            </button>
+            {error && (
+              <p role="alert" style={{ fontSize: 13, color: 'var(--critical-color)' }}>{error}</p>
+            )}
+          </form>
+        )}
+      </div>
     </main>
   );
 }

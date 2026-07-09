@@ -5,50 +5,396 @@ import { Shell } from '../components/Shell';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
-  const [org, setOrg] = useState<{ name: string } | null>(null);
-  const [email, setEmail] = useState<string>('');
-  const [siteCount, setSiteCount] = useState<number | null>(null);
+  const [orgName, setOrgName] = useState<string>('—');
+  const [email, setEmail] = useState<string>('—');
+  const [orgSiteCount, setOrgSiteCount] = useState<number>(0);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       const [o, u, s] = await Promise.all([
         supabase.from('organizations').select('name').limit(1).maybeSingle(),
         supabase.auth.getUser(),
         supabase.from('sites').select('id', { count: 'exact', head: true }).eq('is_active', true),
       ]);
-      setOrg(o.data);
-      setEmail(u.data.user?.email ?? '');
-      setSiteCount(s.count ?? 0);
+      if (!active) return;
+      setOrgName(o.data?.name ?? '—');
+      setEmail(u.data.user?.email ?? '—');
+      setOrgSiteCount(s.count ?? 0);
     })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
     <Shell>
-      <h1 className="mb-4 text-lg font-semibold">Nastavenia</h1>
+      <div style={{ minHeight: '100vh', padding: '32px 24px 64px', background: 'var(--bg-base)' }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <h1
+            style={{
+              fontSize: '30px',
+              fontWeight: 800,
+              letterSpacing: '-0.025em',
+              marginBottom: '22px',
+            }}
+          >
+            Nastavenia
+          </h1>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Organizácia */}
+            <div
+              style={{
+                background: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius)',
+                padding: '20px',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <h3
+                style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  marginBottom: '14px',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Organizácia
+              </h3>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  fontSize: '13.5px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '11px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-secondary)' }}>Názov</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{orgName}</strong>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '11px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-secondary)' }}>Prihlásený</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{email} (owner)</strong>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '11px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-secondary)' }}>Monitorovaných webov</span>
+                  <strong
+                    style={{ fontFamily: "'Geist Mono', monospace", color: 'var(--text-primary)' }}
+                  >
+                    {orgSiteCount}
+                  </strong>
+                </div>
+              </div>
+            </div>
 
-      <section className="mb-4 rounded-xl border border-border bg-card p-4 text-sm">
-        <h2 className="mb-2 font-medium">Organizácia</h2>
-        <div className="flex justify-between border-b border-border py-2">
-          <span className="text-muted">Názov</span>
-          <span>{org?.name ?? '—'}</span>
-        </div>
-        <div className="flex justify-between border-b border-border py-2">
-          <span className="text-muted">Prihlásený ako</span>
-          <span>{email || '—'}</span>
-        </div>
-        <div className="flex justify-between py-2">
-          <span className="text-muted">Aktívne weby</span>
-          <span>{siteCount ?? '—'}</span>
-        </div>
-      </section>
+            {/* Integrácie / API kľúče */}
+            <div
+              style={{
+                background: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius)',
+                padding: '20px',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <h3
+                style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  marginBottom: '14px',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Integrácie / API kľúče
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '13.5px',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      PageSpeed Insights
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                      Lab performance dáta
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: 'var(--ok-color)',
+                      background: 'var(--ok-bg)',
+                      padding: '4px 11px',
+                      borderRadius: '20px',
+                    }}
+                  >
+                    Pripojené
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '13.5px',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      Google Search Console
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                      SEO výkonnostné dáta (OAuth)
+                    </div>
+                  </div>
+                  <button
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: 'var(--accent-primary)',
+                      background: 'var(--accent-soft)',
+                      padding: '5px 12px',
+                      borderRadius: '20px',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Pripojiť
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '13.5px',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      Resend
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                      Odosielanie e-mailov &amp; reportov
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: 'var(--ok-color)',
+                      background: 'var(--ok-bg)',
+                      padding: '4px 11px',
+                      borderRadius: '20px',
+                    }}
+                  >
+                    Pripojené
+                  </span>
+                </div>
+              </div>
+            </div>
 
-      <section className="rounded-xl border border-border bg-card p-4 text-sm">
-        <h2 className="mb-2 font-medium">Notifikácie</h2>
-        <p className="text-muted">
-          Príjemcov e-mailových alertov (ALERT_EMAIL_TO/FROM, Resend) konfiguruje scheduler cez
-          Cloudflare Worker secrets. UI ich zámerne nespravuje — service_role sa sem nikdy nedostane.
-        </p>
-      </section>
+            {/* Notifikácie */}
+            <div
+              style={{
+                background: 'var(--surface-primary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius)',
+                padding: '20px',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              <h3
+                style={{
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  marginBottom: '14px',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                Notifikácie
+              </h3>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  fontSize: '13.5px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '11px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-primary)' }}>E-mail príjemca</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '11px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-primary)' }}>Denný digest</span>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: 'var(--ok-color)',
+                      background: 'var(--ok-bg)',
+                      padding: '3px 10px',
+                      borderRadius: '20px',
+                    }}
+                  >
+                    07:00 zap.
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '11px 14px',
+                    background: 'var(--surface-secondary)',
+                    borderRadius: '10px',
+                    opacity: 0.65,
+                  }}
+                >
+                  <span style={{ color: 'var(--text-primary)' }}>Slack / Telegram</span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>čoskoro</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Retencia + Tím */}
+            <div
+              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}
+            >
+              <div
+                style={{
+                  background: 'var(--surface-primary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius)',
+                  padding: '20px',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <h3
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    marginBottom: '10px',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  Retencia
+                </h3>
+                <div
+                  style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}
+                >
+                  Raw dáta <strong style={{ color: 'var(--text-primary)' }}>30 dní</strong>
+                  <br />
+                  Denné snapshoty{' '}
+                  <strong style={{ color: 'var(--text-primary)' }}>13 mesiacov</strong>
+                </div>
+              </div>
+              <div
+                style={{
+                  background: 'var(--surface-primary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: 'var(--radius)',
+                  padding: '20px',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <h3
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    marginBottom: '10px',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  Tím
+                </h3>
+                <div
+                  style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}
+                >
+                  1 owner (Filip)
+                  <br />
+                  <span style={{ color: 'var(--text-tertiary)' }}>Pozvať člena — fáza 4</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </Shell>
   );
 }
