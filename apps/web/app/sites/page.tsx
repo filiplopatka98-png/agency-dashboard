@@ -30,6 +30,16 @@ const label = {
   fontWeight: 600,
 } as const;
 
+/** Viditeľné označenie ukážkových (mock) dát — pre časti, ktoré ešte nebežia naživo. */
+function MockBanner({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: 'var(--radius)', padding: '11px 16px', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+      <span style={{ fontSize: 15 }}>🧪</span>
+      <span><strong style={{ color: 'var(--text-primary)' }}>Ukážkové dáta.</strong> {text}</span>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Sites list ─────────────────────────── */
 function SitesList() {
   const router = useRouter();
@@ -159,7 +169,7 @@ function SiteDetail({ id }: { id: string }) {
         {/* Quick stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 28 }}>
           <QuickStat title="Uptime 30d" value={site.uptimeDisplay} color="var(--accent-primary)" />
-          <QuickStat title="Perf skóre" value={site.perfScore ?? '—'} />
+          <QuickStat title="Perf skóre" value="—" />
           <QuickStat title="TLS expiry" value={site.tlsDaysLeft === null ? 'nezistené' : `${site.tlsDaysLeft}d`} color={site.tlsExpiryColor} />
           <QuickStat title="Otvorené issues" value={site.openIssues} />
         </div>
@@ -365,6 +375,7 @@ function TabPerformance() {
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <MockBanner text="Výkon (Lighthouse/PSI, Core Web Vitals) sa spustí po pripojení PageSpeed Insights API kľúča." />
       <div style={{ display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
         {(['desktop', 'mobile'] as const).map((d) => (
           <button key={d} onClick={() => setDevice(d)} style={{ padding: '7px 15px', background: device === d ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, color: device === d ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 600, boxShadow: device === d ? 'var(--shadow-sm)' : 'none' }}>{d === 'desktop' ? 'Desktop' : 'Mobil'}</button>
@@ -601,6 +612,7 @@ function TabAeo({ site }: { site: SiteVM }) {
 function TabInfra({ site }: { site: SiteVM }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <MockBanner text="Infra (WP verzie, pluginy, zálohy, security, CVE) sa spustí po nasadení WordPress agenta na weby s admin prístupom." />
       {site.isWordPress ? (
         <>
           <div style={{ ...card, padding: 16 }}>
@@ -690,6 +702,7 @@ function TabInfra({ site }: { site: SiteVM }) {
 function TabClient({ site }: { site: SiteVM }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <MockBanner text="Meno klienta je reálne; tier, kontakt a fakturačné údaje sú zatiaľ ukážkové (napoja sa z karty klienta)." />
       <div style={{ ...card, padding: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
           <div style={{ width: 46, height: 46, borderRadius: 12, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', ...mono }}>{site.clientInitial}</div>

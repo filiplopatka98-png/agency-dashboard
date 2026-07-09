@@ -133,6 +133,9 @@ export default function SettingsPage() {
               >
                 Integrácie / API kľúče
               </h3>
+              <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: '10px', padding: '9px 13px', marginBottom: '12px' }}>
+                🧪 <strong style={{ color: 'var(--text-primary)' }}>Ukážkové stavy.</strong> Reálne pripojenie pribudne s integráciami (PSI, GSC, Resend).
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div
                   style={{
