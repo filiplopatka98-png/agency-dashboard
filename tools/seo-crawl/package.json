@@ -1,0 +1,10 @@
+{
+  "name": "@agency/seo-crawl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node SEO crawler (BFS, robots-aware, max N URL) → core.analyzePage/buildSeoIssues → seo_snapshots. Bez API kľúčov.",
+  "scripts": {
+    "crawl": "node index.mjs"
+  }
+}

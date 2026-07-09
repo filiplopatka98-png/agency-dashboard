@@ -28,3 +28,5 @@ export {
   type AeoCheck,
   type BotDecision as AeoBotDecision,
 } from './aeo';
+
+export { analyzePage, buildSeoIssues, type PageAnalysis, type SeoIssue } from './seo';

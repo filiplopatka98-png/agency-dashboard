@@ -77,6 +77,14 @@ export interface SiteVM {
     aiBots: Record<string, string>;
     schemaTypes: string[];
   } | null;
+  // SEO — reálne (seo_snapshots) alebo null
+  seo: {
+    pagesCrawled: number;
+    sitemapOk: boolean;
+    robotsOk: boolean;
+    canonicalOk: boolean;
+    issues: { type: string; severity: string; sample: string; count: number; urls: string[] }[];
+  } | null;
 }
 
 function hashSeed(id: string): number {
@@ -109,7 +117,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -118,8 +126,10 @@ export async function loadDashboard(): Promise<{
     supabase.from('clients').select('*').order('name'),
     supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(100),
     supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types'),
+    supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error'),
   ]);
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
+  const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
 
   const clients = (cliRes.data ?? []) as Client[];
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -292,6 +302,17 @@ export async function loadDashboard(): Promise<{
           checks: (a.checks as unknown as { id: string; label: string; weight: number; earned: number; pass: boolean }[]) ?? [],
           aiBots: (a.ai_bots as Record<string, string>) ?? {},
           schemaTypes: (a.schema_types as string[]) ?? [],
+        };
+      })(),
+      seo: (() => {
+        const so = seoBySite.get(s.id);
+        if (!so || so.error || so.pages_crawled === null || so.pages_crawled === 0) return null;
+        return {
+          pagesCrawled: so.pages_crawled,
+          sitemapOk: Boolean(so.sitemap_ok),
+          robotsOk: Boolean(so.robots_ok),
+          canonicalOk: Boolean(so.canonical_ok),
+          issues: (so.issues as unknown as { type: string; severity: string; sample: string; count: number; urls: string[] }[]) ?? [],
         };
       })(),
     };

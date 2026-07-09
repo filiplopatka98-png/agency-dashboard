@@ -174,7 +174,7 @@ function SiteDetail({ id }: { id: string }) {
         {tab === 'overview' && <TabOverview site={site} />}
         {tab === 'uptime' && <TabUptime site={site} />}
         {tab === 'performance' && <TabPerformance />}
-        {tab === 'seo' && <TabSeo gsc={site.gscConnected} />}
+        {tab === 'seo' && <TabSeo site={site} />}
         {tab === 'aeo' && <TabAeo site={site} />}
         {tab === 'infra' && <TabInfra site={site} />}
         {tab === 'client' && <TabClient site={site} />}
@@ -431,104 +431,94 @@ function TabPerformance() {
   );
 }
 
-const SEO_ISSUES = [
-  { type: 'Nefunkčné odkazy (404)', sample: '/blog/stary-clanok, /produkty/x …', count: 12, color: 'var(--warning-color)', bg: 'var(--warning-bg)', sev: 'Warning', urls: ['/blog/stary-clanok', '/produkty/zruseny', '/akcia-2023', '/kontakt-stary'] },
-  { type: 'Chýbajúci title / meta description', sample: '/kontakt, /o-nas, /sluzby/audit …', count: 8, color: 'var(--warning-color)', bg: 'var(--warning-bg)', sev: 'Warning', urls: ['/kontakt', '/o-nas', '/sluzby/audit', '/referencie'] },
-  { type: 'Obrázky bez alt atribútu', sample: '34 obrázkov naprieč 11 stránkami', count: 34, color: 'var(--warning-color)', bg: 'var(--warning-bg)', sev: 'Warning', urls: ['/galeria (12)', '/blog (9)', '/produkty (8)', '/o-nas (5)'] },
-  { type: 'Reťaz presmerovaní (3+)', sample: '/old → /new → /final', count: 3, color: 'var(--critical-color)', bg: 'var(--critical-bg)', sev: 'Critical', urls: ['/old → /new → /final', '/sk/uvod → /uvod → /', '/produkt-1 → /produkty/1'] },
-  { type: 'Mixed content (HTTP na HTTPS)', sample: '/galeria — 2 zdroje', count: 2, color: 'var(--critical-color)', bg: 'var(--critical-bg)', sev: 'Critical', urls: ['/galeria — img: http://cdn.old/…', '/galeria — script: http://analytics/…'] },
-  { type: 'Duplicitný obsah', sample: 'žiadny nájdený', count: 0, color: 'var(--ok-color)', bg: 'var(--ok-bg)', sev: 'OK', urls: [] as string[] },
-];
-const TOP_QUERIES = [
-  { term: 'tvorba web stránok bratislava', pos: '3,2', clicks: '842' },
-  { term: 'redizajn e-shopu cena', pos: '5,1', clicks: '516' },
-  { term: 'wordpress údržba', pos: '4,8', clicks: '398' },
-  { term: 'seo audit zdarma', pos: '9,4', clicks: '204' },
-];
+function seoSev(sev: string) {
+  if (sev === 'critical') return { color: 'var(--critical-color)', bg: 'var(--critical-bg)', label: 'Critical' };
+  if (sev === 'warning') return { color: 'var(--warning-color)', bg: 'var(--warning-bg)', label: 'Warning' };
+  if (sev === 'ok') return { color: 'var(--ok-color)', bg: 'var(--ok-bg)', label: 'OK' };
+  return { color: 'var(--text-tertiary)', bg: 'var(--surface-secondary)', label: 'Info' };
+}
 
-function TabSeo({ gsc }: { gsc: boolean }) {
+function TabSeo({ site }: { site: SiteVM }) {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const seo = site.seo;
+  const okPill = (ok: boolean, text: string) => (
+    <span key={text} style={{ fontSize: 12, color: ok ? 'var(--ok-color)' : 'var(--text-tertiary)', background: ok ? 'var(--ok-bg)' : 'var(--surface-secondary)', padding: '4px 10px', borderRadius: 7, fontWeight: 600 }}>{ok ? '✓' : '—'} {text}</span>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
-        {([['Prehľadané stránky', '2 453', 'var(--text-primary)'], ['Indexované', '2 391', 'var(--text-primary)'], ['Otvorené issues', '20', 'var(--warning-color)']] as const).map(([t, v, c], i) => (
-          <div key={t} style={{ ...card, padding: 18, position: 'relative', overflow: 'hidden' }}>
-            {i === 2 && <div style={{ position: 'absolute', top: 0, left: 0, width: 4, height: '100%', background: 'var(--warning-color)' }} />}
-            <div style={{ ...label, marginBottom: 10 }}>{t}</div>
-            <div style={{ fontSize: 26, fontWeight: 800, ...mono, letterSpacing: '-0.02em', color: c }}>{v}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--border-primary)' }}>
-          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Technické issues</h3>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>posielané klientovi ako podklad</span>
-        </div>
-        <div>
-          {SEO_ISSUES.map((iss, i) => (
-            <div key={i} style={{ borderBottom: '1px solid var(--border-primary)' }}>
-              <div onClick={() => setExpanded(expanded === i ? null : i)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', cursor: 'pointer' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: iss.color, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-primary)' }}>{iss.type}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', ...mono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{iss.sample}</div>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: iss.color, background: iss.bg, padding: '3px 9px', borderRadius: 7, textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{iss.sev}</span>
-                <span style={{ fontSize: 15, fontWeight: 800, ...mono, color: 'var(--text-primary)', minWidth: 34, textAlign: 'right' }}>{iss.count}</span>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 12, width: 12 }}>{iss.urls.length ? (expanded === i ? '▾' : '▸') : ''}</span>
+      {seo ? (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
+            {([['Prehľadané stránky', String(seo.pagesCrawled), 'var(--text-primary)', false], ['Otvorené issues', String(seo.issues.length), seo.issues.length ? 'var(--warning-color)' : 'var(--ok-color)', seo.issues.length > 0]] as const).map(([t, v, c, bar]) => (
+              <div key={t} style={{ ...card, padding: 18, position: 'relative', overflow: 'hidden' }}>
+                {bar && <div style={{ position: 'absolute', top: 0, left: 0, width: 4, height: '100%', background: 'var(--warning-color)' }} />}
+                <div style={{ ...label, marginBottom: 10 }}>{t}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, ...mono, letterSpacing: '-0.02em', color: c }}>{v}</div>
               </div>
-              {expanded === i && iss.urls.length > 0 && (
-                <div style={{ padding: '0 18px 14px 40px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {iss.urls.map((u, j) => (
-                    <div key={j} style={{ fontSize: 12, ...mono, color: 'var(--text-secondary)', padding: '7px 12px', background: 'var(--surface-secondary)', borderRadius: 7 }}>{u}</div>
-                  ))}
-                </div>
-              )}
+            ))}
+          </div>
+
+          <div style={{ ...card, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--border-primary)' }}>
+              <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Technické issues</h3>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>z crawlu {seo.pagesCrawled} stránok · podklad pre klienta</span>
             </div>
-          ))}
+            {seo.issues.length === 0 ? (
+              <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13.5 }}>Žiadne technické SEO issues 🎉</div>
+            ) : (
+              <div>
+                {seo.issues.map((iss, i) => {
+                  const m = seoSev(iss.severity);
+                  return (
+                    <div key={i} style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                      <div onClick={() => setExpanded(expanded === i ? null : i)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', cursor: 'pointer' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-primary)' }}>{iss.type}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', ...mono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{iss.sample}</div>
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, padding: '3px 9px', borderRadius: 7, textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{m.label}</span>
+                        <span style={{ fontSize: 15, fontWeight: 800, ...mono, color: 'var(--text-primary)', minWidth: 34, textAlign: 'right' }}>{iss.count}</span>
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: 12, width: 12 }}>{iss.urls.length ? (expanded === i ? '▾' : '▸') : ''}</span>
+                      </div>
+                      {expanded === i && iss.urls.length > 0 && (
+                        <div style={{ padding: '0 18px 14px 40px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {iss.urls.map((u, j) => (
+                            <div key={j} style={{ fontSize: 12, ...mono, color: 'var(--text-secondary)', padding: '7px 12px', background: 'var(--surface-secondary)', borderRadius: 7 }}>{u}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '14px 18px', background: 'var(--surface-secondary)' }}>
+              {okPill(seo.sitemapOk, 'Sitemap')}
+              {okPill(seo.robotsOk, 'robots.txt')}
+              {okPill(seo.canonicalOk, 'Canonical')}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div style={{ ...card, padding: 24 }}>
+          <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 28, textAlign: 'center' }}>
+            <div style={{ fontSize: 22, marginBottom: 8 }}>🔎</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>SEO crawl sa pre tento web ešte nevykonal</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>Crawler zbehne týždenne a rešpektuje robots.txt. Výsledky sa neodhadujú — zobrazia sa až po reálnom prehľadaní.</div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '14px 18px', background: 'var(--surface-secondary)' }}>
-          {['Sitemap OK', 'robots.txt OK', 'Canonical OK', 'Mobile usability OK'].map((t) => (
-            <span key={t} style={{ fontSize: 12, color: 'var(--ok-color)', background: 'var(--ok-bg)', padding: '4px 10px', borderRadius: 7, fontWeight: 600 }}>✓ {t}</span>
-          ))}
-        </div>
-      </div>
+      )}
 
       <div style={{ ...card, padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Search Console</h3>
-          {gsc && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>posledných 28 dní</span>}
+        <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 16 }}>Search Console</h3>
+        <div style={{ background: 'var(--accent-soft)', border: '1px dashed var(--accent-primary)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, marginBottom: 8 }}>🔌</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Search Console nie je pripojená</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>Pripoj GSC a uvidíš kliknutia, impresie a pozície. Bez pripojenia tieto čísla nefabrikujeme.</div>
+          <button style={{ padding: '9px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Pripojiť Search Console</button>
         </div>
-        {gsc ? (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginBottom: 20 }}>
-              {([['3,2K', 'Kliknutí', '▲ 12%'], ['14,5K', 'Impresie', '▲ 8%'], ['22,1%', 'CTR', '▲ 1,3%'], ['8,4', 'Priem. pozícia', '▲ 0,6']] as const).map(([v, t, d]) => (
-                <div key={t} style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, ...mono, color: 'var(--text-primary)' }}>{v}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>{t} <span style={{ color: 'var(--ok-color)', fontWeight: 600 }}>{d}</span></div>
-                </div>
-              ))}
-            </div>
-            <div style={{ ...label, fontSize: 12.5, marginBottom: 10 }}>Top dopyty</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {TOP_QUERIES.map((q) => (
-                <div key={q.term} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', borderRadius: 8, background: 'var(--surface-secondary)' }}>
-                  <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.term}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)', ...mono }}>poz. {q.pos}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, ...mono, color: 'var(--accent-primary)', minWidth: 44, textAlign: 'right' }}>{q.clicks}</span>
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div style={{ background: 'var(--accent-soft)', border: '1px dashed var(--accent-primary)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
-            <div style={{ fontSize: 22, marginBottom: 8 }}>🔌</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Search Console nie je pripojená</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>Pripoj GSC a uvidíš kliknutia, impresie a pozície. Bez pripojenia tieto čísla nefabrikujeme.</div>
-            <button style={{ padding: '9px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Pripojiť Search Console</button>
-          </div>
-        )}
       </div>
     </div>
   );

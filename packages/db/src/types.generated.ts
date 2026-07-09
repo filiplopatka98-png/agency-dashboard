@@ -350,6 +350,57 @@ export type Database = {
         }
         Relationships: []
       }
+      seo_snapshots: {
+        Row: {
+          canonical_ok: boolean | null
+          error: string | null
+          issues: Json | null
+          measured_at: string | null
+          org_id: string
+          pages_crawled: number | null
+          robots_ok: boolean | null
+          site_id: string
+          sitemap_ok: boolean | null
+        }
+        Insert: {
+          canonical_ok?: boolean | null
+          error?: string | null
+          issues?: Json | null
+          measured_at?: string | null
+          org_id: string
+          pages_crawled?: number | null
+          robots_ok?: boolean | null
+          site_id: string
+          sitemap_ok?: boolean | null
+        }
+        Update: {
+          canonical_ok?: boolean | null
+          error?: string | null
+          issues?: Json | null
+          measured_at?: string | null
+          org_id?: string
+          pages_crawled?: number | null
+          robots_ok?: boolean | null
+          site_id?: string
+          sitemap_ok?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seo_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seo_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sites: {
         Row: {
           bitwarden_item_url: string | null
