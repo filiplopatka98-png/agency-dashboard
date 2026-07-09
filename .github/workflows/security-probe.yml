@@ -1,0 +1,27 @@
+name: security-probe
+
+# Týždenné meranie bezpečnosti: security headers (skóre) + Google Safe Browsing → security_snapshots.
+# Safe Browsing používa ten istý Google API key ako PSI (SB_API_KEY). Vyžaduje SB_API_KEY.
+on:
+  schedule:
+    - cron: '0 3 * * 1' # každý pondelok 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agency/core build
+      - name: Run security probe
+        run: node tools/security-probe/index.mjs
+        env:
+          SB_API_KEY: ${{ secrets.SB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

@@ -1,0 +1,10 @@
+{
+  "name": "@agency/security-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: security headers skóre + Google Safe Browsing → security_snapshots.",
+  "scripts": {
+    "probe": "node index.mjs"
+  }
+}

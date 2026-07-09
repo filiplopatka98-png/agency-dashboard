@@ -32,3 +32,5 @@ export {
 export { analyzePage, buildSeoIssues, type PageAnalysis, type SeoIssue } from './seo';
 
 export { parsePsi, fetchPsi, type PerfSnap } from './psi';
+
+export { scoreSecurityHeaders, fetchSafeBrowsing, type SecurityHeaders } from './security';

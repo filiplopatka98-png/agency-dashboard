@@ -621,11 +621,22 @@ function TabAeo({ site }: { site: SiteVM }) {
 }
 
 function TabInfra({ site }: { site: SiteVM }) {
+  const sec = site.security;
+  const headerRow: [string, keyof NonNullable<typeof sec>['headers']][] = [
+    ['HSTS', 'hsts'],
+    ['CSP', 'csp'],
+    ['X-Frame-Options', 'xframe'],
+    ['X-Content-Type', 'xcto'],
+    ['Referrer-Policy', 'referrer'],
+    ['Permissions-Policy', 'permissions'],
+  ];
+  const sbText =
+    sec?.safeBrowsingOk === true ? 'Safe Browsing: čistý ✓' : sec?.safeBrowsingOk === false ? '⚠️ Safe Browsing: nález!' : 'Safe Browsing: nezistené';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <MockBanner text="Infra (WP verzie, pluginy, zálohy, security, CVE) sa spustí po nasadení WordPress agenta na weby s admin prístupom." />
       {site.isWordPress ? (
         <>
+          <MockBanner text="WordPress verzie, pluginy, updaty a zálohy sa spustia po nasadení WP agenta (mu-plugin + HMAC secret)." />
           <div style={{ ...card, padding: 16 }}>
             <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>WordPress</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
@@ -665,28 +676,46 @@ function TabInfra({ site }: { site: SiteVM }) {
       )}
 
       <div style={{ ...card, padding: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 18, flexWrap: 'wrap' }}>
-          <Gauge score={69} off={52.6} color="var(--warning-color)" size={64} sw={6} r={27} circ={169.6} />
-          <div style={{ flex: 1, minWidth: 150 }}>
-            <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 3 }}>Security skóre</h3>
-            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Chýba CSP — po nastavení skóre nad 85. Safe Browsing: čistý.</div>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, fontSize: 13 }}>
-          {([['HSTS', true], ['CSP', false], ['X-Frame-Options', true], ['X-Content-Type', true]] as const).map(([t, ok]) => (
-            <div key={t} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '10px 13px', background: ok ? 'var(--ok-bg)' : 'var(--critical-bg)', borderRadius: 9 }}>
-              <span style={{ color: ok ? 'var(--ok-color)' : 'var(--critical-color)', fontWeight: 700 }}>{ok ? '✓' : '✗'}</span><span style={{ color: 'var(--text-primary)' }}>{t}</span>
+        {sec ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 18, flexWrap: 'wrap' }}>
+              <Gauge score={sec.score} off={gaugeOffset(sec.score, 169.6)} color={scoreColor(sec.score)} size={64} sw={6} r={27} circ={169.6} />
+              <div style={{ flex: 1, minWidth: 150 }}>
+                <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 3 }}>Security skóre</h3>
+                <div style={{ fontSize: 12.5, color: sec.safeBrowsingOk === false ? 'var(--critical-color)' : 'var(--text-secondary)' }}>
+                  {sec.score === 100 ? 'Všetky bezpečnostné hlavičky nastavené. ' : 'Niektoré hlavičky chýbajú (nižšie). '}
+                  {sbText}
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, fontSize: 13 }}>
+              {headerRow.map(([t, key]) => {
+                const ok = sec.headers[key];
+                return (
+                  <div key={t} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '10px 13px', background: ok ? 'var(--ok-bg)' : 'var(--critical-bg)', borderRadius: 9 }}>
+                    <span style={{ color: ok ? 'var(--ok-color)' : 'var(--critical-color)', fontWeight: 700 }}>{ok ? '✓' : '✗'}</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{t}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 20, marginBottom: 8 }}>🔒</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Security sa ešte nemeralo</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Security headers + Safe Browsing sa merajú týždenne.</div>
+          </div>
+        )}
       </div>
 
       <div style={{ ...card, padding: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Zraniteľnosti</h3>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '3px 10px', borderRadius: 20 }}>1 kritická</span>
         </div>
-        <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 14 }}>Plugin verzia × známa CVE — podklad pre klienta.</p>
+        <div style={{ marginBottom: 14 }}>
+          <MockBanner text="Vuln/CVE matica (plugin verzia × známa CVE) sa spustí po pripojení WPScan / Patchstack tokenu." />
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', background: 'var(--critical-bg)', border: '1px solid var(--critical-color)', borderRadius: 11 }}>
             <span style={{ fontSize: 18 }}>🔴</span>

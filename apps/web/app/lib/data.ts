@@ -87,6 +87,12 @@ export interface SiteVM {
   } | null;
   // Performance — reálne (perf_snapshots), per stratégia
   perf: { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null } | null;
+  // Security — reálne (security_snapshots)
+  security: {
+    score: number;
+    headers: { hsts: boolean; csp: boolean; xframe: boolean; xcto: boolean; referrer: boolean; permissions: boolean };
+    safeBrowsingOk: boolean | null;
+  } | null;
 }
 
 export interface PerfSnapVM {
@@ -135,7 +141,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -146,7 +152,9 @@ export async function loadDashboard(): Promise<{
     supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types'),
     supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error'),
     supabase.from('perf_snapshots').select('*'),
+    supabase.from('security_snapshots').select('site_id, score, headers, safe_browsing_ok'),
   ]);
+  const secBySite = new Map((secRes.data ?? []).map((r) => [r.site_id, r]));
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
   const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
   const perfBySite = new Map<string, { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null }>();
@@ -358,6 +366,15 @@ export async function loadDashboard(): Promise<{
         };
       })(),
       perf: perfBySite.get(s.id) ?? null,
+      security: (() => {
+        const se = secBySite.get(s.id);
+        if (!se || se.score === null) return null;
+        return {
+          score: se.score,
+          headers: (se.headers as unknown as { hsts: boolean; csp: boolean; xframe: boolean; xcto: boolean; referrer: boolean; permissions: boolean }) ?? { hsts: false, csp: false, xframe: false, xcto: false, referrer: false, permissions: false },
+          safeBrowsingOk: se.safe_browsing_ok,
+        };
+      })(),
     };
   });
 

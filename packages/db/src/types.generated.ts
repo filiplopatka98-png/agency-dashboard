@@ -431,6 +431,51 @@ export type Database = {
           },
         ]
       }
+      security_snapshots: {
+        Row: {
+          error: string | null
+          headers: Json | null
+          measured_at: string | null
+          org_id: string
+          safe_browsing_ok: boolean | null
+          score: number | null
+          site_id: string
+        }
+        Insert: {
+          error?: string | null
+          headers?: Json | null
+          measured_at?: string | null
+          org_id: string
+          safe_browsing_ok?: boolean | null
+          score?: number | null
+          site_id: string
+        }
+        Update: {
+          error?: string | null
+          headers?: Json | null
+          measured_at?: string | null
+          org_id?: string
+          safe_browsing_ok?: boolean | null
+          score?: number | null
+          site_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "security_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "security_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       seo_snapshots: {
         Row: {
           canonical_ok: boolean | null
