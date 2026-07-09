@@ -93,6 +93,15 @@ export interface SiteVM {
     headers: { hsts: boolean; csp: boolean; xframe: boolean; xcto: boolean; referrer: boolean; permissions: boolean };
     safeBrowsingOk: boolean | null;
   } | null;
+  // Search Console — reálne (gsc_snapshots) alebo null (nepripojené)
+  gsc: {
+    clicks: number;
+    impressions: number;
+    ctr: number; // 0..1
+    position: number;
+    rangeDays: number;
+    topQueries: { query: string; clicks: number; impressions: number; ctr: number; position: number }[];
+  } | null;
 }
 
 export interface PerfSnapVM {
@@ -141,7 +150,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -153,8 +162,10 @@ export async function loadDashboard(): Promise<{
     supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error'),
     supabase.from('perf_snapshots').select('*'),
     supabase.from('security_snapshots').select('site_id, score, headers, safe_browsing_ok'),
+    supabase.from('gsc_snapshots').select('site_id, clicks, impressions, ctr, position, range_days, top_queries'),
   ]);
   const secBySite = new Map((secRes.data ?? []).map((r) => [r.site_id, r]));
+  const gscBySite = new Map((gscRes.data ?? []).map((r) => [r.site_id, r]));
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
   const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
   const perfBySite = new Map<string, { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null }>();
@@ -373,6 +384,18 @@ export async function loadDashboard(): Promise<{
           score: se.score,
           headers: (se.headers as unknown as { hsts: boolean; csp: boolean; xframe: boolean; xcto: boolean; referrer: boolean; permissions: boolean }) ?? { hsts: false, csp: false, xframe: false, xcto: false, referrer: false, permissions: false },
           safeBrowsingOk: se.safe_browsing_ok,
+        };
+      })(),
+      gsc: (() => {
+        const g = gscBySite.get(s.id);
+        if (!g || g.clicks === null) return null;
+        return {
+          clicks: g.clicks,
+          impressions: g.impressions ?? 0,
+          ctr: Number(g.ctr ?? 0),
+          position: Number(g.position ?? 0),
+          rangeDays: g.range_days ?? 28,
+          topQueries: (g.top_queries as unknown as { query: string; clicks: number; impressions: number; ctr: number; position: number }[]) ?? [],
         };
       })(),
     };

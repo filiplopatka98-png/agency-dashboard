@@ -1,0 +1,27 @@
+name: gsc-probe
+
+# Týždenné čítanie Google Search Console: clicks/impressions/CTR/pozícia + top dopyty → gsc_snapshots.
+# Auth: service account (webmasters.readonly), musí byť pridaný ako používateľ v každej GSC property.
+on:
+  schedule:
+    - cron: '30 3 * * 1' # každý pondelok 03:30 UTC
+  workflow_dispatch: {}
+
+jobs:
+  gsc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agency/core build
+      - name: Run GSC probe
+        run: node tools/gsc-probe/index.mjs
+        env:
+          GSC_SA_JSON: ${{ secrets.GSC_SA_JSON }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

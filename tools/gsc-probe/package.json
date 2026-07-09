@@ -1,0 +1,10 @@
+{
+  "name": "@agency/gsc-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: Google Search Console (clicks/impressions/CTR/pozícia + top dopyty) → gsc_snapshots.",
+  "scripts": {
+    "probe": "node index.mjs"
+  }
+}

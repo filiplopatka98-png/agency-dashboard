@@ -34,3 +34,5 @@ export { analyzePage, buildSeoIssues, type PageAnalysis, type SeoIssue } from '.
 export { parsePsi, fetchPsi, type PerfSnap } from './psi';
 
 export { scoreSecurityHeaders, fetchSafeBrowsing, type SecurityHeaders } from './security';
+
+export { gscPropertyCandidates, parseGscResponse, type GscRow, type GscQuery, type GscSummary } from './gsc';

@@ -533,14 +533,52 @@ function TabSeo({ site }: { site: SiteVM }) {
         </div>
       )}
 
-      <div style={{ ...card, padding: 20 }}>
-        <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 16 }}>Search Console</h3>
-        <div style={{ background: 'var(--accent-soft)', border: '1px dashed var(--accent-primary)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
-          <div style={{ fontSize: 22, marginBottom: 8 }}>🔌</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Search Console nie je pripojená</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>Pripoj GSC a uvidíš kliknutia, impresie a pozície. Bez pripojenia tieto čísla nefabrikujeme.</div>
-          <button style={{ padding: '9px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Pripojiť Search Console</button>
+      <div style={{ ...card, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--border-primary)' }}>
+          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Search Console</h3>
+          {site.gsc && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>posledných {site.gsc.rangeDays} dní · reálne dáta z GSC</span>}
         </div>
+        {site.gsc ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 1, background: 'var(--border-primary)' }}>
+              {([
+                ['Kliknutia', site.gsc.clicks.toLocaleString('sk-SK'), 'var(--accent-primary)'],
+                ['Impresie', site.gsc.impressions.toLocaleString('sk-SK'), 'var(--text-primary)'],
+                ['CTR', `${(site.gsc.ctr * 100).toFixed(1)} %`, 'var(--text-primary)'],
+                ['Priem. pozícia', site.gsc.position.toFixed(1), 'var(--text-primary)'],
+              ] as const).map(([t, v, c]) => (
+                <div key={t} style={{ padding: '16px 18px', background: 'var(--surface-primary)' }}>
+                  <div style={{ ...label, marginBottom: 8 }}>{t}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, ...mono, letterSpacing: '-0.02em', color: c }}>{v}</div>
+                </div>
+              ))}
+            </div>
+            {site.gsc.topQueries.length > 0 && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 64px 74px 58px 58px', gap: 8, padding: '11px 18px', borderTop: '1px solid var(--border-primary)', ...label }}>
+                  <span>Dopyt</span><span style={{ textAlign: 'right' }}>Kliky</span><span style={{ textAlign: 'right' }}>Impresie</span><span style={{ textAlign: 'right' }}>CTR</span><span style={{ textAlign: 'right' }}>Poz.</span>
+                </div>
+                {site.gsc.topQueries.map((q, i) => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 64px 74px 58px 58px', gap: 8, padding: '11px 18px', borderTop: '1px solid var(--border-primary)', fontSize: 13, alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.query}</span>
+                    <span style={{ textAlign: 'right', ...mono, fontWeight: 700, color: 'var(--accent-primary)' }}>{q.clicks}</span>
+                    <span style={{ textAlign: 'right', ...mono, color: 'var(--text-secondary)' }}>{q.impressions.toLocaleString('sk-SK')}</span>
+                    <span style={{ textAlign: 'right', ...mono, color: 'var(--text-secondary)' }}>{(q.ctr * 100).toFixed(1)}%</span>
+                    <span style={{ textAlign: 'right', ...mono, color: 'var(--text-secondary)' }}>{q.position.toFixed(1)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ padding: 24 }}>
+            <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
+              <div style={{ fontSize: 22, marginBottom: 8 }}>🔌</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Search Console nie je pripojená</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 440, margin: '0 auto', lineHeight: 1.5 }}>Po pridaní service accountu do GSC property collector zbehne týždenne a zobrazí kliknutia, impresie, CTR a pozície. Bez pripojenia tieto čísla nefabrikujeme.</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

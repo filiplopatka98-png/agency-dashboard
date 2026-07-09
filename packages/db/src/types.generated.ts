@@ -255,6 +255,63 @@ export type Database = {
           },
         ]
       }
+      gsc_snapshots: {
+        Row: {
+          clicks: number | null
+          ctr: number | null
+          error: string | null
+          impressions: number | null
+          measured_at: string | null
+          org_id: string
+          position: number | null
+          property: string | null
+          range_days: number | null
+          site_id: string
+          top_queries: Json | null
+        }
+        Insert: {
+          clicks?: number | null
+          ctr?: number | null
+          error?: string | null
+          impressions?: number | null
+          measured_at?: string | null
+          org_id: string
+          position?: number | null
+          property?: string | null
+          range_days?: number | null
+          site_id: string
+          top_queries?: Json | null
+        }
+        Update: {
+          clicks?: number | null
+          ctr?: number | null
+          error?: string | null
+          impressions?: number | null
+          measured_at?: string | null
+          org_id?: string
+          position?: number | null
+          property?: string | null
+          range_days?: number | null
+          site_id?: string
+          top_queries?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gsc_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gsc_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incidents: {
         Row: {
           cause: string | null
