@@ -28,7 +28,9 @@ export class ResendNotifier implements Notifier {
     private readonly cfg: ResendConfig,
     fetchImpl?: typeof fetch,
   ) {
-    this.fetchImpl = fetchImpl ?? globalThis.fetch;
+    // .bind(globalThis): na Cloudflare Workers musí byť `fetch` volaný s
+    // this===globalThis, inak „Illegal invocation" (uložená referencia stráca väzbu).
+    this.fetchImpl = fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   async send(a: Alert): Promise<void> {
