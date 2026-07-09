@@ -8,7 +8,9 @@ import { loadDashboard, type SiteVM } from '../lib/data';
 import {
   buildSparkline,
   sparklineFromValues,
-  buildPerf,
+  cwvMeta,
+  scoreColor,
+  gaugeOffset,
   BOT_DEFS,
   botMeta,
   nextBot,
@@ -169,7 +171,7 @@ function SiteDetail({ id }: { id: string }) {
         {/* Quick stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 28 }}>
           <QuickStat title="Uptime 30d" value={site.uptimeDisplay} color="var(--accent-primary)" />
-          <QuickStat title="Perf skóre" value="—" />
+          <QuickStat title="Perf skóre" value={site.perf?.desktop?.performanceScore ?? '—'} />
           <QuickStat title="TLS expiry" value={site.tlsDaysLeft === null ? 'nezistené' : `${site.tlsDaysLeft}d`} color={site.tlsExpiryColor} />
           <QuickStat title="Otvorené issues" value={site.openIssues} />
         </div>
@@ -183,7 +185,7 @@ function SiteDetail({ id }: { id: string }) {
 
         {tab === 'overview' && <TabOverview site={site} />}
         {tab === 'uptime' && <TabUptime site={site} />}
-        {tab === 'performance' && <TabPerformance />}
+        {tab === 'performance' && <TabPerformance site={site} />}
         {tab === 'seo' && <TabSeo site={site} />}
         {tab === 'aeo' && <TabAeo site={site} />}
         {tab === 'infra' && <TabInfra site={site} />}
@@ -353,91 +355,100 @@ function Gauge({ score, off, color, size = 76, sw = 7, r = 33, circ = 207.3 }: {
   );
 }
 
-function TabPerformance() {
-  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
-  const perf = buildPerf(device);
-  const cwv = (name: string, thr: string, m: typeof perf.lcp) => (
+function CwvCard({ name, thr, kind, value }: { name: string; thr: string; kind: 'lcp' | 'inp' | 'cls'; value: number | null }) {
+  const m = cwvMeta(kind, value);
+  return (
     <div style={{ background: m.bg, borderRadius: 12, padding: 15 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
         <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{name}</span>
         <span style={{ fontSize: 11, color: m.color, fontWeight: 600 }}>{m.state}</span>
       </div>
       <div style={{ fontSize: 24, fontWeight: 800, ...mono, color: m.color, marginBottom: 6 }}>{m.val}</div>
-      <div style={{ height: 5, background: 'rgba(0,0,0,0.06)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: m.w, background: m.color, borderRadius: 3 }} /></div>
+      <div style={{ height: 5, background: 'rgba(128,128,128,0.15)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: m.w, background: m.color, borderRadius: 3 }} /></div>
       <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 6 }}>{thr}</div>
     </div>
   );
-  const gauges: [string, number, number, string][] = [
-    ['Performance', perf.perfScore, perf.perfOff, perf.perfColor],
-    ['Accessibility', perf.a11yScore, perf.a11yOff, perf.a11yColor],
-    ['Best Practices', perf.bpScore, perf.bpOff, perf.bpColor],
-    ['SEO', perf.seoScore, perf.seoOff, perf.seoColor],
-  ];
+}
+
+function TabPerformance({ site }: { site: SiteVM }) {
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const snap = site.perf ? site.perf[device] : null;
+  const hasField = snap && (snap.fieldLcpMs !== null || snap.fieldInpMs !== null || snap.fieldCls !== null);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <MockBanner text="Výkon (Lighthouse/PSI, Core Web Vitals) sa spustí po pripojení PageSpeed Insights API kľúča." />
       <div style={{ display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
         {(['desktop', 'mobile'] as const).map((d) => (
           <button key={d} onClick={() => setDevice(d)} style={{ padding: '7px 15px', background: device === d ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, color: device === d ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 600, boxShadow: device === d ? 'var(--shadow-sm)' : 'none' }}>{d === 'desktop' ? 'Desktop' : 'Mobil'}</button>
         ))}
       </div>
 
-      <div style={{ ...card, padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Lab · Lighthouse / PSI</h3>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>vs. minulý týždeň <span style={{ color: 'var(--ok-color)', fontWeight: 600 }}>▲ 5</span></span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 14 }}>
-          {gauges.map(([name, score, off, color]) => (
-            <div key={name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: 8 }}>
-              <Gauge score={score} off={off} color={color} />
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{name}</div>
+      {!snap ? (
+        <div style={{ ...card, padding: 24 }}>
+          <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 28, textAlign: 'center' }}>
+            <div style={{ fontSize: 22, marginBottom: 8 }}>⚡</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              {site.perf ? `Meranie pre ${device === 'desktop' ? 'desktop' : 'mobil'} sa nepodarilo` : 'Performance sa pre tento web ešte nemeralo'}
             </div>
-          ))}
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>Meria PageSpeed Insights (Lighthouse), týždenne. Skóre sa neodhaduje — zobrazí sa po reálnom meraní.</div>
+          </div>
         </div>
-      </div>
-
-      <div style={{ ...card, padding: 18 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Trend performance skóre</h3>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{perf.trendLabel}</span>
-        </div>
-        <svg viewBox="0 0 560 60" preserveAspectRatio="none" style={{ width: '100%', height: 60, display: 'block' }}>
-          <defs><linearGradient id="perfGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.2" /><stop offset="100%" stopColor="var(--accent-primary)" stopOpacity="0" /></linearGradient></defs>
-          <polygon points={perf.trendArea} fill="url(#perfGrad)" />
-          <polyline points={perf.trendPoints} fill="none" stroke="var(--accent-primary)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        </svg>
-      </div>
-
-      <div style={{ ...card, padding: 20 }}>
-        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Core Web Vitals <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12 }}>· Lab</span></h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
-          {cwv('LCP', 'práh ≤ 2,5s', perf.lcp)}
-          {cwv('INP', 'práh ≤ 200ms', perf.inp)}
-          {cwv('CLS', 'práh ≤ 0,1', perf.cls)}
-        </div>
-      </div>
-
-      <div style={{ ...card, padding: 20 }}>
-        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text-primary)' }}>Field dáta <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12 }}>· CrUX (reálni návštevníci)</span></h3>
-        <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 22, textAlign: 'center', marginTop: 12 }}>
-          <div style={{ fontSize: 20, marginBottom: 8 }}>📉</div>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Nedostatok field dát</div>
-          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 380, margin: '0 auto', lineHeight: 1.5 }}>Web nemá dosť návštevnosti pre CrUX dataset. Nie je to chyba — Google zverejní field metriky až pri dostatočnom počte reálnych návštev.</div>
-        </div>
-      </div>
-
-      <div style={{ ...card, padding: 20 }}>
-        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Popis stránky</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: 13 }}>
-          {([['Veľkosť', perf.weight], ['Requesty', perf.requests], ['TTFB', perf.ttfb], ['Obrázky', perf.images]] as const).map(([k, v]) => (
-            <div key={k} style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 14 }}>
-              <div style={{ ...label, fontSize: 11.5, marginBottom: 6 }}>{k}</div>
-              <div style={{ fontWeight: 700, ...mono, fontSize: 16 }}>{v}</div>
+      ) : (
+        <>
+          <div style={{ ...card, padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Lab · Lighthouse / PSI</h3>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{device === 'desktop' ? 'Desktop' : 'Mobil'}</span>
             </div>
-          ))}
-        </div>
-      </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 14 }}>
+              {([['Performance', snap.performanceScore], ['Accessibility', snap.accessibility], ['Best Practices', snap.bestPractices], ['SEO', snap.seo]] as const).map(([name, score]) => (
+                <div key={name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: 8 }}>
+                  <Gauge score={score} off={gaugeOffset(score, 207.3)} color={scoreColor(score)} />
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{name}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ ...card, padding: 20 }}>
+            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Core Web Vitals <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12 }}>· Lab</span></h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
+              <CwvCard name="LCP" thr="práh ≤ 2,5s" kind="lcp" value={snap.lcpMs} />
+              <CwvCard name="INP" thr="práh ≤ 200ms" kind="inp" value={snap.inpMs} />
+              <CwvCard name="CLS" thr="práh ≤ 0,1" kind="cls" value={snap.cls} />
+            </div>
+          </div>
+
+          <div style={{ ...card, padding: 20 }}>
+            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text-primary)' }}>Field dáta <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12 }}>· CrUX (reálni návštevníci)</span></h3>
+            {hasField ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginTop: 12 }}>
+                <CwvCard name="LCP" thr="reálni návštevníci" kind="lcp" value={snap.fieldLcpMs} />
+                <CwvCard name="INP" thr="reálni návštevníci" kind="inp" value={snap.fieldInpMs} />
+                <CwvCard name="CLS" thr="reálni návštevníci" kind="cls" value={snap.fieldCls} />
+              </div>
+            ) : (
+              <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 22, textAlign: 'center', marginTop: 12 }}>
+                <div style={{ fontSize: 20, marginBottom: 8 }}>📉</div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Nedostatok field dát</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 380, margin: '0 auto', lineHeight: 1.5 }}>Web nemá dosť návštevnosti pre CrUX dataset. Nie je to chyba — Google zverejní field metriky až pri dostatočnom počte reálnych návštev.</div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ ...card, padding: 20 }}>
+            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Popis stránky</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: 13 }}>
+              {([['Veľkosť', snap.pageWeightKb === null ? '—' : `${snap.pageWeightKb} KB`], ['Requesty', snap.requests === null ? '—' : String(snap.requests)], ['TTFB', snap.ttfbMs === null ? '—' : `${snap.ttfbMs} ms`], ['TBT', '—']] as const).map(([k, v]) => (
+                <div key={k} style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 14 }}>
+                  <div style={{ ...label, fontSize: 11.5, marginBottom: 6 }}>{k}</div>
+                  <div style={{ fontWeight: 700, ...mono, fontSize: 16 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

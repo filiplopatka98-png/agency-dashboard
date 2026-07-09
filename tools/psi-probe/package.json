@@ -1,0 +1,10 @@
+{
+  "name": "@agency/psi-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector pre PageSpeed Insights (mobile+desktop) → core.fetchPsi → perf_snapshots.",
+  "scripts": {
+    "probe": "node index.mjs"
+  }
+}

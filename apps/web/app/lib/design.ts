@@ -147,6 +147,28 @@ export function buildPerf(device: 'desktop' | 'mobile'): PerfData {
   };
 }
 
+/** Core Web Vital → prezentácia (hodnota, farba, stav, bar). value=null → nezistené. */
+export function cwvMeta(
+  kind: 'lcp' | 'inp' | 'cls',
+  value: number | null,
+): { val: string; color: string; state: string; bg: string; w: string } {
+  if (value === null || value === undefined)
+    return { val: '—', color: 'var(--text-tertiary)', state: 'nezistené', bg: 'var(--surface-secondary)', w: '0%' };
+  let good: number, warn: number, max: number, val: string;
+  if (kind === 'lcp') { good = 2500; warn = 4000; max = 4000; val = (value / 1000).toFixed(1) + 's'; }
+  else if (kind === 'inp') { good = 200; warn = 500; max = 500; val = Math.round(value) + 'ms'; }
+  else { good = 0.1; warn = 0.25; max = 0.25; val = value.toFixed(2); }
+  const ok = value <= good;
+  const mid = value <= warn;
+  return {
+    val,
+    color: ok ? 'var(--ok-color)' : mid ? 'var(--warning-color)' : 'var(--critical-color)',
+    state: ok ? 'Dobré' : mid ? 'Priemer' : 'Slabé',
+    bg: ok ? 'var(--ok-bg)' : mid ? 'var(--warning-bg)' : 'var(--critical-bg)',
+    w: Math.min(100, Math.round((value / max) * 100)) + '%',
+  };
+}
+
 /** AI-bot matica — allow / block / rozhodnúť (cyklus). */
 export type BotDecision = 'allow' | 'block' | 'decide';
 export const BOT_DEFS = [

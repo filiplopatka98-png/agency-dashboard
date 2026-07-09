@@ -1,0 +1,27 @@
+name: psi-probe
+
+# Denné meranie výkonu cez PageSpeed Insights (mobile + desktop) → perf_snapshots.
+# PSI kvóta 25 000/deň, spotreba pár desiatok. Vyžaduje PSI_API_KEY.
+on:
+  schedule:
+    - cron: '0 2 * * *' # denne 02:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  psi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agency/core build
+      - name: Run PSI probe
+        run: node tools/psi-probe/index.mjs
+        env:
+          PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

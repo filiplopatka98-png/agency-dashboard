@@ -350,6 +350,87 @@ export type Database = {
         }
         Relationships: []
       }
+      perf_snapshots: {
+        Row: {
+          accessibility: number | null
+          best_practices: number | null
+          cls: number | null
+          error: string | null
+          field_cls: number | null
+          field_inp_ms: number | null
+          field_lcp_ms: number | null
+          inp_ms: number | null
+          lcp_ms: number | null
+          measured_at: string | null
+          org_id: string
+          page_weight_kb: number | null
+          performance_score: number | null
+          requests: number | null
+          seo: number | null
+          site_id: string
+          strategy: string
+          tbt_ms: number | null
+          ttfb_ms: number | null
+        }
+        Insert: {
+          accessibility?: number | null
+          best_practices?: number | null
+          cls?: number | null
+          error?: string | null
+          field_cls?: number | null
+          field_inp_ms?: number | null
+          field_lcp_ms?: number | null
+          inp_ms?: number | null
+          lcp_ms?: number | null
+          measured_at?: string | null
+          org_id: string
+          page_weight_kb?: number | null
+          performance_score?: number | null
+          requests?: number | null
+          seo?: number | null
+          site_id: string
+          strategy: string
+          tbt_ms?: number | null
+          ttfb_ms?: number | null
+        }
+        Update: {
+          accessibility?: number | null
+          best_practices?: number | null
+          cls?: number | null
+          error?: string | null
+          field_cls?: number | null
+          field_inp_ms?: number | null
+          field_lcp_ms?: number | null
+          inp_ms?: number | null
+          lcp_ms?: number | null
+          measured_at?: string | null
+          org_id?: string
+          page_weight_kb?: number | null
+          performance_score?: number | null
+          requests?: number | null
+          seo?: number | null
+          site_id?: string
+          strategy?: string
+          tbt_ms?: number | null
+          ttfb_ms?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perf_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perf_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       seo_snapshots: {
         Row: {
           canonical_ok: boolean | null

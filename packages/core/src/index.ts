@@ -30,3 +30,5 @@ export {
 } from './aeo';
 
 export { analyzePage, buildSeoIssues, type PageAnalysis, type SeoIssue } from './seo';
+
+export { parsePsi, fetchPsi, type PerfSnap } from './psi';

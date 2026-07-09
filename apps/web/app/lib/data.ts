@@ -85,6 +85,24 @@ export interface SiteVM {
     canonicalOk: boolean;
     issues: { type: string; severity: string; sample: string; count: number; urls: string[] }[];
   } | null;
+  // Performance — reálne (perf_snapshots), per stratégia
+  perf: { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null } | null;
+}
+
+export interface PerfSnapVM {
+  performanceScore: number;
+  accessibility: number;
+  bestPractices: number;
+  seo: number;
+  lcpMs: number | null;
+  inpMs: number | null;
+  cls: number | null;
+  ttfbMs: number | null;
+  pageWeightKb: number | null;
+  requests: number | null;
+  fieldLcpMs: number | null;
+  fieldInpMs: number | null;
+  fieldCls: number | null;
 }
 
 function hashSeed(id: string): number {
@@ -117,7 +135,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -127,9 +145,33 @@ export async function loadDashboard(): Promise<{
     supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(100),
     supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types'),
     supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error'),
+    supabase.from('perf_snapshots').select('*'),
   ]);
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
   const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
+  const perfBySite = new Map<string, { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null }>();
+  for (const p of perfRes.data ?? []) {
+    if (p.performance_score === null) continue;
+    const snap: PerfSnapVM = {
+      performanceScore: p.performance_score,
+      accessibility: p.accessibility ?? 0,
+      bestPractices: p.best_practices ?? 0,
+      seo: p.seo ?? 0,
+      lcpMs: p.lcp_ms,
+      inpMs: p.inp_ms,
+      cls: p.cls === null ? null : Number(p.cls),
+      ttfbMs: p.ttfb_ms,
+      pageWeightKb: p.page_weight_kb,
+      requests: p.requests,
+      fieldLcpMs: p.field_lcp_ms,
+      fieldInpMs: p.field_inp_ms,
+      fieldCls: p.field_cls === null ? null : Number(p.field_cls),
+    };
+    const cur = perfBySite.get(p.site_id) ?? { mobile: null, desktop: null };
+    if (p.strategy === 'mobile') cur.mobile = snap;
+    else if (p.strategy === 'desktop') cur.desktop = snap;
+    perfBySite.set(p.site_id, cur);
+  }
 
   const clients = (cliRes.data ?? []) as Client[];
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -315,6 +357,7 @@ export async function loadDashboard(): Promise<{
           issues: (so.issues as unknown as { type: string; severity: string; sample: string; count: number; urls: string[] }[]) ?? [],
         };
       })(),
+      perf: perfBySite.get(s.id) ?? null,
     };
   });
 
