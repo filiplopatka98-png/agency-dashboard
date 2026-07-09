@@ -20,3 +20,11 @@ export {
   fetchRdapDomain,
   type DomainInfo,
 } from './domain';
+
+export {
+  scoreAeo,
+  AI_BOTS,
+  type AeoResult,
+  type AeoCheck,
+  type BotDecision as AeoBotDecision,
+} from './aeo';
