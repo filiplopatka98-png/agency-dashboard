@@ -1,0 +1,10 @@
+{
+  "name": "@agency/aeo-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector pre AEO skóre (fetch HTML + robots.txt + llms.txt → core.scoreAeo → aeo_snapshots). GitHub Action, zadarmo.",
+  "scripts": {
+    "probe": "node index.mjs"
+  }
+}

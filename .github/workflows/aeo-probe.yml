@@ -1,0 +1,26 @@
+name: aeo-probe
+
+# Týždenné AEO skóre (deterministické, bez API kľúčov). Fetchne HTML + robots.txt
+# + llms.txt každého webu a zapíše aeo_snapshots.
+on:
+  schedule:
+    - cron: '30 3 * * 1' # každý pondelok 03:30 UTC
+  workflow_dispatch: {}
+
+jobs:
+  aeo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agency/core build
+      - name: Run AEO probe
+        run: node tools/aeo-probe/index.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

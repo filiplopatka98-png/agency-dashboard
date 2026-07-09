@@ -34,6 +34,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      aeo_snapshots: {
+        Row: {
+          ai_bots: Json | null
+          checks: Json | null
+          error: string | null
+          has_llms_txt: boolean | null
+          measured_at: string | null
+          org_id: string
+          schema_types: string[] | null
+          score: number | null
+          site_id: string
+        }
+        Insert: {
+          ai_bots?: Json | null
+          checks?: Json | null
+          error?: string | null
+          has_llms_txt?: boolean | null
+          measured_at?: string | null
+          org_id: string
+          schema_types?: string[] | null
+          score?: number | null
+          site_id: string
+        }
+        Update: {
+          ai_bots?: Json | null
+          checks?: Json | null
+          error?: string | null
+          has_llms_txt?: boolean | null
+          measured_at?: string | null
+          org_id?: string
+          schema_types?: string[] | null
+          score?: number | null
+          site_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aeo_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aeo_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alerts: {
         Row: {
           body: string | null
@@ -529,6 +580,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_domains_to_check: {
+        Args: { _limit?: number }
+        Returns: {
+          domain: string
+          id: string
+          org_id: string
+        }[]
+      }
       get_sites_to_check: {
         Args: never
         Returns: {
@@ -540,6 +599,7 @@ export type Database = {
           url: string
         }[]
       }
+      insert_expiry_alerts: { Args: never; Returns: undefined }
       persist_uptime: {
         Args: {
           _checks: Json

@@ -70,6 +70,13 @@ export interface SiteVM {
   isWordPress: boolean;
   gscConnected: boolean;
   seed: number;
+  // AEO — reálne (aeo_snapshots) alebo null ak ešte nemerané
+  aeo: {
+    score: number;
+    checks: { id: string; label: string; weight: number; earned: number; pass: boolean }[];
+    aiBots: Record<string, string>;
+    schemaTypes: string[];
+  } | null;
 }
 
 function hashSeed(id: string): number {
@@ -102,7 +109,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -110,7 +117,9 @@ export async function loadDashboard(): Promise<{
     supabase.from('incidents').select('*').order('started_at', { ascending: false }).limit(200),
     supabase.from('clients').select('*').order('name'),
     supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(100),
+    supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types'),
   ]);
+  const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
 
   const clients = (cliRes.data ?? []) as Client[];
   const clientById = new Map(clients.map((c) => [c.id, c]));
@@ -275,6 +284,16 @@ export async function loadDashboard(): Promise<{
       isWordPress: s.cms === 'wordpress',
       gscConnected: seed % 2 === 1,
       seed,
+      aeo: (() => {
+        const a = aeoBySite.get(s.id);
+        if (!a || a.score === null) return null;
+        return {
+          score: a.score,
+          checks: (a.checks as unknown as { id: string; label: string; weight: number; earned: number; pass: boolean }[]) ?? [],
+          aiBots: (a.ai_bots as Record<string, string>) ?? {},
+          schemaTypes: (a.schema_types as string[]) ?? [],
+        };
+      })(),
     };
   });
 

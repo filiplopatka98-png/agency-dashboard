@@ -175,7 +175,7 @@ function SiteDetail({ id }: { id: string }) {
         {tab === 'uptime' && <TabUptime site={site} />}
         {tab === 'performance' && <TabPerformance />}
         {tab === 'seo' && <TabSeo gsc={site.gscConnected} />}
-        {tab === 'aeo' && <TabAeo />}
+        {tab === 'aeo' && <TabAeo site={site} />}
         {tab === 'infra' && <TabInfra site={site} />}
         {tab === 'client' && <TabClient site={site} />}
       </div>
@@ -534,28 +534,48 @@ function TabSeo({ gsc }: { gsc: boolean }) {
   );
 }
 
-function TabAeo() {
-  const [dec, setDec] = useState<Record<string, BotDecision>>({ gpt: 'allow', claude: 'allow', perplexity: 'decide', google: 'block' });
-  const eeat: [string, boolean][] = [
-    ['JSON-LD štruktúrované dáta', true],
-    ['Author info chýba na článkoch', false],
-    ['dateModified na všetkých stránkach', true],
-    ['About/Contact stránka nie je prelinkovaná', false],
-  ];
+function TabAeo({ site }: { site: SiteVM }) {
+  const aeo = site.aeo;
+  const initBots: Record<string, BotDecision> = {};
+  BOT_DEFS.forEach((b) => {
+    const raw = aeo?.aiBots[b.name];
+    initBots[b.key] = raw === 'block' ? 'block' : raw === 'allow' ? 'allow' : 'decide';
+  });
+  const [dec, setDec] = useState<Record<string, BotDecision>>(initBots);
+
+  if (!aeo) {
+    return (
+      <div style={{ ...card, padding: 24 }}>
+        <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 28, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, marginBottom: 8 }}>🤖</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>AEO sa pre tento web ešte nemeralo</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>Collector zbehne týždenne (alebo po pridaní webu). Skóre sa počíta deterministicky z HTML a robots.txt — nič sa nefabrikuje.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const off = +(326.7 * (1 - aeo.score / 100)).toFixed(1);
+  const passed = aeo.checks.filter((c) => c.pass).length;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ ...card, padding: 24, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-        <Gauge score={78} off={71.9} color="var(--accent-primary)" size={120} sw={10} r={52} circ={326.7} />
+        <Gauge score={aeo.score} off={off} color="var(--accent-primary)" size={120} sw={10} r={52} circ={326.7} />
         <div style={{ flex: 1, minWidth: 180 }}>
           <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)', marginBottom: 4 }}>AEO skóre — AI-ready</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 10 }}>Nadpriemerná pripravenosť pre AI vyhľadávače. Doplň chýbajúce položky nižšie pre skóre nad 80.</div>
-          <span style={{ display: 'inline-block', fontSize: 12, color: 'var(--warning-color)', background: 'var(--warning-bg)', padding: '4px 11px', borderRadius: 20, fontWeight: 600 }}>▲ +6 oproti minulému mesiacu</span>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 10 }}>
+            {aeo.score >= 80 ? 'Nadpriemerná' : aeo.score >= 50 ? 'Priemerná' : 'Slabá'} pripravenosť pre AI vyhľadávače. Doplň nesplnené položky nižšie.
+          </div>
+          {aeo.schemaTypes.length > 0 && (
+            <span style={{ display: 'inline-block', fontSize: 12, color: 'var(--text-secondary)', background: 'var(--surface-secondary)', padding: '4px 11px', borderRadius: 20, fontWeight: 600 }}>Schema: {aeo.schemaTypes.join(', ')}</span>
+          )}
         </div>
       </div>
 
       <div style={{ ...card, padding: 20 }}>
         <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text-primary)' }}>Prístup AI botov</h3>
-        <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 16 }}>Skóruje sa vedomé rozhodnutie — klikni na štítok pre allow / block / rozhodnúť.</p>
+        <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 16 }}>Z robots.txt webu. Skóruje sa vedomé rozhodnutie — klikni na štítok pre allow / block / rozhodnúť.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
           {BOT_DEFS.map((b) => {
             const m = botMeta(dec[b.key]!);
@@ -573,12 +593,13 @@ function TabAeo() {
       </div>
 
       <div style={{ ...card, padding: 20 }}>
-        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>E-E-A-T kontrola <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12.5 }}>· 2 z 4 splnené</span></h3>
+        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>Kontroly <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12.5 }}>· {passed} z {aeo.checks.length} splnené</span></h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13.5 }}>
-          {eeat.map(([t, ok]) => (
-            <div key={t} style={{ display: 'flex', gap: 11, alignItems: 'center', padding: '11px 14px', background: ok ? 'var(--ok-bg)' : 'var(--surface-secondary)', borderRadius: 10 }}>
-              <span style={{ width: 20, height: 20, borderRadius: '50%', background: ok ? 'var(--ok-color)' : 'var(--critical-bg)', color: ok ? 'white' : 'var(--critical-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0 }}>{ok ? '✓' : '✕'}</span>
-              <span style={{ color: 'var(--text-primary)' }}>{t}</span>
+          {aeo.checks.map((c) => (
+            <div key={c.id} style={{ display: 'flex', gap: 11, alignItems: 'center', padding: '11px 14px', background: c.pass ? 'var(--ok-bg)' : 'var(--surface-secondary)', borderRadius: 10 }}>
+              <span style={{ width: 20, height: 20, borderRadius: '50%', background: c.pass ? 'var(--ok-color)' : 'var(--critical-bg)', color: c.pass ? 'white' : 'var(--critical-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, flexShrink: 0 }}>{c.pass ? '✓' : '✕'}</span>
+              <span style={{ flex: 1, color: 'var(--text-primary)' }}>{c.label}</span>
+              <span style={{ ...mono, fontSize: 12, color: 'var(--text-tertiary)' }}>{c.earned}/{c.weight}</span>
             </div>
           ))}
         </div>
