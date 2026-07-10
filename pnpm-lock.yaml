@@ -113,6 +113,16 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  tools/aeo-probe: {}
+
+  tools/gsc-probe: {}
+
+  tools/psi-probe: {}
+
+  tools/security-probe: {}
+
+  tools/seo-crawl: {}
+
   tools/tls-probe: {}
 
 packages:

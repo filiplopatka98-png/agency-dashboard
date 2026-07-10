@@ -33,15 +33,6 @@ const label = {
 } as const;
 
 /** Viditeľné označenie ukážkových (mock) dát — pre časti, ktoré ešte nebežia naživo. */
-function MockBanner({ text }: { text: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: 'var(--radius)', padding: '11px 16px', fontSize: 12.5, color: 'var(--text-secondary)' }}>
-      <span style={{ fontSize: 15 }}>🧪</span>
-      <span><strong style={{ color: 'var(--text-primary)' }}>Ukážkové dáta.</strong> {text}</span>
-    </div>
-  );
-}
-
 /* ─────────────────────────── Sites list ─────────────────────────── */
 function SitesList() {
   const router = useRouter();
@@ -673,36 +664,65 @@ function TabInfra({ site }: { site: SiteVM }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {site.isWordPress ? (
-        <>
-          <MockBanner text="WordPress verzie, pluginy, updaty a zálohy sa spustia po nasadení WP agenta (mu-plugin + HMAC secret)." />
-          <div style={{ ...card, padding: 16 }}>
-            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>WordPress</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
-              {([['Verzia', '6.4.2', false], ['Update dostupný', '6.4.3', true], ['PHP verzia', '8.2', false], ['Posledná záloha', 'pred 2 dňami', false], ['# pluginov', '23 (3 updaty)', false]] as const).map(([k, v, warn]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
-                  <span>{k}</span>
-                  <strong style={{ ...(k === '# pluginov' || k.includes('verzia') || k === 'Verzia' ? mono : {}), color: warn ? 'var(--warning-color)' : 'var(--text-primary)', fontWeight: 600 }}>{v}</strong>
+        site.wp ? (
+          (() => {
+            const wp = site.wp;
+            const updates = wp.plugins.filter((p) => p.update_version);
+            return (
+              <>
+                <div style={{ ...card, padding: 16 }}>
+                  <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>WordPress</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
+                    {([
+                      ['Verzia', wp.wpVersion ?? '—', wp.wpUpdate ? `update ${wp.wpUpdate}` : null, true],
+                      ['PHP', wp.phpVersion ?? '—', null, true],
+                      ['MySQL', wp.mysqlVersion ?? '—', null, true],
+                      ['Téma', wp.theme ?? '—', null, false],
+                      ['Posledná záloha', wp.backupAt ? new Date(wp.backupAt).toLocaleDateString('sk-SK') : 'nezistené', null, false],
+                      ['Pluginy', `${wp.plugins.length}${updates.length ? ` · ${updates.length} updaty` : ''}`, null, false],
+                    ] as const).map(([k, v, warn, isMono]) => (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+                        <span>{k}</span>
+                        <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          {warn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--warning-color)', background: 'var(--warning-bg)', padding: '2px 8px', borderRadius: 20 }}>{warn}</span>}
+                          <strong style={{ ...(isMono ? mono : {}), color: 'var(--text-primary)', fontWeight: 600 }}>{v}</strong>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+                <div style={{ ...card, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--border-primary)' }}>
+                    <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Pluginy</h3>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: updates.length ? 'var(--warning-color)' : 'var(--ok-color)', background: updates.length ? 'var(--warning-bg)' : 'var(--ok-bg)', padding: '3px 10px', borderRadius: 20 }}>{updates.length ? `${updates.length} updaty` : 'aktuálne'}</span>
+                  </div>
+                  {updates.length === 0 ? (
+                    <div style={{ padding: '20px 18px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>Všetky pluginy sú aktuálne 🎉</div>
+                  ) : (
+                    <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                      <tbody>
+                        {updates.map((p, i) => (
+                          <tr key={p.slug} style={{ borderBottom: i < updates.length - 1 ? '1px solid var(--border-primary)' : 'none' }}>
+                            <td style={{ padding: '13px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>{p.name}{!p.active && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}> · neaktívny</span>}</td>
+                            <td style={{ padding: '13px 18px', textAlign: 'right', color: 'var(--text-secondary)', ...mono }}>{p.version} → <span style={{ color: 'var(--warning-color)', fontWeight: 600 }}>{p.update_version}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            );
+          })()
+        ) : (
+          <div style={{ ...card, padding: 24 }}>
+            <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 28, textAlign: 'center' }}>
+              <div style={{ fontSize: 22, marginBottom: 8 }}>🧩</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>WP agent nie je nainštalovaný</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>Po nainštalovaní Monitorix agenta (plugin + HMAC secret) sa tu zobrazia verzie WP/PHP, pluginy a dostupné updaty.</div>
             </div>
           </div>
-          <div style={{ ...card, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--border-primary)' }}>
-              <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Pluginy</h3>
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--warning-color)', background: 'var(--warning-bg)', padding: '3px 10px', borderRadius: 20 }}>3 updaty</span>
-            </div>
-            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-              <tbody>
-                {([['Yoast SEO', '21.8', '22.0'], ['WooCommerce', '8.2.1', '8.2.2'], ['All in One SEO', '4.5.1', '4.6.0']] as const).map(([n, from, to], i) => (
-                  <tr key={n} style={{ borderBottom: i < 2 ? '1px solid var(--border-primary)' : 'none' }}>
-                    <td style={{ padding: '13px 18px', color: 'var(--text-primary)', fontWeight: 600 }}>{n}</td>
-                    <td style={{ padding: '13px 18px', textAlign: 'right', color: 'var(--text-secondary)', ...mono }}>{from} → <span style={{ color: 'var(--warning-color)', fontWeight: 600 }}>{to}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        )
       ) : (
         <div style={{ ...card, padding: 16 }}>
           <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>Doména &amp; TLS</h3>
@@ -747,32 +767,42 @@ function TabInfra({ site }: { site: SiteVM }) {
         )}
       </div>
 
-      <div style={{ ...card, padding: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Zraniteľnosti</h3>
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <MockBanner text="Vuln/CVE matica (plugin verzia × známa CVE) sa spustí po pripojení WPScan / Patchstack tokenu." />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', background: 'var(--critical-bg)', border: '1px solid var(--critical-color)', borderRadius: 11 }}>
-            <span style={{ fontSize: 18 }}>🔴</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>Contact Form 7 · v5.7.1</div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Aktívne zneužívaná · <span style={mono}>CVE-2024-2013</span> · oprava v 5.8.0</div>
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: 'var(--critical-color)', padding: '4px 10px', borderRadius: 8, whiteSpace: 'nowrap' }}>CVSS 8.8</span>
+      {site.isWordPress && (
+        <div style={{ ...card, padding: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Zraniteľnosti</h3>
+            {site.wp && site.wp.vulns.length > 0 && (
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '3px 10px', borderRadius: 20 }}>{site.wp.vulns.length} známych</span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', background: 'var(--warning-bg)', borderRadius: 11 }}>
-            <span style={{ fontSize: 18 }}>🟡</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>WooCommerce · v8.2.1</div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Stredná závažnosť · <span style={mono}>CVE-2024-1854</span> · oprava v 8.2.2</div>
+          {!site.wp ? (
+            <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 22, textAlign: 'center', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+              CVE matica sa zobrazí po nainštalovaní WP agenta (zdroj pluginov) — z WPScan.
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'white', background: 'var(--warning-color)', padding: '4px 10px', borderRadius: 8, whiteSpace: 'nowrap' }}>CVSS 5.3</span>
-          </div>
+          ) : site.wp.vulns.length === 0 ? (
+            <div style={{ background: 'var(--ok-bg)', borderRadius: 12, padding: 22, textAlign: 'center', fontSize: 13, color: 'var(--ok-color)', fontWeight: 600 }}>Žiadne známe CVE pre nainštalované verzie 🎉</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {site.wp.vulns.map((v, i) => {
+                const crit = !v.fixed_in; // bez opravy = kritickejšie
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', background: crit ? 'var(--critical-bg)' : 'var(--warning-bg)', border: crit ? '1px solid var(--critical-color)' : 'none', borderRadius: 11 }}>
+                    <span style={{ fontSize: 18 }}>{crit ? '🔴' : '🟡'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{v.target} · v{v.version}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {v.title}
+                        {v.cve && <> · <span style={mono}>{v.cve}</span></>}
+                        {v.fixed_in ? ` · oprava v ${v.fixed_in}` : ' · zatiaľ bez opravy'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

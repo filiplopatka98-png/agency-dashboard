@@ -114,6 +114,17 @@ export interface SiteVM {
     rangeDays: number;
     topQueries: { query: string; clicks: number; impressions: number; ctr: number; position: number }[];
   } | null;
+  // WordPress agent — reálne (wp_snapshots) alebo null (agent nenainštalovaný)
+  wp: {
+    wpVersion: string | null;
+    wpUpdate: string | null;
+    phpVersion: string | null;
+    mysqlVersion: string | null;
+    theme: string | null;
+    plugins: { name: string; slug: string; version: string; active: boolean; update_version: string | null }[];
+    vulns: { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[];
+    backupAt: string | null;
+  } | null;
 }
 
 export interface PerfSnapVM {
@@ -162,7 +173,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -175,9 +186,11 @@ export async function loadDashboard(): Promise<{
     supabase.from('perf_snapshots').select('*'),
     supabase.from('security_snapshots').select('site_id, score, headers, safe_browsing_ok'),
     supabase.from('gsc_snapshots').select('site_id, clicks, impressions, ctr, position, range_days, top_queries'),
+    supabase.from('wp_snapshots').select('site_id, wp_version, wp_update, php_version, mysql_version, theme, plugins, vulns, backup_at, error'),
   ]);
   const secBySite = new Map((secRes.data ?? []).map((r) => [r.site_id, r]));
   const gscBySite = new Map((gscRes.data ?? []).map((r) => [r.site_id, r]));
+  const wpBySite = new Map((wpRes.data ?? []).map((r) => [r.site_id, r]));
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
   const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
   const perfBySite = new Map<string, { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null }>();
@@ -421,6 +434,20 @@ export async function loadDashboard(): Promise<{
           position: Number(g.position ?? 0),
           rangeDays: g.range_days ?? 28,
           topQueries: (g.top_queries as unknown as { query: string; clicks: number; impressions: number; ctr: number; position: number }[]) ?? [],
+        };
+      })(),
+      wp: (() => {
+        const w = wpBySite.get(s.id);
+        if (!w || (w.error && w.wp_version === null)) return null;
+        return {
+          wpVersion: w.wp_version,
+          wpUpdate: w.wp_update,
+          phpVersion: w.php_version,
+          mysqlVersion: w.mysql_version,
+          theme: w.theme,
+          plugins: (w.plugins as unknown as { name: string; slug: string; version: string; active: boolean; update_version: string | null }[]) ?? [],
+          vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[]) ?? [],
+          backupAt: w.backup_at,
         };
       })(),
     };

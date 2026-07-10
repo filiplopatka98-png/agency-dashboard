@@ -842,6 +842,66 @@ export type Database = {
           },
         ]
       }
+      wp_snapshots: {
+        Row: {
+          backup_at: string | null
+          error: string | null
+          measured_at: string | null
+          mysql_version: string | null
+          org_id: string
+          php_version: string | null
+          plugins: Json | null
+          site_id: string
+          theme: string | null
+          vulns: Json | null
+          wp_update: string | null
+          wp_version: string | null
+        }
+        Insert: {
+          backup_at?: string | null
+          error?: string | null
+          measured_at?: string | null
+          mysql_version?: string | null
+          org_id: string
+          php_version?: string | null
+          plugins?: Json | null
+          site_id: string
+          theme?: string | null
+          vulns?: Json | null
+          wp_update?: string | null
+          wp_version?: string | null
+        }
+        Update: {
+          backup_at?: string | null
+          error?: string | null
+          measured_at?: string | null
+          mysql_version?: string | null
+          org_id?: string
+          php_version?: string | null
+          plugins?: Json | null
+          site_id?: string
+          theme?: string | null
+          vulns?: Json | null
+          wp_update?: string | null
+          wp_version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wp_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wp_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
