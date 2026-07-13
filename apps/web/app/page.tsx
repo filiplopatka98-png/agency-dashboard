@@ -753,17 +753,15 @@ export default function OverviewPage() {
           {/* All sites grid */}
           {sitesPopulated && (
             <>
-              <h2
-                style={{
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  color: 'var(--text-primary)',
-                  letterSpacing: '-0.01em',
-                  marginBottom: '14px',
-                }}
-              >
-                Všetky weby
-              </h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '12px' }}>
+                <h2 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>Všetky weby</h2>
+                <button
+                  onClick={openAddSite}
+                  style={{ padding: '9px 16px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, whiteSpace: 'nowrap' }}
+                >
+                  + Pridať web
+                </button>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
                 {filtered.map((site) => (
                   <div
