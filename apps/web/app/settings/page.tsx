@@ -15,6 +15,7 @@ const JOBS: { key: string; label: string; desc: string; sched: Sched }[] = [
   { key: 'aeo', label: 'AEO analýza', desc: 'pondelok 03:30 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 30 } },
   { key: 'gsc', label: 'Search Console', desc: 'pondelok 03:30 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 30 } },
   { key: 'seo', label: 'SEO crawl', desc: 'pondelok 04:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 4, mm: 0 } },
+  { key: 'wp', label: 'WordPress agent + CVE', desc: 'pondelok 05:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 5, mm: 0 } },
 ];
 
 function nextRun(sched: Sched, from: Date): Date {

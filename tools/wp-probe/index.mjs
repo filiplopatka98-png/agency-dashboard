@@ -8,6 +8,7 @@
 //      WPSCAN_TOKEN (voliteľné — bez neho sa CVE preskočia),
 //      (DB) SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { createHmac } from 'node:crypto';
+import { recordJobRun } from '../_shared/jobRun.mjs';
 
 const UA = 'MonitorixWP/1.0 (+https://dash.lopatka.sk)';
 const WPSCAN_BASE = 'https://wpscan.com/api/v3';
@@ -101,11 +102,11 @@ async function collectVulns(snap, token, cache, budget) {
 
 async function main() {
   const secret = process.env.WP_AGENT_SECRET;
-  if (!secret) throw new Error('WP_AGENT_SECRET je povinný');
   const token = process.env.WPSCAN_TOKEN || null;
   const args = process.argv.slice(2);
 
   if (args[0] === '--probe') {
+    if (!secret) throw new Error('WP_AGENT_SECRET je povinný');
     const url = args[1];
     if (!url) throw new Error('usage: --probe <url>');
     const snap = await probeWp(url, secret);
@@ -121,6 +122,12 @@ async function main() {
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
+
+  // WP agent ešte nenasadený (secret nenastavený) → preskoč bez pádu (žiadny failed email).
+  if (!secret) {
+    console.log(JSON.stringify({ ev: 'wp.skipped_no_secret' }));
+    return;
+  }
 
   const sitesRes = await fetch(`${url}/rest/v1/sites?select=id,org_id,url&is_active=eq.true&cms=eq.wordpress`, { headers: restHeaders(srv) });
   const sites = await sitesRes.json();
@@ -164,6 +171,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'wp.upsert_fail', url: s.url, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'wp.done', ok, failed, wpscan_left: budget.left }));
+  await recordJobRun(url, srv, 'wp', ok, failed);
 }
 
 main().catch((e) => {
