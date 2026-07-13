@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Shell } from './components/Shell';
 import { loadDashboard, type SiteVM } from './lib/data';
-import type { Client } from './lib/supabase';
+import { supabase, type Client } from './lib/supabase';
 
 const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
 
@@ -22,17 +22,28 @@ export default function OverviewPage() {
   const [addName, setAddName] = useState('');
   const [addDomain, setAddDomain] = useState('');
   const [addClient, setAddClient] = useState('');
+  const [addCms, setAddCms] = useState<'wordpress' | 'static' | 'other'>('wordpress');
+  const [addBusy, setAddBusy] = useState(false);
+  const [addErr, setAddErr] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
+
+  const reload = async () => {
+    const { sites, clients } = await loadDashboard();
+    setSites(sites);
+    setClients(clients);
+  };
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const { sites, clients } = await loadDashboard();
+        const [dash, mem] = await Promise.all([loadDashboard(), supabase.from('memberships').select('org_id').limit(1).maybeSingle()]);
         if (!active) return;
-        setSites(sites);
-        setClients(clients);
+        setSites(dash.sites);
+        setClients(dash.clients);
+        setOrgId(mem.data?.org_id ?? null);
       } finally {
         if (active) setLoading(false);
       }
@@ -81,15 +92,45 @@ export default function OverviewPage() {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2600);
   };
-  const openAddSite = () => setShowAddSite(true);
-  const closeAddSite = () => setShowAddSite(false);
-  const submitAddSite = () => {
-    const name = addName.trim() || 'Nový web';
-    setShowAddSite(false);
+  const openAddSite = () => {
     setAddName('');
     setAddDomain('');
     setAddClient('');
+    setAddCms('wordpress');
+    setAddErr(null);
+    setShowAddSite(true);
+  };
+  const closeAddSite = () => setShowAddSite(false);
+  const submitAddSite = async () => {
+    const name = addName.trim();
+    const domain = addDomain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+    if (!name || !domain) {
+      setAddErr('Vyplň názov aj doménu.');
+      return;
+    }
+    if (!orgId) {
+      setAddErr('Organizácia sa nenačítala — obnov stránku.');
+      return;
+    }
+    setAddBusy(true);
+    setAddErr(null);
+    const { error } = await supabase.from('sites').insert({
+      org_id: orgId,
+      client_id: addClient || null,
+      name,
+      url: `https://${domain}`,
+      domain,
+      cms: addCms,
+      is_active: true,
+    });
+    setAddBusy(false);
+    if (error) {
+      setAddErr(`Pridanie zlyhalo: ${error.message}`);
+      return;
+    }
+    setShowAddSite(false);
     showToast(`Web pridaný · ${name}`);
+    await reload();
   };
 
   return (
@@ -257,6 +298,15 @@ export default function OverviewPage() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '7px' }}>Typ webu (CMS)</label>
+                <select value={addCms} onChange={(e) => setAddCms(e.target.value as 'wordpress' | 'static' | 'other')} style={{ width: '100%', padding: '11px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: '10px', color: 'var(--text-primary)', fontSize: '14px', cursor: 'pointer' }}>
+                  <option value="wordpress">WordPress</option>
+                  <option value="static">Statický</option>
+                  <option value="other">Iné</option>
+                </select>
+              </div>
+              {addErr && <div style={{ fontSize: '13px', color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: '10px' }}>{addErr}</div>}
             </div>
             <div
               style={{
@@ -285,6 +335,7 @@ export default function OverviewPage() {
               </button>
               <button
                 onClick={submitAddSite}
+                disabled={addBusy}
                 style={{
                   padding: '10px 18px',
                   background: 'var(--accent-primary)',
@@ -294,9 +345,10 @@ export default function OverviewPage() {
                   cursor: 'pointer',
                   fontSize: '13.5px',
                   fontWeight: 600,
+                  opacity: addBusy ? 0.6 : 1,
                 }}
               >
-                Pridať web
+                {addBusy ? 'Pridávam…' : 'Pridať web'}
               </button>
             </div>
           </div>

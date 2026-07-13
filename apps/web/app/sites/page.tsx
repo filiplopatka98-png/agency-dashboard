@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Shell } from '../components/Shell';
 import { loadDashboard, type SiteVM } from '../lib/data';
+import { supabase, type Client } from '../lib/supabase';
 import {
   buildSparkline,
   sparklineFromValues,
@@ -126,12 +127,21 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id'];
 
 function SiteDetail({ id }: { id: string }) {
+  const router = useRouter();
   const [sites, setSites] = useState<SiteVM[] | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
   const [tab, setTab] = useState<TabId>('overview');
+  const [edit, setEdit] = useState<null | { name: string; domain: string; cms: 'wordpress' | 'static' | 'other'; client_id: string }>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let a = true;
-    loadDashboard().then(({ sites }) => a && setSites(sites));
+    loadDashboard().then(({ sites, clients }) => {
+      if (!a) return;
+      setSites(sites);
+      setClients(clients);
+    });
     return () => {
       a = false;
     };
@@ -141,23 +151,102 @@ function SiteDetail({ id }: { id: string }) {
   if (!sites) return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Načítavam…</div>;
   if (!site) return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Web sa nenašiel.</div>;
 
+  const s = site;
+  const openEdit = () => {
+    setErr(null);
+    setEdit({ name: s.name, domain: s.domain, cms: (s.isWordPress ? 'wordpress' : 'static'), client_id: s.clientId ?? '' });
+  };
+  const saveEdit = async () => {
+    if (!edit) return;
+    const domain = edit.domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
+    if (!edit.name.trim() || !domain) {
+      setErr('Vyplň názov aj doménu.');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    const { error } = await supabase.from('sites').update({ name: edit.name.trim(), domain, url: `https://${domain}`, cms: edit.cms, client_id: edit.client_id || null }).eq('id', s.id);
+    setBusy(false);
+    if (error) {
+      setErr(`Uloženie zlyhalo: ${error.message}`);
+      return;
+    }
+    setEdit(null);
+    const { sites, clients } = await loadDashboard();
+    setSites(sites);
+    setClients(clients);
+  };
+  const deactivate = async () => {
+    if (!window.confirm(`Deaktivovať web „${s.name}"? Prestane sa monitorovať (dáta ostanú).`)) return;
+    setBusy(true);
+    const { error } = await supabase.from('sites').update({ is_active: false }).eq('id', s.id);
+    setBusy(false);
+    if (error) {
+      setErr(`Deaktivácia zlyhala: ${error.message}`);
+      return;
+    }
+    router.push('/');
+  };
+
   return (
     <div style={{ minHeight: '100vh', padding: '32px 24px 64px', background: 'var(--bg-base)' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
         <Link href="/" style={{ display: 'inline-block', padding: '8px 14px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 9, fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 24, fontWeight: 500, boxShadow: 'var(--shadow-sm)', textDecoration: 'none' }}>← Späť na prehľad</Link>
 
         {/* Header */}
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 10 }}>
-            <div className={site.pulseClass} style={{ width: 15, height: 15, borderRadius: '50%', background: site.dotColor, boxShadow: `0 0 0 5px ${site.tintBg}` }} />
-            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.025em' }}>{site.name}</h1>
+        <div style={{ marginBottom: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 10 }}>
+              <div className={site.pulseClass} style={{ width: 15, height: 15, borderRadius: '50%', background: site.dotColor, boxShadow: `0 0 0 5px ${site.tintBg}` }} />
+              <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.025em' }}>{site.name}</h1>
+            </div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: 13.5, color: 'var(--text-secondary)' }}>
+              <a href={`https://${site.domain}`} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>{site.domain} ↗</a>
+              <div>Klient: <strong style={{ color: 'var(--text-primary)' }}>{site.clientName}</strong></div>
+              <div>{site.statusLabel} · {site.lastCheckTime}</div>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: 13.5, color: 'var(--text-secondary)' }}>
-            <a href={`https://${site.domain}`} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>{site.domain} ↗</a>
-            <div>Klient: <strong style={{ color: 'var(--text-primary)' }}>{site.clientName}</strong></div>
-            <div>{site.statusLabel} · {site.lastCheckTime}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={openEdit} style={{ padding: '8px 14px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 9, fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', cursor: 'pointer' }}>Upraviť</button>
+            <button onClick={deactivate} disabled={busy} style={{ padding: '8px 14px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 9, fontSize: 13, fontWeight: 600, color: 'var(--critical-color)', cursor: 'pointer' }}>Deaktivovať</button>
           </div>
         </div>
+
+        {edit && (
+          <div onClick={() => !busy && setEdit(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: 'min(480px,100%)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Upraviť web</div>
+              <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {([['Názov', 'name'], ['Doména', 'domain']] as const).map(([lab, k]) => (
+                  <div key={k}>
+                    <label style={{ ...label, display: 'block', marginBottom: 6 }}>{lab}</label>
+                    <input value={edit[k]} onInput={(e) => setEdit({ ...edit, [k]: (e.target as HTMLInputElement).value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', ...(k === 'domain' ? mono : {}) }} />
+                  </div>
+                ))}
+                <div>
+                  <label style={{ ...label, display: 'block', marginBottom: 6 }}>Typ webu (CMS)</label>
+                  <select value={edit.cms} onChange={(e) => setEdit({ ...edit, cms: e.target.value as 'wordpress' | 'static' | 'other' })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
+                    <option value="wordpress">WordPress</option>
+                    <option value="static">Statický</option>
+                    <option value="other">Iné</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ ...label, display: 'block', marginBottom: 6 }}>Klient</label>
+                  <select value={edit.client_id} onChange={(e) => setEdit({ ...edit, client_id: e.target.value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
+                    <option value="">Bez klienta</option>
+                    {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                {err && <div style={{ fontSize: 13, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: 10 }}>{err}</div>}
+              </div>
+              <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border-primary)', display: 'flex', gap: 10, justifyContent: 'flex-end', background: 'var(--surface-secondary)' }}>
+                <button onClick={() => setEdit(null)} disabled={busy} style={{ padding: '9px 16px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: 'var(--text-secondary)' }}>Zrušiť</button>
+                <button onClick={saveEdit} disabled={busy} style={{ padding: '9px 18px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, opacity: busy ? 0.6 : 1 }}>{busy ? 'Ukladám…' : 'Uložiť'}</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Quick stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 28 }}>
