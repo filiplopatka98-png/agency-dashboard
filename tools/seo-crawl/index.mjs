@@ -28,7 +28,22 @@ export async function crawlSite(domain) {
   const origin = `https://${domain}`;
   const robotsRes = await get(`${origin}/robots.txt`);
   const robotsOk = Boolean(robotsRes && robotsRes.ok);
-  const sitemapRes = await get(`${origin}/sitemap.xml`, 'HEAD');
+
+  // Sitemapu ber primárne z robots.txt (`Sitemap:` direktíva) — weby ju často
+  // majú na /sitemap_index.xml alebo /sitemap-index.xml, nie /sitemap.xml.
+  // Fallback: /sitemap.xml. Niektoré servery nepodporujú HEAD → skús aj GET.
+  let robotsText = '';
+  if (robotsRes && robotsRes.ok) {
+    try {
+      robotsText = await robotsRes.text();
+    } catch {
+      /* ignore */
+    }
+  }
+  const declared = (robotsText.match(/^\s*sitemap:\s*(\S+)/im) || [])[1];
+  const sitemapUrl = declared || `${origin}/sitemap.xml`;
+  let sitemapRes = await get(sitemapUrl, 'HEAD');
+  if (!sitemapRes || !sitemapRes.ok) sitemapRes = await get(sitemapUrl, 'GET');
   const sitemapOk = Boolean(sitemapRes && sitemapRes.ok);
 
   const visited = new Set();
