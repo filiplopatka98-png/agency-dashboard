@@ -864,13 +864,17 @@ function TabInfra({ site }: { site: SiteVM }) {
         <div style={{ ...card, padding: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Zraniteľnosti</h3>
-            {site.wp && site.wp.vulns.length > 0 && (
+            {site.wp && site.wp.vulns && site.wp.vulns.length > 0 && (
               <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '3px 10px', borderRadius: 20 }}>{site.wp.vulns.length} známych</span>
             )}
           </div>
           {!site.wp ? (
             <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 22, textAlign: 'center', fontSize: 12.5, color: 'var(--text-secondary)' }}>
               CVE matica sa zobrazí po nainštalovaní WP agenta (zdroj pluginov) — z WPScan.
+            </div>
+          ) : site.wp.vulns === null ? (
+            <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 22, textAlign: 'center', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+              CVE sa ešte nekontrolovali — WPScan porovná nainštalované pluginy so známymi zraniteľnosťami (týždenne). Zoznam pluginov už máme.
             </div>
           ) : site.wp.vulns.length === 0 ? (
             <div style={{ background: 'var(--ok-bg)', borderRadius: 12, padding: 22, textAlign: 'center', fontSize: 13, color: 'var(--ok-color)', fontWeight: 600 }}>Žiadne známe CVE pre nainštalované verzie 🎉</div>

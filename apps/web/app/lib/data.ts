@@ -117,7 +117,7 @@ export interface SiteVM {
     mysqlVersion: string | null;
     theme: string | null;
     plugins: { name: string; slug: string; version: string; active: boolean; update_version: string | null }[];
-    vulns: { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[];
+    vulns: { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[] | null;
     backupAt: string | null;
   } | null;
 }
@@ -422,14 +422,17 @@ export async function loadDashboard(): Promise<{
       wp: (() => {
         const w = wpBySite.get(s.id);
         if (!w || (w.error && w.wp_version === null)) return null;
+        const allPlugins = (w.plugins as unknown as { name: string; slug: string; version: string; active: boolean; update_version: string | null }[]) ?? [];
         return {
           wpVersion: w.wp_version,
           wpUpdate: w.wp_update,
           phpVersion: w.php_version,
           mysqlVersion: w.mysql_version,
           theme: w.theme,
-          plugins: (w.plugins as unknown as { name: string; slug: string; version: string; active: boolean; update_version: string | null }[]) ?? [],
-          vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[]) ?? [],
+          // vlastného agenta neukazuj v zozname klientových pluginov
+          plugins: allPlugins.filter((p) => p.slug !== 'monitorix-agent' && p.name !== 'Monitorix Agent'),
+          // null = CVE ešte nekontrolované (WPScan nebežal); [] = skontrolované, nula
+          vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[] | null) ?? null,
           backupAt: w.backup_at,
         };
       })(),
