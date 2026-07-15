@@ -1,62 +1,50 @@
 <?php
 /**
  * Plugin Name: Monitorix Agent
- * Description: Read-only stavový endpoint pre Monitorix dashboard (WP/PHP/MySQL verzie, pluginy + updaty, téma, záloha). Chránené HMAC podpisom.
- * Version: 1.0.0
+ * Description: Posiela stav webu (WP/PHP/MySQL verzie, pluginy + updaty, téma, záloha) do Monitorix dashboardu. Stačí nainštalovať a aktivovať — žiadna konfigurácia.
+ * Version: 2.0.0
  * Author: Lopatka
  *
- * Inštalácia:
- *   A) wp-admin: zabaľ tento súbor do ZIP a nahraj cez Pluginy → Pridať nový → Nahrať, aktivuj.
+ * Inštalácia (nič iné netreba):
+ *   A) wp-admin: zabaľ tento súbor do ZIP → Pluginy → Pridať nový → Nahrať → Aktivuj.
  *   B) FTP/mu-plugin: nahraj do wp-content/mu-plugins/monitorix-agent.php (aktivuje sa sám).
  *
- * Secret (POVINNÉ) — do wp-config.php pridaj:
- *   define('MONITORIX_AGENT_SECRET', 'ten-isty-nahodny-retazec-na-vsetkych-weboch');
- *
- * Endpoint: GET /wp-json/monitorix/v1/status
- *   Hlavičky: X-Monitorix-Timestamp: <unix>, X-Monitorix-Signature: hex(hmac_sha256(secret, timestamp))
+ * Plugin sám (cez WP-cron) raz denne pošle stav do Monitorixu. Prvýkrát do ~1 minúty
+ * po aktivácii. Ingest URL + token sú zapečené nižšie — netreba nič nastavovať.
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-add_action('rest_api_init', function () {
-    register_rest_route('monitorix/v1', '/status', [
-        'methods'             => 'GET',
-        'permission_callback' => 'monitorix_agent_verify',
-        'callback'            => 'monitorix_agent_status',
-    ]);
+define('MONITORIX_INGEST_URL', 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev/wp-ingest');
+define('MONITORIX_INGEST_TOKEN', '__MONITORIX_INGEST_TOKEN__');
+
+// Naplánuj denný push + jednorazový hneď po prvom načítaní (funguje aj ako mu-plugin).
+add_action('init', function () {
+    if (!wp_next_scheduled('monitorix_agent_push')) {
+        wp_schedule_event(time() + 60, 'daily', 'monitorix_agent_push');
+    }
+    if (!get_transient('monitorix_agent_kick')) {
+        set_transient('monitorix_agent_kick', 1, DAY_IN_SECONDS);
+        wp_schedule_single_event(time() + 30, 'monitorix_agent_push');
+    }
 });
 
-/** HMAC overenie: timestamp v okne ±300 s + zhoda podpisu (hash_equals proti timing). */
-function monitorix_agent_verify(WP_REST_Request $req)
-{
-    if (!defined('MONITORIX_AGENT_SECRET') || MONITORIX_AGENT_SECRET === '') {
-        return new WP_Error('monitorix_no_secret', 'MONITORIX_AGENT_SECRET nie je nastavený', ['status' => 500]);
-    }
-    $ts  = (string) $req->get_header('x-monitorix-timestamp');
-    $sig = (string) $req->get_header('x-monitorix-signature');
-    if ($ts === '' || $sig === '') {
-        return new WP_Error('monitorix_unauth', 'Chýba podpis', ['status' => 401]);
-    }
-    if (abs(time() - (int) $ts) > 300) {
-        return new WP_Error('monitorix_stale', 'Podpis expiroval', ['status' => 401]);
-    }
-    $expected = hash_hmac('sha256', $ts, MONITORIX_AGENT_SECRET);
-    if (!hash_equals($expected, $sig)) {
-        return new WP_Error('monitorix_bad_sig', 'Neplatný podpis', ['status' => 401]);
-    }
-    return true;
-}
+add_action('monitorix_agent_push', 'monitorix_agent_do_push');
 
-/** Zozbiera stav WordPressu (read-only). */
-function monitorix_agent_status()
+// Upratanie pri deaktivácii (len regulárny plugin; mu-plugin sa nedeaktivuje).
+register_deactivation_hook(__FILE__, function () {
+    wp_clear_scheduled_hook('monitorix_agent_push');
+});
+
+/** Zozbiera stav WordPressu a pošle ho do Monitorixu (read-only). */
+function monitorix_agent_do_push()
 {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
     require_once ABSPATH . 'wp-admin/includes/update.php';
 
-    // Pluginy + dostupné updaty.
     $all     = get_plugins();
     $updates = get_site_transient('update_plugins');
     $upMap   = ($updates && !empty($updates->response)) ? $updates->response : [];
@@ -75,8 +63,7 @@ function monitorix_agent_status()
         ];
     }
 
-    // WP core update.
-    $coreT   = get_site_transient('update_core');
+    $coreT    = get_site_transient('update_core');
     $wpUpdate = null;
     if ($coreT && !empty($coreT->updates)) {
         foreach ($coreT->updates as $u) {
@@ -89,22 +76,31 @@ function monitorix_agent_status()
 
     $theme = wp_get_theme();
 
-    // Záloha — best-effort (UpdraftPlus). Iné pluginy → null.
     $backupAt = null;
     $ud = get_option('updraft_last_backup');
     if (is_array($ud) && !empty($ud['backup_time'])) {
         $backupAt = gmdate('c', (int) $ud['backup_time']);
     }
 
-    return [
-        'wp_version'     => get_bloginfo('version'),
-        'wp_update'      => $wpUpdate,
-        'php_version'    => PHP_VERSION,
-        'mysql_version'  => $wpdb->db_version(),
-        'theme'          => $theme ? $theme->get('Name') . ' ' . $theme->get('Version') : null,
-        'multisite'      => is_multisite(),
-        'plugins'        => $plugins,
-        'backup_at'      => $backupAt,
-        'agent_version'  => '1.0.0',
+    $payload = [
+        'url'           => home_url(),
+        'wp_version'    => get_bloginfo('version'),
+        'wp_update'     => $wpUpdate,
+        'php_version'   => PHP_VERSION,
+        'mysql_version' => $wpdb->db_version(),
+        'theme'         => $theme ? $theme->get('Name') . ' ' . $theme->get('Version') : null,
+        'plugins'       => $plugins,
+        'backup_at'     => $backupAt,
+        'agent_version' => '2.0.0',
     ];
+
+    wp_remote_post(MONITORIX_INGEST_URL, [
+        'timeout'  => 15,
+        'blocking' => false,
+        'headers'  => [
+            'Content-Type'      => 'application/json',
+            'X-Monitorix-Token' => MONITORIX_INGEST_TOKEN,
+        ],
+        'body'     => wp_json_encode($payload),
+    ]);
 }

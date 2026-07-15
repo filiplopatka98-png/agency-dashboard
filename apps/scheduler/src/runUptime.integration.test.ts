@@ -51,6 +51,7 @@ describe.skipIf(!enabled)('runUptime (integration)', () => {
       ALERT_EMAIL_TO: '',
       ALERT_EMAIL_FROM: '',
       UPTIME_PROVIDER: 'local',
+      WP_INGEST_TOKEN: '',
     };
 
     // Čistý stav: zmaž všetky orgs (cascade zmaže sites/checky/incidenty) a vlož vlastné.

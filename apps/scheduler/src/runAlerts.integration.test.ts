@@ -49,6 +49,7 @@ describe.skipIf(!enabled)('runAlerts + dedupe (integration)', () => {
       ALERT_EMAIL_TO: 'to@lopatka.sk',
       ALERT_EMAIL_FROM: 'from@lopatka.sk',
       UPTIME_PROVIDER: 'local',
+      WP_INGEST_TOKEN: '',
     };
 
     await db.from('organizations').delete().neq('id', '00000000-0000-0000-0000-000000000000');

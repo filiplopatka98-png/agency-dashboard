@@ -6,4 +6,5 @@ export interface Env {
   ALERT_EMAIL_TO: string;
   ALERT_EMAIL_FROM: string;
   UPTIME_PROVIDER: string;
+  WP_INGEST_TOKEN: string;
 }

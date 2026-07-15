@@ -4,6 +4,7 @@ import { runAlerts } from './runAlerts';
 import { runDomains } from './runDomains';
 import { defaultDomainResolver } from './domainResolver';
 import { serviceClient } from './supabase';
+import { wpIngest } from './wpIngest';
 
 /**
  * Cloudflare Worker — jeden cron trigger, každých 5 minút. Vetvenie podľa času vnútri.
@@ -29,6 +30,13 @@ export default {
       })(),
     );
     // TODO(krok 8): region_outage alert (insert) + expiry alerty (GitHub Action alebo tu)
+  },
+
+  // HTTP endpoint — WP agent push (plugin posiela verzie/pluginy sem).
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === 'POST' && url.pathname === '/wp-ingest') return wpIngest(request, env);
+    return new Response('Monitorix scheduler', { status: 200 });
   },
 } satisfies ExportedHandler<Env>;
 

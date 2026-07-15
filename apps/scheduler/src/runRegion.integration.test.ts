@@ -33,6 +33,7 @@ describe.skipIf(!enabled)('region_outage (integration)', () => {
       ALERT_EMAIL_TO: '',
       ALERT_EMAIL_FROM: '',
       UPTIME_PROVIDER: 'local',
+      WP_INGEST_TOKEN: '',
     };
     await db.from('organizations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     await db.from('organizations').insert({ id: ORG, name: 'Region Org' });
