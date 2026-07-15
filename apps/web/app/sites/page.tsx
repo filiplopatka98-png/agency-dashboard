@@ -741,7 +741,19 @@ function TabAeo({ site }: { site: SiteVM }) {
   );
 }
 
-type Vuln = { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null };
+type Vuln = { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null; cvss: number | null; severity: string };
+
+// Zobrazenie CVSS závažnosti (label/farby/rank). 'unknown' = skóre zatiaľ nemáme.
+const SEV_META: Record<string, { label: string; color: string; bg: string; rank: number }> = {
+  critical: { label: 'Kritická', color: 'var(--critical-color)', bg: 'var(--critical-bg)', rank: 5 },
+  high: { label: 'Vysoká', color: 'var(--critical-color)', bg: 'var(--critical-bg)', rank: 4 },
+  medium: { label: 'Stredná', color: 'var(--warning-color)', bg: 'var(--warning-bg)', rank: 3 },
+  unknown: { label: 'Neznáma', color: 'var(--text-tertiary)', bg: 'var(--surface-secondary)', rank: 2 },
+  low: { label: 'Nízka', color: 'var(--text-secondary)', bg: 'var(--surface-secondary)', rank: 1 },
+  none: { label: 'Žiadna', color: 'var(--text-tertiary)', bg: 'var(--surface-secondary)', rank: 0 },
+};
+const sevMeta = (s: string | null | undefined) => SEV_META[s ?? 'unknown'] ?? SEV_META.unknown;
+const maxSev = (items: Vuln[]) => items.reduce((best, v) => (sevMeta(v.severity).rank > sevMeta(best).rank ? v.severity : best), 'none' as string);
 
 function cmpVer(a: string, b: string): number {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
@@ -937,18 +949,28 @@ function TabInfra({ site }: { site: SiteVM }) {
                   return acc;
                 }, {}),
               )
-                .sort((a, b) => b.items.length - a.items.length)
+                .sort((a, b) => {
+                  const d = sevMeta(maxSev(b.items)).rank - sevMeta(maxSev(a.items)).rank;
+                  return d !== 0 ? d : b.items.length - a.items.length;
+                })
                 .map((g) => {
                   const key = `${g.target}|${g.version}`;
                   const fix = maxFixedIn(g.items);
-                  const crit = fix === null; // niektorá CVE bez opravy
+                  const gsev = maxSev(g.items);
+                  const gm = sevMeta(gsev);
+                  const crit = gsev === 'critical' || gsev === 'high' || fix === null; // závažné al. bez opravy
                   const open = openVuln === key;
+                  // najzávažnejšie CVE hore
+                  const items = [...g.items].sort((a, b) => (sevMeta(b.severity).rank - sevMeta(a.severity).rank) || (b.cvss ?? 0) - (a.cvss ?? 0));
                   return (
                     <div key={key} style={{ background: crit ? 'var(--critical-bg)' : 'var(--warning-bg)', border: crit ? '1px solid var(--critical-color)' : 'none', borderRadius: 11, overflow: 'hidden' }}>
                       <div onClick={() => setOpenVuln(open ? null : key)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', cursor: 'pointer' }}>
-                        <span style={{ fontSize: 18 }}>{crit ? '🔴' : '🟡'}</span>
+                        <span style={{ fontSize: 18 }}>{crit ? '🔴' : gsev === 'medium' ? '🟡' : '⚪'}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{g.target} <span style={{ ...mono, fontWeight: 500, color: 'var(--text-tertiary)' }}>v{g.version}</span></div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{g.target} <span style={{ ...mono, fontWeight: 500, color: 'var(--text-tertiary)' }}>v{g.version}</span></span>
+                            <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, color: gm.color, background: gm.bg, padding: '2px 7px', borderRadius: 6 }}>{gm.label}</span>
+                          </div>
                           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                             {g.items.length} {g.items.length === 1 ? 'zraniteľnosť' : g.items.length <= 4 ? 'zraniteľnosti' : 'zraniteľností'}
                             {fix ? ` · aktualizuj na ≥ ${fix}` : ' · niektorá zatiaľ bez opravy'}
@@ -958,12 +980,18 @@ function TabInfra({ site }: { site: SiteVM }) {
                       </div>
                       {open && (
                         <div style={{ padding: '0 15px 12px 46px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {g.items.map((v, i) => (
-                            <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', paddingTop: 6, borderTop: '1px solid var(--border-primary)' }}>
-                              {v.cve && <span style={{ ...mono, color: 'var(--text-primary)', fontWeight: 600 }}>{v.cve}</span>} {v.title}
-                              {v.fixed_in ? <span style={{ color: 'var(--text-tertiary)' }}> · fix {v.fixed_in}</span> : <span style={{ color: 'var(--critical-color)' }}> · bez opravy</span>}
-                            </div>
-                          ))}
+                          {items.map((v, i) => {
+                            const vm = sevMeta(v.severity);
+                            return (
+                              <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', paddingTop: 6, borderTop: '1px solid var(--border-primary)' }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: vm.color, background: vm.bg, padding: '1px 6px', borderRadius: 5, marginRight: 6 }}>
+                                  {v.cvss != null ? v.cvss.toFixed(1) : vm.label}
+                                </span>
+                                {v.cve && <span style={{ ...mono, color: 'var(--text-primary)', fontWeight: 600 }}>{v.cve}</span>} {v.title}
+                                {v.fixed_in ? <span style={{ color: 'var(--text-tertiary)' }}> · fix {v.fixed_in}</span> : <span style={{ color: 'var(--critical-color)' }}> · bez opravy</span>}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

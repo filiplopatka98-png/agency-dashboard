@@ -36,3 +36,5 @@ export { parsePsi, fetchPsi, type PerfSnap } from './psi';
 export { scoreSecurityHeaders, fetchSafeBrowsing, type SecurityHeaders } from './security';
 
 export { gscPropertyCandidates, parseGscResponse, type GscRow, type GscQuery, type GscSummary } from './gsc';
+
+export { severityFromScore, severityRank, maxSeverity, type CveSeverity } from './cve';

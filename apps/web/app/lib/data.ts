@@ -119,7 +119,7 @@ export interface SiteVM {
     mysqlVersion: string | null;
     theme: string | null;
     plugins: { name: string; slug: string; version: string; active: boolean; update_version: string | null }[];
-    vulns: { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[] | null;
+    vulns: { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null; cvss: number | null; severity: string }[] | null;
     backupAt: string | null;
   } | null;
   // Generická infra — reálne (infra_snapshots) alebo null (ešte nemerané)
@@ -462,7 +462,7 @@ export async function loadDashboard(): Promise<{
           // vlastného agenta neukazuj v zozname klientových pluginov
           plugins: allPlugins.filter((p) => p.slug !== 'monitorix-agent' && p.name !== 'Monitorix Agent'),
           // null = CVE ešte nekontrolované (WPScan nebežal); [] = skontrolované, nula
-          vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[] | null) ?? null,
+          vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null; cvss: number | null; severity: string }[] | null) ?? null,
           backupAt: w.backup_at,
         };
       })(),

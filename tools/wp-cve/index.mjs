@@ -5,12 +5,55 @@
 //
 //   node index.mjs           → prejde wp_snapshots s pluginmi, zapíše vulns
 //
-// Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// Závažnosť (CVSS): najprv WPScan vlastné `cvss.score`, inak NVD lookup podľa
+// CVE id (nvd.nist.gov, zdarma). Ak ani jedno → severity 'unknown' (nefabrikujeme).
+//
+// Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, (voliteľne) NVD_API_KEY
 import { recordJobRun } from '../_shared/jobRun.mjs';
+import { severityFromScore } from '../../packages/core/dist/cve.js';
 
 const WPSCAN_BASE = 'https://wpscan.com/api/v3';
 const UA = 'MonitorixCVE/1.0 (+https://dash.lopatka.sk)';
 const DAILY_BUDGET = 25; // WPScan free tier
+const NVD_BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// NVD lookup CVSS base score podľa CVE id. Bez kľúča limit 5 req/30s → 6.5s pauza.
+// Preferuje v3.1 → v3.0 → v2. Vráti number|null (null = NVD skóre nemá).
+async function nvdScore(cveId, apiKey) {
+  const headers = { 'User-Agent': UA, ...(apiKey ? { apiKey } : {}) };
+  const res = await fetch(`${NVD_BASE}?cveId=${encodeURIComponent(cveId)}`, { headers, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) return null;
+  const body = await res.json();
+  const metrics = body.vulnerabilities?.[0]?.cve?.metrics ?? {};
+  const m = metrics.cvssMetricV31?.[0] ?? metrics.cvssMetricV30?.[0] ?? metrics.cvssMetricV2?.[0];
+  const score = m?.cvssData?.baseScore;
+  return typeof score === 'number' ? score : null;
+}
+
+// Doplní každému vuln `cvss` (number|null) + `severity`. WPScan skóre má prednosť,
+// inak NVD podľa CVE (dedup + rate-limit). Mutuje pole vulns.
+async function enrichSeverity(vulns, nvdCache, apiKey) {
+  for (const v of vulns) {
+    let score = typeof v.cvss === 'number' ? v.cvss : null; // z WPScan
+    if (score === null && v.cve) {
+      if (nvdCache.has(v.cve)) {
+        score = nvdCache.get(v.cve);
+      } else {
+        try {
+          score = await nvdScore(v.cve, apiKey);
+        } catch {
+          score = null;
+        }
+        nvdCache.set(v.cve, score);
+        await sleep(apiKey ? 700 : 6500); // rešpektuj NVD rate-limit
+      }
+    }
+    v.cvss = score;
+    v.severity = severityFromScore(score);
+  }
+}
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -64,11 +107,17 @@ async function wpscan(kind, id, token, cache, budget) {
   }
   const body = await res.json();
   const entry = body[Object.keys(body)[0]] ?? {};
-  const vulns = (entry.vulnerabilities ?? []).map((v) => ({
-    title: v.title,
-    cve: v.references?.cve?.[0] ? `CVE-${v.references.cve[0]}` : null,
-    fixed_in: v.fixed_in ?? null,
-  }));
+  const vulns = (entry.vulnerabilities ?? []).map((v) => {
+    // WPScan niekedy vracia cvss ako { score } alebo číslo/string; vezmi ak je platné.
+    const raw = v.cvss?.score ?? v.cvss ?? null;
+    const wpCvss = raw != null && !Number.isNaN(Number(raw)) ? Number(raw) : null;
+    return {
+      title: v.title,
+      cve: v.references?.cve?.[0] ? `CVE-${v.references.cve[0]}` : null,
+      fixed_in: v.fixed_in ?? null,
+      cvss: wpCvss,
+    };
+  });
   const r = { vulns };
   cache.set(key, r);
   return r;
@@ -89,7 +138,7 @@ async function collectVulns(wp, token, cache, budget) {
     if (r.rateLimited) rateLimited = true;
     for (const v of r.vulns) {
       if (isAffected(t.version, v.fixed_in)) {
-        out.push({ target: t.label, slug: t.slug, version: t.version, title: v.title, cve: v.cve, fixed_in: v.fixed_in });
+        out.push({ target: t.label, slug: t.slug, version: t.version, title: v.title, cve: v.cve, fixed_in: v.fixed_in, cvss: v.cvss ?? null });
       }
     }
   }
@@ -105,6 +154,8 @@ async function main() {
 
   const rows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,wp_version,plugins&wp_version=not.is.null`, { headers: restHeaders(srv) })).json();
   const cache = new Map();
+  const nvdCache = new Map(); // CVE id -> score|null (dedup NVD naprieč webmi)
+  const nvdKey = process.env.NVD_API_KEY || null;
   const budget = { left: DAILY_BUDGET };
   let ok = 0;
   let failed = 0;
@@ -112,6 +163,7 @@ async function main() {
   for (const wp of rows) {
     try {
       const { vulns, rateLimited } = await collectVulns(wp, token, cache, budget);
+      await enrichSeverity(vulns, nvdCache, nvdKey);
       const up = await fetch(`${url}/rest/v1/wp_snapshots?site_id=eq.${wp.site_id}`, {
         method: 'PATCH',
         headers: { ...restHeaders(srv), Prefer: 'return=minimal' },
