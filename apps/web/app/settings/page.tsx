@@ -5,7 +5,11 @@ import { Shell } from '../components/Shell';
 import { supabase } from '../lib/supabase';
 
 type JobRun = { status: string; ok: number | null; failed: number | null; finished_at: string };
-type Sched = { kind: 'every5' } | { kind: 'daily'; hh: number; mm: number } | { kind: 'weekly'; dow: number; hh: number; mm: number };
+type Sched =
+  | { kind: 'every5' }
+  | { kind: 'daily'; hh: number; mm: number }
+  | { kind: 'weekly'; dow: number; hh: number; mm: number }
+  | { kind: 'monthly'; dom: number; hh: number; mm: number };
 
 const JOBS: { key: string; label: string; desc: string; sched: Sched }[] = [
   { key: 'scheduler', label: 'Scheduler — uptime + domény', desc: 'každých 5 minút', sched: { kind: 'every5' } },
@@ -19,6 +23,7 @@ const JOBS: { key: string; label: string; desc: string; sched: Sched }[] = [
   { key: 'cve', label: 'WPScan CVE matica', desc: 'pondelok 06:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 6, mm: 0 } },
   { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 7, mm: 0 } },
   { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 8, mm: 0 } },
+  { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC', sched: { kind: 'monthly', dom: 1, hh: 7, mm: 0 } },
 ];
 
 function nextRun(sched: Sched, from: Date): Date {
@@ -31,6 +36,11 @@ function nextRun(sched: Sched, from: Date): Date {
   n.setUTCHours(sched.hh, sched.mm, 0, 0);
   if (sched.kind === 'daily') {
     if (n <= from) n.setUTCDate(n.getUTCDate() + 1);
+    return n;
+  }
+  if (sched.kind === 'monthly') {
+    n.setUTCDate(sched.dom);
+    if (n <= from) n.setUTCMonth(n.getUTCMonth() + 1, sched.dom);
     return n;
   }
   let delta = (sched.dow - n.getUTCDay() + 7) % 7;
@@ -55,21 +65,28 @@ const jobStatusColor: Record<string, [string, string]> = {
   error: ['var(--critical-color)', 'var(--critical-bg)'],
 };
 
+type NotifSettings = { org_id: string; weekly_digest: boolean; monthly_report: boolean; recipients: string[] };
+
 export default function SettingsPage() {
   const [orgName, setOrgName] = useState<string>('—');
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [email, setEmail] = useState<string>('—');
   const [orgSiteCount, setOrgSiteCount] = useState<number>(0);
   const [conn, setConn] = useState<Record<string, number>>({});
   const [jobs, setJobs] = useState<Record<string, JobRun> | null>(null);
   const [now, setNow] = useState<Date | null>(null);
+  const [notif, setNotif] = useState<NotifSettings | null>(null);
+  const [recipText, setRecipText] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const headCount = (table: 'perf_snapshots' | 'gsc_snapshots' | 'security_snapshots' | 'aeo_snapshots' | 'seo_snapshots') =>
       supabase.from(table).select('site_id', { count: 'exact', head: true });
     (async () => {
-      const [o, u, s, perf, gsc, sec, aeo, seo, jr] = await Promise.all([
-        supabase.from('organizations').select('name').limit(1).maybeSingle(),
+      const [o, u, s, perf, gsc, sec, aeo, seo, jr, ns] = await Promise.all([
+        supabase.from('organizations').select('id, name').limit(1).maybeSingle(),
         supabase.auth.getUser(),
         supabase.from('sites').select('id', { count: 'exact', head: true }).eq('is_active', true),
         headCount('perf_snapshots'),
@@ -78,11 +95,19 @@ export default function SettingsPage() {
         headCount('aeo_snapshots'),
         headCount('seo_snapshots'),
         supabase.from('job_runs').select('job, status, ok, failed, finished_at').order('finished_at', { ascending: false }).limit(300),
+        supabase.from('notification_settings').select('org_id, weekly_digest, monthly_report, recipients').limit(1).maybeSingle(),
       ]);
       if (!active) return;
       setOrgName(o.data?.name ?? '—');
+      setOrgId(o.data?.id ?? null);
       setEmail(u.data.user?.email ?? '—');
       setOrgSiteCount(s.count ?? 0);
+      if (ns.data) {
+        setNotif(ns.data as NotifSettings);
+        setRecipText((ns.data.recipients ?? []).join('\n'));
+      } else if (o.data?.id) {
+        setNotif({ org_id: o.data.id, weekly_digest: true, monthly_report: true, recipients: [] });
+      }
       setConn({
         perf_snapshots: perf.count ?? 0,
         gsc_snapshots: gsc.count ?? 0,
@@ -99,6 +124,33 @@ export default function SettingsPage() {
       active = false;
     };
   }, []);
+
+  const saveNotif = async () => {
+    if (!notif || !orgId) return;
+    setSaving(true);
+    setSaved(null);
+    // e-maily: 1 na riadok/čiarku, orezať, dedup, len validné
+    const recipients = Array.from(
+      new Set(
+        recipText
+          .split(/[\n,;]+/)
+          .map((r) => r.trim())
+          .filter((r) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r)),
+      ),
+    );
+    const { error } = await supabase
+      .from('notification_settings')
+      .upsert({ org_id: orgId, weekly_digest: notif.weekly_digest, monthly_report: notif.monthly_report, recipients }, { onConflict: 'org_id' });
+    setSaving(false);
+    if (error) {
+      setSaved(`Chyba: ${error.message}`);
+    } else {
+      setNotif({ ...notif, recipients });
+      setRecipText(recipients.join('\n'));
+      setSaved('Uložené ✓');
+      setTimeout(() => setSaved(null), 2500);
+    }
+  };
 
   return (
     <Shell>
@@ -282,76 +334,62 @@ export default function SettingsPage() {
                 boxShadow: 'var(--shadow-sm)',
               }}
             >
-              <h3
-                style={{
-                  fontWeight: 700,
-                  fontSize: '14px',
-                  marginBottom: '14px',
-                  color: 'var(--text-primary)',
-                }}
-              >
-                Notifikácie
-              </h3>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  fontSize: '13.5px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '11px 14px',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: '10px',
-                  }}
-                >
-                  <span style={{ color: 'var(--text-primary)' }}>E-mail príjemca</span>
-                  <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '11px 14px',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: '10px',
-                  }}
-                >
-                  <span style={{ color: 'var(--text-primary)' }}>Denný digest</span>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: 'var(--ok-color)',
-                      background: 'var(--ok-bg)',
-                      padding: '3px 10px',
-                      borderRadius: '20px',
-                    }}
-                  >
-                    07:00 zap.
-                  </span>
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '11px 14px',
-                    background: 'var(--surface-secondary)',
-                    borderRadius: '10px',
-                    opacity: 0.65,
-                  }}
-                >
-                  <span style={{ color: 'var(--text-primary)' }}>Slack / Telegram</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>čoskoro</span>
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                <h3 style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>Notifikácie &amp; reporty</h3>
+                {saved && <span style={{ fontSize: '12px', fontWeight: 600, color: saved.startsWith('Chyba') ? 'var(--critical-color)' : 'var(--ok-color)' }}>{saved}</span>}
               </div>
+              <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+                Komu chodia týždenný digest a mesačný report. Prázdny zoznam = fallback na admin e-mail{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>.
+              </div>
+              {notif ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px' }}>
+                  <div>
+                    <label htmlFor="recip" style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                      Príjemcovia e-mailov (jeden na riadok)
+                    </label>
+                    <textarea
+                      id="recip"
+                      value={recipText}
+                      onChange={(e) => setRecipText(e.target.value)}
+                      rows={3}
+                      placeholder={email === '—' ? 'meno@firma.sk' : email}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: '13px', fontFamily: "'Geist Mono', monospace", background: 'var(--surface-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-primary)', borderRadius: '10px', resize: 'vertical' }}
+                    />
+                  </div>
+                  {([
+                    ['weekly_digest', 'Týždenný digest', 'Prehľad všetkých webov · pondelok'],
+                    ['monthly_report', 'Mesačný report', 'Súhrn za mesiac · 1. deň mesiaca'],
+                  ] as const).map(([key, title, desc]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setNotif({ ...notif, [key]: !notif[key] })}
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: '10px', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                    >
+                      <span>
+                        <span style={{ display: 'block', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{desc}</span>
+                      </span>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: notif[key] ? 'var(--ok-color)' : 'var(--text-tertiary)', background: notif[key] ? 'var(--ok-bg)' : 'var(--surface-primary)', border: notif[key] ? 'none' : '1px solid var(--border-primary)', padding: '4px 12px', borderRadius: '20px', whiteSpace: 'nowrap' }}>
+                        {notif[key] ? 'zapnuté' : 'vypnuté'}
+                      </span>
+                    </button>
+                  ))}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={saveNotif}
+                      disabled={saving}
+                      style={{ padding: '10px 20px', fontSize: '13.5px', fontWeight: 600, color: '#fff', background: saving ? 'var(--text-tertiary)' : 'var(--accent-primary)', border: 'none', borderRadius: '10px', cursor: saving ? 'default' : 'pointer' }}
+                    >
+                      {saving ? 'Ukladám…' : 'Uložiť nastavenia'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '12.5px', color: 'var(--text-tertiary)' }}>Načítavam…</div>
+              )}
             </div>
 
             {/* Retencia + Tím */}

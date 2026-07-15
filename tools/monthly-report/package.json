@@ -1,0 +1,8 @@
+{
+  "name": "@agency/monthly-report",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: mesačný report per org (uptime + incidenty za mesiac) cez Resend.",
+  "scripts": { "probe": "node index.mjs" }
+}

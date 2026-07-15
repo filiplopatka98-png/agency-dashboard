@@ -187,6 +187,38 @@ export type Database = {
           },
         ]
       }
+      notification_settings: {
+        Row: {
+          monthly_report: boolean
+          org_id: string
+          recipients: string[]
+          updated_at: string
+          weekly_digest: boolean
+        }
+        Insert: {
+          monthly_report?: boolean
+          org_id: string
+          recipients?: string[]
+          updated_at?: string
+          weekly_digest?: boolean
+        }
+        Update: {
+          monthly_report?: boolean
+          org_id?: string
+          recipients?: string[]
+          updated_at?: string
+          weekly_digest?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_settings_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           company: string | null
