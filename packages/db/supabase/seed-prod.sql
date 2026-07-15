@@ -19,5 +19,5 @@ insert into sites (id, org_id, client_id, name, url, domain, cms, is_free, expec
   ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000001', 'Lopatka portfólio', 'https://lopatka.sk',        'lopatka.sk',        'static',    true,  null),
   ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000002', 'Krivošík',          'https://krivosik.sk',       'krivosik.sk',       'wordpress', false, null),
   ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000003', 'Profihouse',        'https://profihouse.sk',     'profihouse.sk',     'wordpress', false, null),
-  ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000004', 'Kuko detský svet',  'https://kukodetskysvet.sk', 'kukodetskysvet.sk', 'wordpress', false, null)
+  ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000004', 'Kuko detský svet',  'https://kukodetskysvet.sk', 'kukodetskysvet.sk', 'other',     false, null)
 on conflict (id) do nothing;
