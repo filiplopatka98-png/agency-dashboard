@@ -108,7 +108,7 @@ export function nextBot(dec: BotDecision): BotDecision {
   return order[(order.indexOf(dec) + 1) % order.length]!;
 }
 
-/** Uptime segmenty (30 d) a kalendár (90 d) z reálnych denných % alebo mock. */
+/** Uptime segment → farba. null (chýbajúci deň) → sivá „nezistené", nefabrikuje sa. */
 export function segColor(pct: number | null): string {
   if (pct === null) return 'var(--unknown-bg)';
   if (pct >= 99.5) return 'var(--ok-color)';

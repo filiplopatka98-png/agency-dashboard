@@ -155,7 +155,7 @@ function fmtDuration(sec: number | null): string {
   return `${(sec / 3600).toFixed(1)} h`;
 }
 
-/** Načíta všetko pre dashboard: reálna fáza 1 + mock budúce polia. */
+/** Načíta všetko pre dashboard — výhradne reálne dáta z DB (žiadne fabrikované). */
 export async function loadDashboard(): Promise<{
   sites: SiteVM[];
   clients: Client[];

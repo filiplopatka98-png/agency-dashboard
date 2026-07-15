@@ -32,7 +32,6 @@ const label = {
   fontWeight: 600,
 } as const;
 
-/** Viditeľné označenie ukážkových (mock) dát — pre časti, ktoré ešte nebežia naživo. */
 /* ─────────────────────────── Sites list ─────────────────────────── */
 function SitesList() {
   const router = useRouter();
@@ -299,7 +298,7 @@ function TabOverview({ site }: { site: SiteVM }) {
         <div style={{ ...label, marginBottom: 14, fontSize: 13 }}>Aktuálny stav</div>
         <div style={{ padding: '14px 16px', background: site.tintBg, borderRadius: 10, borderLeft: `4px solid ${site.dotColor}` }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{site.statusLabel}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Posledná zmena: {site.lastStatusChange}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Posledná kontrola: {site.lastStatusChange}</div>
         </div>
       </div>
       <div style={{ ...card, padding: 18 }}>
