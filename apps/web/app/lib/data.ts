@@ -77,6 +77,8 @@ export interface SiteVM {
   slaOk: boolean;
   openIssues: number;
   isWordPress: boolean;
+  // Integrácie, ktoré ešte čakajú na napojenie (GSC / WP plugin). Prázdne = všetko napojené.
+  pendingIntegrations: string[];
   // AEO — reálne (aeo_snapshots) alebo null ak ešte nemerané
   aeo: {
     score: number;
@@ -320,6 +322,20 @@ export async function loadDashboard(): Promise<{
     const u30 = agg(s.id, 30);
     const u90 = agg(s.id, 90);
 
+    // pending integrácie (potrebujú manuálny setup): GSC vždy, WP plugin len pre WP weby
+    const isWp = s.cms === 'wordpress';
+    const gscOk = (() => {
+      const g = gscBySite.get(s.id);
+      return Boolean(g && g.clicks !== null);
+    })();
+    const wpOk = (() => {
+      const w = wpBySite.get(s.id);
+      return Boolean(w && w.wp_version);
+    })();
+    const pendingIntegrations: string[] = [];
+    if (!gscOk) pendingIntegrations.push('GSC');
+    if (isWp && !wpOk) pendingIntegrations.push('WP plugin');
+
     return {
       id: s.id,
       name: s.name,
@@ -375,7 +391,8 @@ export async function loadDashboard(): Promise<{
       })(),
       slaOk: (u30 ?? 0) >= 99.5,
       openIssues: openIssuesBySite.get(s.id) ?? 0,
-      isWordPress: s.cms === 'wordpress',
+      isWordPress: isWp,
+      pendingIntegrations,
       aeo: (() => {
         const a = aeoBySite.get(s.id);
         if (!a || a.score === null) return null;

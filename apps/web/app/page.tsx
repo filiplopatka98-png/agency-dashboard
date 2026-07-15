@@ -883,6 +883,17 @@ export default function OverviewPage() {
                         ))}
                       </div>
                     )}
+
+                    {/* Napojenie integrácií */}
+                    <div style={{ marginTop: '10px', fontSize: '11.5px' }}>
+                      {site.pendingIntegrations.length === 0 ? (
+                        <span style={{ color: 'var(--ok-color)', fontWeight: 600 }}>✓ Všetko napojené</span>
+                      ) : (
+                        <span style={{ color: 'var(--warning-color)', fontWeight: 600, background: 'var(--warning-bg)', padding: '3px 9px', borderRadius: '6px', display: 'inline-block' }}>
+                          ⚠ Chýba napojiť: {site.pendingIntegrations.join(' · ')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
