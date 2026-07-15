@@ -17,6 +17,7 @@ const JOBS: { key: string; label: string; desc: string; sched: Sched }[] = [
   { key: 'seo', label: 'SEO crawl', desc: 'pondelok 04:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 4, mm: 0 } },
   { key: 'infra', label: 'Infra (hosting/server/TLS)', desc: 'pondelok 04:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 4, mm: 0 } },
   { key: 'cve', label: 'WPScan CVE matica', desc: 'pondelok 06:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 6, mm: 0 } },
+  { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 7, mm: 0 } },
 ];
 
 function nextRun(sched: Sched, from: Date): Date {
