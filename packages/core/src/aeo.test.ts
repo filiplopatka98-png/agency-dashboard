@@ -47,4 +47,17 @@ describe('scoreAeo', () => {
     const r = scoreAeo({ html: '<script type="application/ld+json">{ broken</script>', robotsTxt: '', hasLlmsTxt: false });
     expect(r.checks.find((c) => c.id === 'jsonld')!.pass).toBe(false);
   });
+
+  it('viacstránkové: FAQ na podstránke sa započíta (OR), canonical vyžaduje všetky (AND)', () => {
+    const home = '<html><head><link rel="canonical" href="/"></head><body><h1>Domov</h1><h2>Q</h2><p>A</p></body></html>';
+    const sluzby = '<html><head><link rel="canonical" href="/sluzby/"></head><body><h1>Služby</h1><script type="application/ld+json">{"@type":"FAQPage"}</script></body></html>';
+    const r = scoreAeo({ html: [home, sluzby], robotsTxt: '', hasLlmsTxt: false });
+    expect(r.checks.find((c) => c.id === 'faq')!.pass).toBe(true); // FAQ len na /sluzby → prejde
+    expect(r.checks.find((c) => c.id === 'canonical')!.pass).toBe(true); // obe majú canonical
+    expect(r.schemaTypes).toContain('FAQPage');
+
+    // canonical AND: ak jedna stránka nemá canonical → check padne
+    const r2 = scoreAeo({ html: [home, '<html><body><h1>X</h1></body></html>'], robotsTxt: '', hasLlmsTxt: false });
+    expect(r2.checks.find((c) => c.id === 'canonical')!.pass).toBe(false);
+  });
 });

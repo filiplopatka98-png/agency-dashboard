@@ -12,6 +12,8 @@ import { scoreAeo } from '../../packages/core/dist/aeo.js';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 const TIMEOUT = 12_000;
+const MAX_PAGES = 25; // pokryje malé/stredné weby celé; veľké sa capnú (min. „základných 10")
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function tryFetch(url) {
   try {
@@ -26,15 +28,70 @@ async function tryFetch(url) {
   }
 }
 
+// Vytiahne <loc> URL zo (sub)sitemapy.
+async function fetchLocs(url) {
+  const res = await tryFetch(url);
+  if (!res || !res.ok) return [];
+  const xml = (await res.text()).slice(0, 500_000);
+  return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1]);
+}
+
+// Objaví do MAX_PAGES stránok: homepage + zo sitemapy (aj sitemap-index), fallback interné odkazy.
+async function discoverPages(origin, robotsTxt, homepageHtml) {
+  const pages = [origin + '/'];
+  const add = (u) => {
+    try {
+      const url = new URL(u, origin);
+      if (url.origin === origin) {
+        const norm = url.href.replace(/#.*$/, '');
+        if (!pages.includes(norm) && pages.length < MAX_PAGES) pages.push(norm);
+      }
+    } catch {
+      /* ignoruj nevalidnú URL */
+    }
+  };
+
+  const declared = (robotsTxt.match(/^\s*sitemap:\s*(\S+)/im) || [])[1] || `${origin}/sitemap.xml`;
+  let locs = await fetchLocs(declared);
+  // sitemap-index (všetky loc sú .xml) → rozbaľ prvé pár sub-sitemap
+  if (locs.length && locs.every((l) => /\.xml($|\?)/i.test(l))) {
+    const sub = [];
+    for (const sm of locs.slice(0, 3)) {
+      sub.push(...(await fetchLocs(sm)));
+      if (sub.length >= MAX_PAGES * 3) break;
+    }
+    locs = sub;
+  }
+  for (const l of locs) add(l);
+
+  // fallback: interné odkazy z homepage
+  if (pages.length < MAX_PAGES) {
+    for (const m of homepageHtml.matchAll(/<a[^>]+href=["']([^"'#]+)["']/gi)) add(m[1]);
+  }
+  return pages.slice(0, MAX_PAGES);
+}
+
 export async function probeAeo(domain) {
-  const res = await tryFetch(`https://${domain}`);
+  const origin = `https://${domain}`;
+  const res = await tryFetch(origin);
   if (!res || !res.ok) throw new Error(`fetch ${domain}: ${res ? res.status : 'network'}`);
-  const html = (await res.text()).slice(0, 500_000);
-  const robotsRes = await tryFetch(`https://${domain}/robots.txt`);
+  const homepageHtml = (await res.text()).slice(0, 500_000);
+
+  const robotsRes = await tryFetch(`${origin}/robots.txt`);
   const robotsTxt = robotsRes && robotsRes.ok ? await robotsRes.text() : '';
-  const llmsRes = await tryFetch(`https://${domain}/llms.txt`);
+  const llmsRes = await tryFetch(`${origin}/llms.txt`);
   const hasLlmsTxt = Boolean(llmsRes && llmsRes.ok);
-  return scoreAeo({ html, robotsTxt, hasLlmsTxt });
+
+  const urls = await discoverPages(origin, robotsTxt, homepageHtml);
+  const htmls = [homepageHtml];
+  for (const u of urls.slice(1)) {
+    const r = await tryFetch(u);
+    if (r && r.ok && (r.headers.get('content-type') || '').includes('text/html')) {
+      htmls.push((await r.text()).slice(0, 500_000));
+    }
+    await sleep(300);
+  }
+  return { ...scoreAeo({ html: htmls, robotsTxt, hasLlmsTxt }), pagesChecked: htmls.length };
 }
 
 import { recordJobRun } from '../_shared/jobRun.mjs';
@@ -70,7 +127,7 @@ async function main() {
       const r = await probeAeo(s.domain);
       row = { site_id: s.id, org_id: s.org_id, score: r.score, checks: r.checks, schema_types: r.schemaTypes, has_llms_txt: r.hasLlmsTxt, ai_bots: r.aiBots, measured_at: now, error: null };
       ok++;
-      console.log(JSON.stringify({ ev: 'aeo.ok', domain: s.domain, score: r.score }));
+      console.log(JSON.stringify({ ev: 'aeo.ok', domain: s.domain, score: r.score, pages: r.pagesChecked }));
     } catch (e) {
       row = { site_id: s.id, org_id: s.org_id, score: null, measured_at: now, error: String(e?.message ?? e) };
       failed++;

@@ -107,29 +107,44 @@ function parseBots(robotsTxt: string): { bots: Record<string, BotDecision>; name
   return { bots, namedCount: named };
 }
 
-export function scoreAeo(input: { html: string; robotsTxt: string; hasLlmsTxt: boolean }): AeoResult {
-  const { html, robotsTxt, hasLlmsTxt } = input;
-  const { objects, types } = extractJsonLd(html);
+function directAnswerOk(html: string): boolean {
+  // priama odpoveď: prvý <p> po prvom <h2>, text ≤ 320 znakov
+  const h2idx = html.search(/<h2[\s>]/i);
+  if (h2idx < 0) return false;
+  const p = html.slice(h2idx).match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (!p) return false;
+  const text = p[1]!.replace(/<[^>]+>/g, '').trim();
+  return text.length > 0 && text.length <= 320;
+}
+
+/**
+ * AEO skóre. `html` môže byť jedna stránka (string) alebo viac stránok (string[]).
+ * Agregácia naprieč stránkami: „existuje niekde“ checky (JSON-LD, typy, author,
+ * freshness, FAQ, priama odpoveď) prejdú, ak ich spĺňa ktorákoľvek stránka; per-page
+ * checky (1× H1, canonical) prejdú len ak ich spĺňa KAŽDÁ; site-level (llms.txt, AI
+ * boti) sa hodnotia raz. Jedna stránka → identické správanie ako predtým.
+ */
+export function scoreAeo(input: { html: string | string[]; robotsTxt: string; hasLlmsTxt: boolean }): AeoResult {
+  const { robotsTxt, hasLlmsTxt } = input;
+  const htmls = (Array.isArray(input.html) ? input.html : [input.html]).filter((h) => typeof h === 'string');
+  const pages = (htmls.length ? htmls : ['']).map((html) => {
+    const { objects, types } = extractJsonLd(html);
+    return {
+      html,
+      objects,
+      types,
+      h1: (html.match(/<h1[\s>]/gi) ?? []).length,
+      h2: (html.match(/<h2[\s>]/gi) ?? []).length,
+      hasCanonical: /<link[^>]+rel=["']?canonical/i.test(html),
+      directAnswer: directAnswerOk(html),
+    };
+  });
   const { bots, namedCount } = parseBots(robotsTxt);
 
-  const h1 = (html.match(/<h1[\s>]/gi) ?? []).length;
-  const h2 = (html.match(/<h2[\s>]/gi) ?? []).length;
-  const hasCanonical = /<link[^>]+rel=["']?canonical/i.test(html);
-  const hasFaq = types.includes('FAQPage');
-  const hasOrg = types.includes('Organization');
-  const hasWebSite = types.includes('WebSite');
-
-  // priama odpoveď: prvý <p> po prvom <h2>, text ≤ 320 znakov
-  let directAnswer = false;
-  const h2idx = html.search(/<h2[\s>]/i);
-  if (h2idx >= 0) {
-    const after = html.slice(h2idx);
-    const p = after.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-    if (p) {
-      const text = p[1]!.replace(/<[^>]+>/g, '').trim();
-      directAnswer = text.length > 0 && text.length <= 320;
-    }
-  }
+  const objectsAll = pages.flatMap((p) => p.objects);
+  const typesAll = [...new Set(pages.flatMap((p) => p.types))];
+  const hasOrg = typesAll.includes('Organization');
+  const hasWebSite = typesAll.includes('WebSite');
 
   const mk = (id: string, label: string, weight: number, pass: boolean, partial?: number): AeoCheck => ({
     id,
@@ -142,18 +157,18 @@ export function scoreAeo(input: { html: string; robotsTxt: string; hasLlmsTxt: b
   const typesEarned = hasOrg && hasWebSite ? 15 : hasOrg || hasWebSite ? 8 : 0;
 
   const checks: AeoCheck[] = [
-    mk('jsonld', 'JSON-LD štruktúrované dáta', 20, objects.length > 0),
+    mk('jsonld', 'JSON-LD štruktúrované dáta', 20, objectsAll.length > 0),
     { id: 'types', label: 'Relevantné typy (Organization + WebSite)', weight: 15, earned: typesEarned, pass: typesEarned === 15 },
-    mk('author', 'Author / E-E-A-T signály', 10, hasAuthorPerson(objects)),
-    mk('freshness', 'Freshness (dateModified ≤ 12 mes.)', 10, freshDateModified(objects, html)),
-    mk('headings', 'Nadpisová štruktúra (1× H1, H2)', 10, h1 === 1 && h2 >= 1),
-    mk('direct', 'Priama odpoveď (≤ 320 znakov)', 5, directAnswer),
-    mk('faq', 'FAQ bloky (FAQPage schema)', 10, hasFaq),
+    mk('author', 'Author / E-E-A-T signály', 10, hasAuthorPerson(objectsAll)),
+    mk('freshness', 'Freshness (dateModified ≤ 12 mes.)', 10, pages.some((p) => freshDateModified(p.objects, p.html))),
+    mk('headings', 'Nadpisová štruktúra (1× H1, H2)', 10, pages.every((p) => p.h1 === 1) && pages.some((p) => p.h2 >= 1)),
+    mk('direct', 'Priama odpoveď (≤ 320 znakov)', 5, pages.some((p) => p.directAnswer)),
+    mk('faq', 'FAQ bloky (FAQPage schema)', 10, typesAll.includes('FAQPage')),
     mk('llms', 'llms.txt', 5, hasLlmsTxt),
     mk('aibots', 'AI boti explicitne v robots.txt', 10, namedCount > 0),
-    mk('canonical', 'Canonical', 5, hasCanonical),
+    mk('canonical', 'Canonical', 5, pages.every((p) => p.hasCanonical)),
   ];
 
   const score = Math.min(100, checks.reduce((n, c) => n + c.earned, 0));
-  return { score, checks, schemaTypes: types, hasLlmsTxt, aiBots: bots };
+  return { score, checks, schemaTypes: typesAll, hasLlmsTxt, aiBots: bots };
 }
