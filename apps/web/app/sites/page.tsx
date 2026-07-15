@@ -742,7 +742,30 @@ function TabAeo({ site }: { site: SiteVM }) {
   );
 }
 
+type Vuln = { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null };
+
+function cmpVer(a: string, b: string): number {
+  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+// Najvyššia fixed_in (updatni sem → vyriešiš všetky CVE skupiny); null ak niektorá nemá opravu.
+function maxFixedIn(items: Vuln[]): string | null {
+  let hasUnfixed = false;
+  let max: string | null = null;
+  for (const v of items) {
+    if (!v.fixed_in) hasUnfixed = true;
+    else if (!max || cmpVer(v.fixed_in, max) > 0) max = v.fixed_in;
+  }
+  return hasUnfixed ? null : max;
+}
+
 function TabInfra({ site }: { site: SiteVM }) {
+  const [openVuln, setOpenVuln] = useState<string | null>(null);
   const sec = site.security;
   const headerRow: [string, keyof NonNullable<typeof sec>['headers']][] = [
     ['HSTS', 'hsts'],
@@ -880,22 +903,45 @@ function TabInfra({ site }: { site: SiteVM }) {
             <div style={{ background: 'var(--ok-bg)', borderRadius: 12, padding: 22, textAlign: 'center', fontSize: 13, color: 'var(--ok-color)', fontWeight: 600 }}>Žiadne známe CVE pre nainštalované verzie 🎉</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {site.wp.vulns.map((v, i) => {
-                const crit = !v.fixed_in; // bez opravy = kritickejšie
-                return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', background: crit ? 'var(--critical-bg)' : 'var(--warning-bg)', border: crit ? '1px solid var(--critical-color)' : 'none', borderRadius: 11 }}>
-                    <span style={{ fontSize: 18 }}>{crit ? '🔴' : '🟡'}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{v.target} · v{v.version}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        {v.title}
-                        {v.cve && <> · <span style={mono}>{v.cve}</span></>}
-                        {v.fixed_in ? ` · oprava v ${v.fixed_in}` : ' · zatiaľ bez opravy'}
+              {Object.values(
+                site.wp.vulns.reduce<Record<string, { target: string; version: string; items: Vuln[] }>>((acc, v) => {
+                  const k = `${v.target}|${v.version}`;
+                  (acc[k] ??= { target: v.target, version: v.version, items: [] }).items.push(v);
+                  return acc;
+                }, {}),
+              )
+                .sort((a, b) => b.items.length - a.items.length)
+                .map((g) => {
+                  const key = `${g.target}|${g.version}`;
+                  const fix = maxFixedIn(g.items);
+                  const crit = fix === null; // niektorá CVE bez opravy
+                  const open = openVuln === key;
+                  return (
+                    <div key={key} style={{ background: crit ? 'var(--critical-bg)' : 'var(--warning-bg)', border: crit ? '1px solid var(--critical-color)' : 'none', borderRadius: 11, overflow: 'hidden' }}>
+                      <div onClick={() => setOpenVuln(open ? null : key)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', cursor: 'pointer' }}>
+                        <span style={{ fontSize: 18 }}>{crit ? '🔴' : '🟡'}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-primary)' }}>{g.target} <span style={{ ...mono, fontWeight: 500, color: 'var(--text-tertiary)' }}>v{g.version}</span></div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            {g.items.length} {g.items.length === 1 ? 'zraniteľnosť' : g.items.length <= 4 ? 'zraniteľnosti' : 'zraniteľností'}
+                            {fix ? ` · aktualizuj na ≥ ${fix}` : ' · niektorá zatiaľ bez opravy'}
+                          </div>
+                        </div>
+                        <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{open ? '▾' : '▸'}</span>
                       </div>
+                      {open && (
+                        <div style={{ padding: '0 15px 12px 46px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {g.items.map((v, i) => (
+                            <div key={i} style={{ fontSize: 12, color: 'var(--text-secondary)', paddingTop: 6, borderTop: '1px solid var(--border-primary)' }}>
+                              {v.cve && <span style={{ ...mono, color: 'var(--text-primary)', fontWeight: 600 }}>{v.cve}</span>} {v.title}
+                              {v.fixed_in ? <span style={{ color: 'var(--text-tertiary)' }}> · fix {v.fixed_in}</span> : <span style={{ color: 'var(--critical-color)' }}> · bez opravy</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           )}
         </div>
