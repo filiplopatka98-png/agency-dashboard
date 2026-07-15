@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Shell } from './components/Shell';
 import { loadDashboard, type SiteVM } from './lib/data';
 import { supabase, type Client } from './lib/supabase';
+import { relativeTime } from './lib/format';
 
 const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
 
@@ -23,6 +24,7 @@ export default function OverviewPage() {
   const [addBusy, setAddBusy] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [changes, setChanges] = useState<{ id: number; kind: string; severity: string; message: string; created_at: string; site_id: string | null }[]>([]);
 
   const [toast, setToast] = useState<string | null>(null);
 
@@ -36,11 +38,16 @@ export default function OverviewPage() {
     let active = true;
     (async () => {
       try {
-        const [dash, mem] = await Promise.all([loadDashboard(), supabase.from('memberships').select('org_id').limit(1).maybeSingle()]);
+        const [dash, mem, chg] = await Promise.all([
+          loadDashboard(),
+          supabase.from('memberships').select('org_id').limit(1).maybeSingle(),
+          supabase.from('change_log').select('id, kind, severity, message, created_at, site_id').order('created_at', { ascending: false }).limit(12),
+        ]);
         if (!active) return;
         setSites(dash.sites);
         setClients(dash.clients);
         setOrgId(mem.data?.org_id ?? null);
+        setChanges(chg.data ?? []);
       } finally {
         if (active) setLoading(false);
       }
@@ -744,6 +751,27 @@ export default function OverviewPage() {
               >
                 + Pridať web
               </button>
+            </div>
+          )}
+
+          {/* Nedávne zmeny (change_log) */}
+          {changes.length > 0 && (
+            <div style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: '18px', boxShadow: 'var(--shadow-sm)', marginBottom: '24px' }}>
+              <h2 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', marginBottom: '12px' }}>Nedávne zmeny</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {changes.map((c) => {
+                  const col = c.severity === 'critical' ? 'var(--critical-color)' : c.severity === 'warning' ? 'var(--warning-color)' : 'var(--ok-color)';
+                  const dom = c.site_id ? (sites.find((s) => s.id === c.site_id)?.domain ?? null) : null;
+                  return (
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '9px 4px', borderBottom: '1px solid var(--border-primary)', fontSize: '13px' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: col, flexShrink: 0 }} />
+                      <span style={{ flex: 1, color: 'var(--text-primary)' }}>{c.message}</span>
+                      {dom && <span style={{ fontSize: '11.5px', color: 'var(--text-tertiary)', fontFamily: "'Geist Mono', monospace" }}>{dom}</span>}
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', minWidth: 54, textAlign: 'right' }}>{relativeTime(c.created_at)}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

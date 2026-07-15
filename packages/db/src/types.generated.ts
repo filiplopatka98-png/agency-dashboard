@@ -142,6 +142,51 @@ export type Database = {
           },
         ]
       }
+      change_log: {
+        Row: {
+          created_at: string
+          id: number
+          kind: string
+          message: string
+          org_id: string
+          severity: string
+          site_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          kind: string
+          message: string
+          org_id: string
+          severity?: string
+          site_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          kind?: string
+          message?: string
+          org_id?: string
+          severity?: string
+          site_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "change_log_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "change_log_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           company: string | null
@@ -475,6 +520,48 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      metric_history: {
+        Row: {
+          captured_at: string
+          id: number
+          metric: string
+          org_id: string
+          site_id: string
+          value: number | null
+        }
+        Insert: {
+          captured_at?: string
+          id?: never
+          metric: string
+          org_id: string
+          site_id: string
+          value?: number | null
+        }
+        Update: {
+          captured_at?: string
+          id?: never
+          metric?: string
+          org_id?: string
+          site_id?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metric_history_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "metric_history_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
             referencedColumns: ["id"]
           },
         ]

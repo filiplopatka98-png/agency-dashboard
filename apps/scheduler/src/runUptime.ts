@@ -101,6 +101,17 @@ export async function runUptime(env: Env): Promise<void> {
   });
   if (pErr) throw new Error(`persist_uptime: ${pErr.message}`);
 
+  // Log veľkých zmien: výpadok / obnova (feed „čo sa zmenilo").
+  const nameById = new Map(rows.map((r) => [r.id, r.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '')]));
+  const logs = [
+    ...decision.openIncident.map((sid) => ({ site_id: sid, org_id: orgById.get(sid), kind: 'status', severity: 'critical', message: `${nameById.get(sid) ?? 'web'} je nedostupný` })),
+    ...decision.closeIncident.map((sid) => ({ site_id: sid, org_id: orgById.get(sid), kind: 'status', severity: 'info', message: `${nameById.get(sid) ?? 'web'} je opäť dostupný` })),
+  ];
+  if (logs.length) {
+    const { error: lErr } = await supabase.from('change_log').insert(logs);
+    if (lErr) console.log(JSON.stringify({ ev: 'changelog.fail', message: lErr.message }));
+  }
+
   console.log(
     JSON.stringify({
       ev: 'uptime.persisted',
