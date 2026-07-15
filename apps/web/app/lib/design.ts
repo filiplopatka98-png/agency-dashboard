@@ -47,32 +47,6 @@ export function scoreColor(s: number): string {
   return s >= 90 ? 'var(--ok-color)' : s >= 50 ? 'var(--warning-color)' : 'var(--critical-color)';
 }
 
-/** Deterministický PRNG (seedovaný id-čkom webu) — stabilný mock naprieč rendrami. */
-export function seeded(seed: number): () => number {
-  let s = seed % 2147483647;
-  if (s <= 0) s += 2147483646;
-  return () => (s = (s * 16807) % 2147483647) / 2147483647;
-}
-
-/** Sparkline (p95 odozva, 30 dní) — SVG body + area + p95 hodnota. */
-export function buildSparkline(seed: number): { points: string; area: string; p95: number } {
-  const rnd = seeded(seed + 7);
-  const base = 120 + ((seed * 13) % 90);
-  const vals = Array.from({ length: 30 }, (_, i) => Math.round(base + Math.sin(i / 3) * 25 + (rnd() - 0.5) * 30));
-  const maxV = Math.max(...vals);
-  const minV = Math.min(...vals);
-  const W = 560;
-  const H = 70;
-  const pts = vals
-    .map((v, i) => {
-      const x = (i / (vals.length - 1)) * W;
-      const y = H - ((v - minV) / (maxV - minV || 1)) * (H - 8) - 4;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-  return { points: pts, area: `0,${H} ${pts} ${W},${H}`, p95: Math.round(base + 30) };
-}
-
 /** Sparkline z reálnych hodnôt (napr. p95 odozva z uptime_daily). */
 export function sparklineFromValues(vals: number[]): { points: string; area: string; p95: number } | null {
   if (vals.length < 2) return null;
@@ -88,64 +62,6 @@ export function sparklineFromValues(vals: number[]): { points: string; area: str
     })
     .join(' ');
   return { points: pts, area: `0,${H} ${pts} ${W},${H}`, p95: vals[vals.length - 1]! };
-}
-
-/** Perf mock (Lighthouse skóre + CWV) podľa device. Port z predlohy. */
-export interface PerfCwv {
-  val: string;
-  color: string;
-  state: string;
-  bg: string;
-  w: string;
-}
-export interface PerfData {
-  isMobile: boolean;
-  perfScore: number; perfOff: number; perfColor: string;
-  a11yScore: number; a11yOff: number; a11yColor: string;
-  bpScore: number; bpOff: number; bpColor: string;
-  seoScore: number; seoOff: number; seoColor: string;
-  lcp: PerfCwv; inp: PerfCwv; cls: PerfCwv;
-  weight: string; requests: string; ttfb: string; images: string;
-  trendPoints: string; trendArea: string; trendLabel: string;
-}
-
-export function buildPerf(device: 'desktop' | 'mobile'): PerfData {
-  const C = 207.35;
-  const off = (s: number) => +(C * (1 - s / 100)).toFixed(1);
-  const isM = device === 'mobile';
-  const mk = (val: string, ok: boolean, warnHi: boolean, unit: string, w: string): PerfCwv => ({
-    val: val + unit,
-    color: ok ? 'var(--ok-color)' : warnHi ? 'var(--warning-color)' : 'var(--critical-color)',
-    state: ok ? 'Dobré' : warnHi ? 'Priemer' : 'Slabé',
-    bg: ok ? 'var(--ok-bg)' : warnHi ? 'var(--warning-bg)' : 'var(--critical-bg)',
-    w,
-  });
-  const trend = Array.from({ length: 24 }, (_, i) => (isM ? 62 : 84) + Math.sin(i / 3.5) * 6 + i * (isM ? 0.4 : 0.25));
-  const mn = Math.min(...trend);
-  const mx = Math.max(...trend);
-  const W = 560;
-  const H = 60;
-  const pts = trend
-    .map((v, i) => `${((i / (trend.length - 1)) * W).toFixed(1)},${(H - ((v - mn) / (mx - mn || 1)) * (H - 8) - 4).toFixed(1)}`)
-    .join(' ');
-  const scores = isM ? { perf: 63, a11y: 88, bp: 90, seo: 72 } : { perf: 87, a11y: 89, bp: 92, seo: 76 };
-  return {
-    isMobile: isM,
-    perfScore: scores.perf, perfOff: off(scores.perf), perfColor: scoreColor(scores.perf),
-    a11yScore: scores.a11y, a11yOff: off(scores.a11y), a11yColor: scoreColor(scores.a11y),
-    bpScore: scores.bp, bpOff: off(scores.bp), bpColor: scoreColor(scores.bp),
-    seoScore: scores.seo, seoOff: off(scores.seo), seoColor: scoreColor(scores.seo),
-    lcp: isM ? mk('3.1', false, true, 's', '82%') : mk('1.8', true, true, 's', '72%'),
-    inp: isM ? mk('260', false, true, 'ms', '78%') : mk('145', true, true, 'ms', '68%'),
-    cls: isM ? mk('0.09', true, true, '', '45%') : mk('0.05', true, true, '', '50%'),
-    weight: isM ? '2.6 MB' : '2.4 MB',
-    requests: isM ? '98' : '94',
-    ttfb: isM ? '0.5s' : '0.3s',
-    images: isM ? '2.0 MB' : '1.8 MB',
-    trendPoints: pts,
-    trendArea: `0,${H} ${pts} ${W},${H}`,
-    trendLabel: isM ? 'Mobil · 90 dní' : 'Desktop · 90 dní',
-  };
 }
 
 /** Core Web Vital → prezentácia (hodnota, farba, stav, bar). value=null → nezistené. */

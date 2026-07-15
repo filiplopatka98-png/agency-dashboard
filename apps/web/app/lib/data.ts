@@ -6,7 +6,6 @@ import {
   tlsExpiryColor,
   expiryBadgeColor,
   segColor,
-  seeded,
   type StatusKey,
 } from './design';
 import { relativeTime } from './format';
@@ -76,12 +75,8 @@ export interface SiteVM {
   mttrMin: number | null;
   daysSinceIncident: number | null;
   slaOk: boolean;
-  // mock (budúce fázy)
-  perfScore: number | null;
   openIssues: number;
   isWordPress: boolean;
-  gscConnected: boolean;
-  seed: number;
   // AEO — reálne (aeo_snapshots) alebo null ak ešte nemerané
   aeo: {
     score: number;
@@ -141,12 +136,6 @@ export interface PerfSnapVM {
   fieldLcpMs: number | null;
   fieldInpMs: number | null;
   fieldCls: number | null;
-}
-
-function hashSeed(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return Math.abs(h) || 1;
 }
 
 function daysUntilDate(dateStr: string | null): number | null {
@@ -330,8 +319,6 @@ export async function loadDashboard(): Promise<{
 
     const u30 = agg(s.id, 30);
     const u90 = agg(s.id, 90);
-    const seed = hashSeed(s.id);
-    const rnd = seeded(seed);
 
     return {
       id: s.id,
@@ -387,12 +374,8 @@ export async function loadDashboard(): Promise<{
         return st?.lastStart ? Math.floor((Date.now() - st.lastStart) / 86400000) : null;
       })(),
       slaOk: (u30 ?? 0) >= 99.5,
-      // mock — budúce fázy (deterministické podľa seedu)
-      perfScore: key === 'unknown' ? null : 60 + Math.floor(rnd() * 39),
       openIssues: openIssuesBySite.get(s.id) ?? 0,
       isWordPress: s.cms === 'wordpress',
-      gscConnected: seed % 2 === 1,
-      seed,
       aeo: (() => {
         const a = aeoBySite.get(s.id);
         if (!a || a.score === null) return null;

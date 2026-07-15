@@ -7,7 +7,6 @@ import { Shell } from '../components/Shell';
 import { loadDashboard, type SiteVM } from '../lib/data';
 import { supabase, type Client } from '../lib/supabase';
 import {
-  buildSparkline,
   sparklineFromValues,
   cwvMeta,
   scoreColor,
@@ -326,7 +325,7 @@ function TabOverview({ site }: { site: SiteVM }) {
 }
 
 function TabUptime({ site }: { site: SiteVM }) {
-  const spark = sparklineFromValues(site.p95Series) ?? buildSparkline(site.seed);
+  const spark = sparklineFromValues(site.p95Series); // null = zatiaľ málo dát (NEfabrikuje sa)
   const figures: [string, string][] = [
     ['24 hodín', site.uptime24h === null ? '—' : `${site.uptime24h}%`],
     ['7 dní', site.uptime7d === null ? '—' : `${site.uptime7d}%`],
@@ -369,18 +368,24 @@ function TabUptime({ site }: { site: SiteVM }) {
       <div style={{ ...card, padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
           <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Odozva (p95, 30 dní)</h3>
-          <div><span style={{ fontSize: 20, fontWeight: 800, ...mono, color: 'var(--accent-primary)' }}>{spark.p95}</span><span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 4 }}>ms</span></div>
+          {spark && <div><span style={{ fontSize: 20, fontWeight: 800, ...mono, color: 'var(--accent-primary)' }}>{spark.p95}</span><span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 4 }}>ms</span></div>}
         </div>
-        <svg viewBox="0 0 560 70" preserveAspectRatio="none" style={{ width: '100%', height: 70, display: 'block' }}>
-          <defs>
-            <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <polygon points={spark.area} fill="url(#sparkGrad)" />
-          <polyline points={spark.points} fill="none" stroke="var(--accent-primary)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        </svg>
+        {spark ? (
+          <svg viewBox="0 0 560 70" preserveAspectRatio="none" style={{ width: '100%', height: 70, display: 'block' }}>
+            <defs>
+              <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <polygon points={spark.area} fill="url(#sparkGrad)" />
+            <polyline points={spark.points} fill="none" stroke="var(--accent-primary)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <div style={{ height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-secondary)', borderRadius: 10, fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+            Zatiaľ málo dát pre graf odozvy (zbiera sa denne)
+          </div>
+        )}
       </div>
 
       <div style={{ ...card, padding: 18 }}>
