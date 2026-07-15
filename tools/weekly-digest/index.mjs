@@ -48,7 +48,8 @@ async function main() {
   const weekLabel = isoWeek(new Date());
   const sites = await get('sites?select=id,org_id,domain,cms,maintenance,consecutive_failures&is_active=eq.true');
   const orgs = await get('organizations?select=id,name');
-  const [daily, seo, wp, dom, tls, sec, aeo, perf, gsc, infra, incidents, settings] = await Promise.all([
+  const weekAgo = new Date(now - 7 * 86400000).toISOString();
+  const [daily, seo, wp, dom, tls, sec, aeo, perf, gsc, infra, incidents, settings, changes] = await Promise.all([
     get('uptime_daily?select=site_id,day,uptime_pct'),
     get('seo_snapshots?select=site_id,issues,measured_at'),
     get('wp_snapshots?select=site_id,vulns,measured_at'),
@@ -61,7 +62,16 @@ async function main() {
     get('infra_snapshots?select=site_id,measured_at'),
     get('incidents?select=site_id&resolved_at=is.null'),
     get('notification_settings?select=org_id,weekly_digest,recipients'),
+    get(`change_log?select=org_id,site_id,severity,message,created_at&created_at=gte.${weekAgo}&order=created_at.desc`),
   ]);
+
+  const domById = new Map(sites.map((s) => [s.id, s.domain]));
+  const changesByOrg = new Map();
+  for (const c of changes) {
+    const arr = changesByOrg.get(c.org_id) ?? [];
+    arr.push({ message: c.message, severity: c.severity, domain: c.site_id ? domById.get(c.site_id) ?? null : null });
+    changesByOrg.set(c.org_id, arr);
+  }
 
   const by = (arr) => { const m = new Map(); for (const r of arr) m.set(r.site_id, r); return m; };
   const seoM = by(seo), wpM = by(wp), domM = by(dom), tlsM = by(tls), secM = by(sec), aeoM = by(aeo), perfM = by(perf), gscM = by(gsc), infraM = by(infra);
@@ -106,7 +116,7 @@ async function main() {
       return { domain: s.domain, status, uptime30: uptime30(s.id), openIssues: Array.isArray(issues) ? issues.length : 0, vulns, criticalVulns, attention };
     });
 
-    const { subject, html, text } = renderDigest({ weekLabel, orgName: org.name ?? 'Org', sites: digestSites });
+    const { subject, html, text } = renderDigest({ weekLabel, orgName: org.name ?? 'Org', sites: digestSites, changes: changesByOrg.get(org.id) ?? [] });
     const recipients = (st?.recipients?.length ? st.recipients : (adminTo ? [adminTo] : []));
     if (!resendReady || !recipients.length) {
       skipped++;

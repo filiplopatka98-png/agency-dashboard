@@ -44,6 +44,9 @@ describe.skipIf(!enabled)('runDomains (integration)', () => {
       ALERT_EMAIL_FROM: '',
       UPTIME_PROVIDER: 'local',
       WP_INGEST_TOKEN: '',
+      GH_DISPATCH_TOKEN: '',
+      GH_REPO: '',
+      SUPABASE_JWT_SECRET: '',
     };
     await db.from('organizations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     await db.from('organizations').insert({ id: ORG, name: 'Domain Test Org' });

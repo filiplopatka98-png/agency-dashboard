@@ -7,4 +7,8 @@ export interface Env {
   ALERT_EMAIL_FROM: string;
   UPTIME_PROVIDER: string;
   WP_INGEST_TOKEN: string;
+  // Ručné spustenie jobu z UI (voliteľné — kým nie sú nastavené, /trigger vráti 503).
+  GH_DISPATCH_TOKEN: string; // fine-grained PAT, actions:write
+  GH_REPO: string; // "owner/repo"
+  SUPABASE_JWT_SECRET: string; // overenie prihláseného admina
 }

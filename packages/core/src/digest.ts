@@ -11,10 +11,17 @@ export interface DigestSite {
   attention: string[]; // expiry / neaktuálne / poklesy
 }
 
+export interface DigestChange {
+  message: string;
+  severity: string; // 'info' | 'warning' | 'critical'
+  domain?: string | null;
+}
+
 export interface DigestData {
   weekLabel: string;
   orgName: string;
   sites: DigestSite[];
+  changes?: DigestChange[]; // veľké zmeny za týždeň (change_log)
 }
 
 const esc = (s: string) =>
@@ -66,6 +73,21 @@ export function renderDigest(data: DigestData): { subject: string; html: string;
     })
     .join('');
 
+  const changes = data.changes ?? [];
+  const changesHtml = changes.length
+    ? `<div style="margin-bottom:18px">
+        <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px">Za posledný týždeň</div>
+        ${changes
+          .slice(0, 12)
+          .map((c) => {
+            const col = c.severity === 'critical' ? '#dc2626' : c.severity === 'warning' ? '#d97706' : '#16a34a';
+            const dom = c.domain ? `<span style="color:#9ca3af"> · ${esc(c.domain)}</span>` : '';
+            return `<div style="font-size:13px;color:#444;padding:5px 0;border-bottom:1px solid #f3f4f6"><span style="color:${col};font-weight:700">•</span> ${esc(c.message)}${dom}</div>`;
+          })
+          .join('')}
+      </div>`
+    : '';
+
   const html = `<!doctype html><html><body style="margin:0;background:#f6f7f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
   <div style="max-width:600px;margin:0 auto;padding:24px">
     <div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #eee">
@@ -73,13 +95,18 @@ export function renderDigest(data: DigestData): { subject: string; html: string;
       <h1 style="font-size:20px;color:#111;margin:6px 0 4px">Týždenný prehľad</h1>
       <div style="font-size:14px;color:#444;margin-bottom:20px">${esc(summaryLine)}</div>
       ${needAttention === 0 ? '<div style="background:#f0fdf4;color:#16a34a;padding:12px 14px;border-radius:8px;font-size:14px;font-weight:600;margin-bottom:16px">✓ Všetko v poriadku — žiadny web nevyžaduje pozornosť.</div>' : ''}
+      ${changesHtml}
       <table style="width:100%;border-collapse:collapse">${rows}</table>
       <div style="font-size:12px;color:#9ca3af;margin-top:22px">Automatický týždenný digest z Monitorix. Dáta sú reálne merania — nič sa neodhaduje.</div>
     </div>
   </div></body></html>`;
 
+  const changesText = changes.length
+    ? `\nZa posledný týždeň:\n${changes.slice(0, 12).map((c) => `  • ${c.message}${c.domain ? ` (${c.domain})` : ''}`).join('\n')}\n`
+    : '';
+
   const text =
-    `Monitorix týždenný prehľad — ${data.weekLabel}\n${summaryLine}\n\n` +
+    `Monitorix týždenný prehľad — ${data.weekLabel}\n${summaryLine}\n${changesText}\n` +
     sites
       .map((s) => {
         const st = s.status === 'down' ? 'NEDOSTUPNÝ' : s.status === 'maintenance' ? 'údržba' : 'beží';

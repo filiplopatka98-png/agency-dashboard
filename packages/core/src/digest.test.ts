@@ -29,6 +29,21 @@ describe('renderDigest', () => {
     expect(r.html).toContain('&lt;b&gt;x&lt;/b&gt;');
   });
 
+  it('zmeny za týždeň sa vyrenderujú (html + text)', () => {
+    const r = renderDigest({
+      weekLabel: 'W', orgName: 'O', sites: [site({})],
+      changes: [{ message: 'AEO 48 → 78', severity: 'info', domain: 'x.sk' }, { message: '2 nové zraniteľnosti', severity: 'critical' }],
+    });
+    expect(r.html).toContain('Za posledný týždeň');
+    expect(r.html).toContain('AEO 48 → 78');
+    expect(r.text).toContain('2 nové zraniteľnosti');
+  });
+
+  it('bez zmien sa sekcia nezobrazí', () => {
+    const r = renderDigest({ weekLabel: 'W', orgName: 'O', sites: [site({})] });
+    expect(r.html).not.toContain('Za posledný týždeň');
+  });
+
   it('kritické CVE ovplyvnia predmet a poradie', () => {
     const r = renderDigest({
       weekLabel: 'W', orgName: 'O',
