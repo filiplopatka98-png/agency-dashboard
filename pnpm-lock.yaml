@@ -129,6 +129,8 @@ importers:
 
   tools/tls-probe: {}
 
+  tools/weekly-digest: {}
+
   tools/wp-cve: {}
 
 packages:

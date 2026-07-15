@@ -1,0 +1,8 @@
+{
+  "name": "@agency/weekly-digest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: poskladá per-org týždenný digest a pošle e-mail cez Resend.",
+  "scripts": { "probe": "node index.mjs" }
+}

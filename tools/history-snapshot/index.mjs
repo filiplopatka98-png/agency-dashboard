@@ -23,6 +23,16 @@ const METRICS = [
 // Metriky len pre trend (bez logovania — týždenne šumové):
 const TREND_ONLY = ['gsc_clicks', 'gsc_impressions', 'gsc_position'];
 
+// ISO týždeň (pre dedupe proaktívnych alertov — max 1 per web+metrika+týždeň).
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const wk = Math.ceil(((t - yearStart) / 86400000 + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(wk).padStart(2, '0')}`;
+}
+
 async function main() {
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -57,8 +67,11 @@ async function main() {
   }
 
   const now = new Date().toISOString();
+  const wk = isoWeek(new Date());
   const historyRows = [];
   const changeRows = [];
+  const alertRows = []; // proaktívne alerty (zhoršenia) → e-mailová fronta (runAlerts)
+  const nameById = new Map(sites.map((s) => [s.id, s.domain]));
 
   const curValue = (siteId, key) => {
     switch (key) {
@@ -98,6 +111,21 @@ async function main() {
         severity = improved ? 'info' : 'warning';
       }
       changeRows.push({ site_id: s.id, org_id: s.org_id, kind: m.kind, severity, message, created_at: now });
+
+      // Proaktívny alert len pri ZHORŠENÍ (nie pri zlepšení). CVE = critical,
+      // ostatné poklesy = warning. Dedupe: 1 per web+metrika+ISO týždeň.
+      if (!improved) {
+        const dom = nameById.get(s.id) ?? 'web';
+        alertRows.push({
+          org_id: s.org_id,
+          site_id: s.id,
+          type: m.kind === 'cve' ? 'new_cve' : 'metric_drop',
+          severity: m.kind === 'cve' ? 'critical' : 'warning',
+          title: m.kind === 'cve' ? `${dom}: nové zraniteľnosti` : `${dom}: ${m.label} kleslo`,
+          body: message,
+          dedupe_key: `proactive:${s.id}:${m.key}:${wk}`,
+        });
+      }
     }
   }
 
@@ -110,7 +138,12 @@ async function main() {
     const r = await fetch(`${url}/rest/v1/change_log`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(changeRows) });
     if (!r.ok) throw new Error(`changelog insert ${r.status}: ${await r.text()}`);
   }
-  console.log(JSON.stringify({ ev: 'history.done', sites: sites.length, history: historyRows.length, changes: changeRows.length }));
+  // Proaktívne alerty — ignoruj konflikt (dedupe_key unique), pošle ich runAlerts.
+  if (alertRows.length) {
+    const r = await fetch(`${url}/rest/v1/alerts`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal,resolution=ignore-duplicates' }, body: JSON.stringify(alertRows) });
+    if (!r.ok) console.log(JSON.stringify({ ev: 'history.alerts_fail', status: r.status, body: await r.text() }));
+  }
+  console.log(JSON.stringify({ ev: 'history.done', sites: sites.length, history: historyRows.length, changes: changeRows.length, alerts: alertRows.length }));
   await recordJobRun(url, srv, 'history', sites.length, 0);
 }
 

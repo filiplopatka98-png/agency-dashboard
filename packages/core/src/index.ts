@@ -40,3 +40,5 @@ export { gscPropertyCandidates, parseGscResponse, type GscRow, type GscQuery, ty
 export { severityFromScore, severityRank, maxSeverity, type CveSeverity } from './cve';
 
 export { computeFreshness, freshnessFor, MAX_AGE_HOURS, type MetricKey, type Freshness } from './freshness';
+
+export { renderDigest, type DigestData, type DigestSite } from './digest';

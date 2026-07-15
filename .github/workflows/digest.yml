@@ -1,14 +1,13 @@
-name: wp-cve
+name: digest
 
-# Týždenná CVE matica: pluginy/verzie z wp_snapshots (poslal WP agent) × WPScan → vulns.
-# Vyžaduje WPSCAN_TOKEN (wpscan.com, free 25/deň).
+# Týždenný digest per org (e-mail cez Resend). Beží po history jobe.
 on:
   schedule:
-    - cron: '0 6 * * 1' # každý pondelok 06:00 UTC
+    - cron: '0 8 * * 1' # pondelok 08:00 UTC (po history 07:00)
   workflow_dispatch: {}
 
 jobs:
-  cve:
+  digest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,12 +17,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build core (severity helper)
+      - name: Build core (digest renderer)
         run: pnpm --filter @agency/core build
-      - name: Run WP CVE probe
-        run: node tools/wp-cve/index.mjs
+      - name: Run weekly digest
+        run: node tools/weekly-digest/index.mjs
         env:
-          WPSCAN_TOKEN: ${{ secrets.WPSCAN_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
