@@ -6,6 +6,8 @@
 //   node index.mjs           → prejde wp_snapshots s pluginmi, zapíše vulns
 //
 // Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+import { recordJobRun } from '../_shared/jobRun.mjs';
+
 const WPSCAN_BASE = 'https://wpscan.com/api/v3';
 const UA = 'MonitorixCVE/1.0 (+https://dash.lopatka.sk)';
 const DAILY_BUDGET = 25; // WPScan free tier
@@ -124,6 +126,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'cve.done', ok, failed, wpscan_left: budget.left }));
+  await recordJobRun(url, srv, 'cve', ok, failed);
 }
 
 main().catch((e) => {

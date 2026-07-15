@@ -360,6 +360,66 @@ export type Database = {
           },
         ]
       }
+      infra_snapshots: {
+        Row: {
+          cdn: string | null
+          error: string | null
+          hosting: string | null
+          https_redirect: boolean | null
+          ip: string | null
+          measured_at: string | null
+          org_id: string
+          powered_by: string | null
+          security_txt: boolean | null
+          server: string | null
+          site_id: string
+          tls_version: string | null
+        }
+        Insert: {
+          cdn?: string | null
+          error?: string | null
+          hosting?: string | null
+          https_redirect?: boolean | null
+          ip?: string | null
+          measured_at?: string | null
+          org_id: string
+          powered_by?: string | null
+          security_txt?: boolean | null
+          server?: string | null
+          site_id: string
+          tls_version?: string | null
+        }
+        Update: {
+          cdn?: string | null
+          error?: string | null
+          hosting?: string | null
+          https_redirect?: boolean | null
+          ip?: string | null
+          measured_at?: string | null
+          org_id?: string
+          powered_by?: string | null
+          security_txt?: boolean | null
+          server?: string | null
+          site_id?: string
+          tls_version?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "infra_snapshots_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "infra_snapshots_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_runs: {
         Row: {
           error: string | null

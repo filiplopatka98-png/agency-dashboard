@@ -117,6 +117,8 @@ importers:
 
   tools/gsc-probe: {}
 
+  tools/infra-probe: {}
+
   tools/psi-probe: {}
 
   tools/security-probe: {}

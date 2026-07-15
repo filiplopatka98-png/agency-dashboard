@@ -122,6 +122,17 @@ export interface SiteVM {
     vulns: { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[] | null;
     backupAt: string | null;
   } | null;
+  // Generická infra — reálne (infra_snapshots) alebo null (ešte nemerané)
+  infra: {
+    ip: string | null;
+    hosting: string | null;
+    cdn: string | null;
+    server: string | null;
+    poweredBy: string | null;
+    tlsVersion: string | null;
+    httpsRedirect: boolean | null;
+    securityTxt: boolean | null;
+  } | null;
 }
 
 export interface PerfSnapVM {
@@ -164,7 +175,7 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes] = await Promise.all([
+  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes, infraRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
@@ -178,10 +189,12 @@ export async function loadDashboard(): Promise<{
     supabase.from('security_snapshots').select('site_id, score, headers, safe_browsing_ok'),
     supabase.from('gsc_snapshots').select('site_id, clicks, impressions, ctr, position, range_days, top_queries'),
     supabase.from('wp_snapshots').select('site_id, wp_version, wp_update, php_version, mysql_version, theme, plugins, vulns, backup_at, error'),
+    supabase.from('infra_snapshots').select('site_id, ip, hosting, cdn, server, powered_by, tls_version, https_redirect, security_txt, error'),
   ]);
   const secBySite = new Map((secRes.data ?? []).map((r) => [r.site_id, r]));
   const gscBySite = new Map((gscRes.data ?? []).map((r) => [r.site_id, r]));
   const wpBySite = new Map((wpRes.data ?? []).map((r) => [r.site_id, r]));
+  const infraBySite = new Map((infraRes.data ?? []).map((r) => [r.site_id, r]));
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
   const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
   const perfBySite = new Map<string, { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null }>();
@@ -451,6 +464,20 @@ export async function loadDashboard(): Promise<{
           // null = CVE ešte nekontrolované (WPScan nebežal); [] = skontrolované, nula
           vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null }[] | null) ?? null,
           backupAt: w.backup_at,
+        };
+      })(),
+      infra: (() => {
+        const inf = infraBySite.get(s.id);
+        if (!inf || (inf.error && inf.ip === null && inf.server === null)) return null;
+        return {
+          ip: inf.ip,
+          hosting: inf.hosting,
+          cdn: inf.cdn,
+          server: inf.server,
+          poweredBy: inf.powered_by,
+          tlsVersion: inf.tls_version,
+          httpsRedirect: inf.https_redirect,
+          securityTxt: inf.security_txt,
         };
       })(),
     };

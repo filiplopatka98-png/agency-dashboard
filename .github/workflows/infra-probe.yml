@@ -1,0 +1,25 @@
+name: infra-probe
+
+# Týždenná generická infra: hosting/CDN, server, PHP, TLS, redirect, security.txt → infra_snapshots.
+# Bez API kľúčov (DNS + TLS + HTTP hlavičky + ip-api.com).
+on:
+  schedule:
+    - cron: '0 4 * * 1' # každý pondelok 04:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run infra probe
+        run: node tools/infra-probe/index.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

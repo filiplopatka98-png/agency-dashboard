@@ -848,6 +848,34 @@ function TabInfra({ site }: { site: SiteVM }) {
         </div>
       )}
 
+      {/* Hosting & infra (zvonku, pre každý web) */}
+      <div style={{ ...card, padding: 16 }}>
+        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>Hosting &amp; infra</h3>
+        {site.infra ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
+            {([
+              ['Hosting', site.infra.hosting ?? 'nezistené', false],
+              ['CDN', site.infra.cdn ?? '—', false],
+              ['Server', site.infra.server ?? 'nezistené', true],
+              ['Backend', site.infra.poweredBy ?? 'neprezradený', true],
+              ['IP adresa', site.infra.ip ?? 'nezistené', true],
+              ['TLS verzia', site.infra.tlsVersion ?? 'nezistené', true],
+              ['HTTPS presmerovanie', site.infra.httpsRedirect === null ? 'nezistené' : site.infra.httpsRedirect ? 'áno ✓' : 'chýba ✗', false],
+              ['security.txt', site.infra.securityTxt === null ? 'nezistené' : site.infra.securityTxt ? 'áno ✓' : 'chýba', false],
+            ] as const).map(([k, v, isMono]) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{k}</span>
+                <strong style={{ ...(isMono ? mono : {}), color: 'var(--text-primary)', fontWeight: 600, textAlign: 'right', minWidth: 0 }}>{v}</strong>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+            Infra sa ešte nemerala (zisťuje sa týždenne zvonku — hosting, server, TLS…).
+          </div>
+        )}
+      </div>
+
       <div style={{ ...card, padding: 20 }}>
         {sec ? (
           <>

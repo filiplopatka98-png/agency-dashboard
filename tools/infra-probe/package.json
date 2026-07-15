@@ -1,0 +1,8 @@
+{
+  "name": "@agency/infra-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: generický infra (hosting/CDN, server, PHP, TLS, redirect, security.txt) → infra_snapshots.",
+  "scripts": { "probe": "node index.mjs" }
+}
