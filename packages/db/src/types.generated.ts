@@ -235,6 +235,7 @@ export type Database = {
           notion_page_id: string | null
           org_id: string
           phone: string | null
+          slug: string | null
           status: string
         }
         Insert: {
@@ -252,6 +253,7 @@ export type Database = {
           notion_page_id?: string | null
           org_id: string
           phone?: string | null
+          slug?: string | null
           status?: string
         }
         Update: {
@@ -269,6 +271,7 @@ export type Database = {
           notion_page_id?: string | null
           org_id?: string
           phone?: string | null
+          slug?: string | null
           status?: string
         }
         Relationships: [

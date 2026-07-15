@@ -121,6 +121,8 @@ importers:
 
   tools/infra-probe: {}
 
+  tools/monthly-report: {}
+
   tools/psi-probe: {}
 
   tools/security-probe: {}

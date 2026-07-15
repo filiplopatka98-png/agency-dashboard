@@ -221,6 +221,18 @@ function ClientsView() {
                     <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Webov v správe</span>
                     <span style={{ fontSize: 18, fontWeight: 800, fontFamily: "'Geist Mono', monospace", fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>{count}</span>
                   </div>
+                  {c.slug && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '9px 11px', background: 'var(--surface-secondary)', borderRadius: 9 }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>Verejný stav</span>
+                      <code style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: "'Geist Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>/status/{c.slug}</code>
+                      <button
+                        onClick={() => { try { navigator.clipboard.writeText(`${window.location.origin}/status/${c.slug}`); setNotice(`Skopírované: /status/${c.slug}`); setTimeout(() => setNotice(null), 2000); } catch { /* ignore */ } }}
+                        style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--accent-primary)', background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: 7, padding: '4px 9px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        Kopírovať
+                      </button>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => openEdit(c)} style={{ ...btn(false), flex: 1, textAlign: 'center' }}>Upraviť</button>
                     {archived ? (
