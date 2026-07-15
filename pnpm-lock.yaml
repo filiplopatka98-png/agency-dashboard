@@ -125,6 +125,8 @@ importers:
 
   tools/tls-probe: {}
 
+  tools/wp-cve: {}
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

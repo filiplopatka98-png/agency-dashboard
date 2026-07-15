@@ -1,0 +1,26 @@
+name: wp-cve
+
+# Týždenná CVE matica: pluginy/verzie z wp_snapshots (poslal WP agent) × WPScan → vulns.
+# Vyžaduje WPSCAN_TOKEN (wpscan.com, free 25/deň).
+on:
+  schedule:
+    - cron: '0 6 * * 1' # každý pondelok 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  cve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run WP CVE probe
+        run: node tools/wp-cve/index.mjs
+        env:
+          WPSCAN_TOKEN: ${{ secrets.WPSCAN_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

@@ -1,0 +1,8 @@
+{
+  "name": "@agency/wp-cve",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: WPScan CVE lookup z uložených wp_snapshots pluginov → vulns.",
+  "scripts": { "probe": "node index.mjs" }
+}
