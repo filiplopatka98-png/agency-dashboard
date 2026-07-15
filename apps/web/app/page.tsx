@@ -910,7 +910,7 @@ export default function OverviewPage() {
                     )}
 
                     {/* Napojenie integrácií */}
-                    <div style={{ marginTop: '10px', fontSize: '11.5px' }}>
+                    <div style={{ marginTop: '10px', fontSize: '11.5px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                       {site.pendingIntegrations.length === 0 ? (
                         <span style={{ color: 'var(--ok-color)', fontWeight: 600 }}>✓ Všetko napojené</span>
                       ) : (
@@ -918,6 +918,14 @@ export default function OverviewPage() {
                           ⚠ Chýba napojiť: {site.pendingIntegrations.join(' · ')}
                         </span>
                       )}
+                      {(() => {
+                        const stale = Object.entries(site.freshness ?? {}).filter(([, v]) => v?.stale).length;
+                        return stale > 0 ? (
+                          <span title="Niektoré merania sú staršie než očakávaná perióda — collector možno nezbehol." style={{ color: 'var(--warning-color)', fontWeight: 600, background: 'var(--warning-bg)', padding: '3px 9px', borderRadius: '6px', display: 'inline-block' }}>
+                            ⧗ {stale} neaktuálnych meraní
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                 ))}

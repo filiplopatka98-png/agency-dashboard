@@ -16,6 +16,8 @@ import {
   nextBot,
   type BotDecision,
 } from '../lib/design';
+import { relativeTime } from '../lib/format';
+import type { FreshKey } from '../lib/data';
 
 const card = {
   background: 'var(--surface-primary)',
@@ -24,6 +26,22 @@ const card = {
   boxShadow: 'var(--shadow-sm)',
 } as const;
 const mono = { fontFamily: "'Geist Mono', monospace", fontVariantNumeric: 'tabular-nums' } as const;
+
+// Čerstvosť dát — „aktualizované pred X" + výrazný štítok ak je meranie pristaré.
+function FreshLabel({ site, metric }: { site: SiteVM; metric: FreshKey }) {
+  const f = site.freshness?.[metric];
+  if (!f || !f.measuredAt) return null;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
+      aktualizované {relativeTime(f.measuredAt)}
+      {f.stale && (
+        <span title="Dáta sú staršie než očakávaná perióda merania — nemusia byť aktuálne." style={{ fontWeight: 700, color: 'var(--warning-color)', background: 'var(--warning-bg)', padding: '1px 7px', borderRadius: 6 }}>
+          neaktuálne
+        </span>
+      )}
+    </span>
+  );
+}
 const label = {
   fontSize: 11.5,
   color: 'var(--text-secondary)',
@@ -460,10 +478,13 @@ function TabPerformance({ site }: { site: SiteVM }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
-        {(['desktop', 'mobile'] as const).map((d) => (
-          <button key={d} onClick={() => setDevice(d)} style={{ padding: '7px 15px', background: device === d ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, color: device === d ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 600, boxShadow: device === d ? 'var(--shadow-sm)' : 'none' }}>{d === 'desktop' ? 'Desktop' : 'Mobil'}</button>
-        ))}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
+          {(['desktop', 'mobile'] as const).map((d) => (
+            <button key={d} onClick={() => setDevice(d)} style={{ padding: '7px 15px', background: device === d ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, color: device === d ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 600, boxShadow: device === d ? 'var(--shadow-sm)' : 'none' }}>{d === 'desktop' ? 'Desktop' : 'Mobil'}</button>
+          ))}
+        </div>
+        <FreshLabel site={site} metric="perf" />
       </div>
 
       {!snap ? (
@@ -554,6 +575,7 @@ function TabSeo({ site }: { site: SiteVM }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {seo ? (
         <>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}><FreshLabel site={site} metric="seo" /></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
             {([['Prehľadané stránky', String(seo.pagesCrawled), 'var(--text-primary)', false], ['Otvorené issues', String(seo.issues.length), seo.issues.length ? 'var(--warning-color)' : 'var(--ok-color)', seo.issues.length > 0]] as const).map(([t, v, c, bar]) => (
               <div key={t} style={{ ...card, padding: 18, position: 'relative', overflow: 'hidden' }}>
@@ -619,7 +641,7 @@ function TabSeo({ site }: { site: SiteVM }) {
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', borderBottom: '1px solid var(--border-primary)' }}>
           <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Search Console</h3>
-          {site.gsc && <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>posledných {site.gsc.rangeDays} dní · reálne dáta z GSC</span>}
+          {site.gsc ? <FreshLabel site={site} metric="gsc" /> : null}
         </div>
         {site.gsc ? (
           <>
@@ -693,6 +715,7 @@ function TabAeo({ site }: { site: SiteVM }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}><FreshLabel site={site} metric="aeo" /></div>
       <div style={{ ...card, padding: 24, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <Gauge score={aeo.score} off={off} color="var(--accent-primary)" size={120} sw={10} r={52} circ={326.7} />
         <div style={{ flex: 1, minWidth: 180 }}>
@@ -798,7 +821,10 @@ function TabInfra({ site }: { site: SiteVM }) {
             return (
               <>
                 <div style={{ ...card, padding: 16 }}>
-                  <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>WordPress</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+                    <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>WordPress</h3>
+                    <FreshLabel site={site} metric="wp" />
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
                     {([
                       ['Verzia', wp.wpVersion ?? '—', wp.wpUpdate ? `update ${wp.wpUpdate}` : null, true],
@@ -862,7 +888,10 @@ function TabInfra({ site }: { site: SiteVM }) {
 
       {/* Hosting & infra (zvonku, pre každý web) */}
       <div style={{ ...card, padding: 16 }}>
-        <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text-primary)' }}>Hosting &amp; infra</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+          <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Hosting &amp; infra</h3>
+          <FreshLabel site={site} metric="infra" />
+        </div>
         {site.infra ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
             {([
@@ -894,7 +923,10 @@ function TabInfra({ site }: { site: SiteVM }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 18, flexWrap: 'wrap' }}>
               <Gauge score={sec.score} off={gaugeOffset(sec.score, 169.6)} color={scoreColor(sec.score)} size={64} sw={6} r={27} circ={169.6} />
               <div style={{ flex: 1, minWidth: 150 }}>
-                <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 3 }}>Security skóre</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 3, flexWrap: 'wrap' }}>
+                  <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Security skóre</h3>
+                  <FreshLabel site={site} metric="security" />
+                </div>
                 <div style={{ fontSize: 12.5, color: sec.safeBrowsingOk === false ? 'var(--critical-color)' : 'var(--text-secondary)' }}>
                   {sec.score === 100 ? 'Všetky bezpečnostné hlavičky nastavené. ' : 'Niektoré hlavičky chýbajú (nižšie). '}
                   {sbText}

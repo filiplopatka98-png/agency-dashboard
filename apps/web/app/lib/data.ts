@@ -133,6 +133,21 @@ export interface SiteVM {
     httpsRedirect: boolean | null;
     securityTxt: boolean | null;
   } | null;
+  // Čerstvosť dát per metrika — kedy naposledy merané + či je pristaré (neaktuálne).
+  freshness: Partial<Record<FreshKey, { measuredAt: string | null; stale: boolean }>>;
+}
+
+export type FreshKey = 'aeo' | 'security' | 'seo' | 'perf' | 'gsc' | 'infra' | 'wp';
+
+// Prahy neaktuálnosti (h) — kopírujú core/freshness MAX_AGE_HOURS (týždenné joby + rezerva).
+const FRESH_MAX_H: Record<FreshKey, number> = {
+  aeo: 216, security: 216, seo: 216, perf: 216, infra: 216, wp: 216, gsc: 264,
+};
+function freshState(key: FreshKey, measuredAt: string | null | undefined): { measuredAt: string | null; stale: boolean } {
+  if (!measuredAt) return { measuredAt: null, stale: false };
+  const t = Date.parse(measuredAt);
+  if (Number.isNaN(t)) return { measuredAt: null, stale: false };
+  return { measuredAt, stale: Date.now() - t > FRESH_MAX_H[key] * 3_600_000 };
 }
 
 export interface PerfSnapVM {
@@ -183,13 +198,13 @@ export async function loadDashboard(): Promise<{
     supabase.from('incidents').select('*').order('started_at', { ascending: false }).limit(200),
     supabase.from('clients').select('*').order('name'),
     supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(100),
-    supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types'),
-    supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error'),
+    supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types, measured_at'),
+    supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error, measured_at'),
     supabase.from('perf_snapshots').select('*'),
-    supabase.from('security_snapshots').select('site_id, score, headers, safe_browsing_ok'),
-    supabase.from('gsc_snapshots').select('site_id, clicks, impressions, ctr, position, range_days, top_queries'),
-    supabase.from('wp_snapshots').select('site_id, wp_version, wp_update, php_version, mysql_version, theme, plugins, vulns, backup_at, error'),
-    supabase.from('infra_snapshots').select('site_id, ip, hosting, cdn, server, powered_by, tls_version, https_redirect, security_txt, error'),
+    supabase.from('security_snapshots').select('site_id, score, headers, safe_browsing_ok, measured_at'),
+    supabase.from('gsc_snapshots').select('site_id, clicks, impressions, ctr, position, range_days, top_queries, measured_at'),
+    supabase.from('wp_snapshots').select('site_id, wp_version, wp_update, php_version, mysql_version, theme, plugins, vulns, backup_at, error, measured_at'),
+    supabase.from('infra_snapshots').select('site_id, ip, hosting, cdn, server, powered_by, tls_version, https_redirect, security_txt, error, measured_at'),
   ]);
   const secBySite = new Map((secRes.data ?? []).map((r) => [r.site_id, r]));
   const gscBySite = new Map((gscRes.data ?? []).map((r) => [r.site_id, r]));
@@ -198,8 +213,13 @@ export async function loadDashboard(): Promise<{
   const aeoBySite = new Map((aeoRes.data ?? []).map((a) => [a.site_id, a]));
   const seoBySite = new Map((seoRes.data ?? []).map((s) => [s.site_id, s]));
   const perfBySite = new Map<string, { mobile: PerfSnapVM | null; desktop: PerfSnapVM | null }>();
+  const perfMeasuredBySite = new Map<string, string | null>();
   for (const p of perfRes.data ?? []) {
     if (p.performance_score === null) continue;
+    if (p.measured_at) {
+      const prev = perfMeasuredBySite.get(p.site_id);
+      if (!prev || Date.parse(p.measured_at) > Date.parse(prev)) perfMeasuredBySite.set(p.site_id, p.measured_at);
+    }
     const snap: PerfSnapVM = {
       performanceScore: p.performance_score,
       accessibility: p.accessibility ?? 0,
@@ -480,6 +500,15 @@ export async function loadDashboard(): Promise<{
           securityTxt: inf.security_txt,
         };
       })(),
+      freshness: {
+        aeo: freshState('aeo', aeoBySite.get(s.id)?.measured_at),
+        security: freshState('security', secBySite.get(s.id)?.measured_at),
+        seo: freshState('seo', seoBySite.get(s.id)?.measured_at),
+        perf: freshState('perf', perfMeasuredBySite.get(s.id) ?? null),
+        gsc: freshState('gsc', gscBySite.get(s.id)?.measured_at),
+        infra: freshState('infra', infraBySite.get(s.id)?.measured_at),
+        wp: freshState('wp', wpBySite.get(s.id)?.measured_at),
+      },
     };
   });
 

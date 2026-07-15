@@ -38,3 +38,5 @@ export { scoreSecurityHeaders, fetchSafeBrowsing, type SecurityHeaders } from '.
 export { gscPropertyCandidates, parseGscResponse, type GscRow, type GscQuery, type GscSummary } from './gsc';
 
 export { severityFromScore, severityRank, maxSeverity, type CveSeverity } from './cve';
+
+export { computeFreshness, freshnessFor, MAX_AGE_HOURS, type MetricKey, type Freshness } from './freshness';
