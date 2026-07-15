@@ -34,7 +34,6 @@ const label = {
 
 /* ─────────────────────────── Sites list ─────────────────────────── */
 function SitesList() {
-  const router = useRouter();
   const [sites, setSites] = useState<SiteVM[] | null>(null);
   const [search, setSearch] = useState('');
 
@@ -82,7 +81,7 @@ function SitesList() {
             </thead>
             <tbody>
               {filtered.map((site) => (
-                <tr key={site.id} className="mx-row" onClick={() => router.push(`/sites?id=${site.id}`)} style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer', transition: 'background 0.15s' }}>
+                <tr key={site.id} className="mx-row" onClick={() => { window.location.href = `/sites?id=${site.id}`; }} style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer', transition: 'background 0.15s' }}>
                   <td style={{ padding: '14px 18px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                       <div className={site.pulseClass} style={{ width: 9, height: 9, borderRadius: '50%', background: site.dotColor, flexShrink: 0 }} />

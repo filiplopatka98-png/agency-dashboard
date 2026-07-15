@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Shell } from './components/Shell';
 import { loadDashboard, type SiteVM } from './lib/data';
 import { supabase, type Client } from './lib/supabase';
@@ -9,8 +8,6 @@ import { supabase, type Client } from './lib/supabase';
 const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
 
 export default function OverviewPage() {
-  const router = useRouter();
-
   const [sites, setSites] = useState<SiteVM[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -637,7 +634,7 @@ export default function OverviewPage() {
                   <div
                     key={site.id}
                     className="mx-card-soft"
-                    onClick={() => router.push(`/sites?id=${site.id}`)}
+                    onClick={() => { window.location.href = `/sites?id=${site.id}`; }}
                     style={{
                       background: site.tintBg,
                       border: '1px solid var(--border-primary)',
@@ -767,7 +764,7 @@ export default function OverviewPage() {
                   <div
                     key={site.id}
                     className="mx-card"
-                    onClick={() => router.push(`/sites?id=${site.id}`)}
+                    onClick={() => { window.location.href = `/sites?id=${site.id}`; }}
                     style={{
                       background: 'var(--surface-primary)',
                       border: '1px solid var(--border-primary)',

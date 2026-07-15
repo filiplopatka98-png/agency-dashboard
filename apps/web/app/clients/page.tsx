@@ -74,6 +74,7 @@ function ClientsView() {
   const [form, setForm] = useState<Form>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const reload = async () => {
     const { clients, sites } = await loadDashboard();
@@ -154,6 +155,23 @@ function ClientsView() {
     if (!res.error) await reload();
   };
 
+  // Trvalé vymazanie — povolené len ak klient nemá priradené weby (FK guard v UI aj v DB).
+  const del = async (c: Client) => {
+    const count = sites.filter((s) => s.clientId === c.id).length;
+    if (count > 0) {
+      setNotice(`„${c.company || c.name}" má ${count} priradených ${count === 1 ? 'web' : count <= 4 ? 'weby' : 'webov'} — vymazať sa nedá. Najprv ich prehoď na iného klienta (Weby → detail webu → Upraviť → Klient), potom klienta vymaž.`);
+      return;
+    }
+    if (!window.confirm(`Natrvalo vymazať klienta „${c.company || c.name}"? Nedá sa vrátiť.`)) return;
+    const res = await supabase.from('clients').delete().eq('id', c.id);
+    if (res.error) {
+      setNotice(`Mazanie zlyhalo: ${res.error.message}`);
+      return;
+    }
+    setNotice(null);
+    await reload();
+  };
+
   return (
     <div style={{ minHeight: '100vh', padding: '32px 24px 64px', background: 'var(--bg-base)' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -164,6 +182,13 @@ function ClientsView() {
           </div>
           <button onClick={openNew} style={btn(true)}>+ Pridať klienta</button>
         </div>
+
+        {notice && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, fontSize: 13, color: 'var(--warning-color)', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: 10, padding: '11px 14px' }}>
+            <span>{notice}</span>
+            <button onClick={() => setNotice(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>✕</button>
+          </div>
+        )}
 
         {clients === null ? (
           <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Načítavam…</div>
@@ -204,6 +229,13 @@ function ClientsView() {
                       <button onClick={() => setStatus(c, 'archived')} style={{ ...btn(false), flex: 1, color: 'var(--critical-color)' }} title={count > 0 ? 'Weby ostanú, len sa odpojí zmluva' : ''}>Deaktivovať</button>
                     )}
                   </div>
+                  <button
+                    onClick={() => del(c)}
+                    title={count > 0 ? 'Najprv prehoď weby na iného klienta' : 'Trvalé vymazanie klienta'}
+                    style={{ marginTop: 8, width: '100%', background: 'transparent', border: 'none', color: count > 0 ? 'var(--text-tertiary)' : 'var(--critical-color)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '4px' }}
+                  >
+                    Vymazať klienta{count > 0 ? ` (najprv prehoď ${count} ${count === 1 ? 'web' : 'weby'})` : ''}
+                  </button>
                 </div>
               );
             })}
