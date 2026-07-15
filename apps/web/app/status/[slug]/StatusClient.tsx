@@ -3,8 +3,21 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
-type PublicSite = { domain: string; status: 'up' | 'down' | 'maintenance'; uptime30: number | null };
+type DaySeg = { d: string; u: number | null };
+type PublicSite = { domain: string; status: 'up' | 'down' | 'maintenance'; uptime30: number | null; history?: DaySeg[] };
 type PublicStatus = { client: string; generated_at: string; sites: PublicSite[] } | null;
+
+// Farba dennej kocky — rovnaké prahy ako interný segColor (>=99.5 ok, >=95 warn, inak crit).
+function dayColor(u: number | null): string {
+  if (u === null) return '#e5e7eb';
+  if (u >= 99.5) return '#16a34a';
+  if (u >= 95) return '#d97706';
+  return '#dc2626';
+}
+const fmtDay = (d: string) => {
+  const [y, m, dd] = d.split('-');
+  return `${Number(dd)}. ${Number(m)}. ${y}`;
+};
 
 const STATUS_META: Record<PublicSite['status'], { label: string; color: string; bg: string; dot: string }> = {
   up: { label: 'Dostupný', color: '#16a34a', bg: 'rgba(22,163,74,.1)', dot: '#16a34a' },
@@ -83,18 +96,38 @@ export function StatusClient({ slug }: { slug: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {sites.map((s) => {
               const m = STATUS_META[s.status];
+              const hist = (s.history ?? []).slice(-90);
               return (
-                <div key={s.domain} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', border: '1px solid #eceef1', borderRadius: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600, color: '#111', fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.domain}</span>
+                <div key={s.domain} style={{ padding: '14px 16px', border: '1px solid #eceef1', borderRadius: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: m.dot, flexShrink: 0 }} />
+                      <span style={{ fontWeight: 600, color: '#111', fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.domain}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, whiteSpace: 'nowrap' }}>
+                      {s.status !== 'maintenance' && s.uptime30 != null && (
+                        <span style={{ fontSize: 12.5, color: '#6b7280', fontFamily: "'Geist Mono', monospace" }}>{Number(s.uptime30).toFixed(2)} % / 30 d</span>
+                      )}
+                      <span style={{ fontSize: 12, fontWeight: 700, color: m.color, background: m.bg, padding: '4px 11px', borderRadius: 20 }}>{m.label}</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, whiteSpace: 'nowrap' }}>
-                    {s.status !== 'maintenance' && s.uptime30 != null && (
-                      <span style={{ fontSize: 12.5, color: '#6b7280', fontFamily: "'Geist Mono', monospace" }}>{Number(s.uptime30).toFixed(2)} % / 30 d</span>
-                    )}
-                    <span style={{ fontSize: 12, fontWeight: 700, color: m.color, background: m.bg, padding: '4px 11px', borderRadius: 20 }}>{m.label}</span>
-                  </div>
+                  {hist.length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', gap: 2, marginTop: 12, height: 26, alignItems: 'stretch' }}>
+                        {hist.map((day) => (
+                          <span
+                            key={day.d}
+                            title={`${fmtDay(day.d)} — ${day.u == null ? 'bez dát' : `${Number(day.u).toFixed(2)} %`}`}
+                            style={{ flex: 1, minWidth: 3, borderRadius: 2, background: dayColor(day.u) }}
+                          />
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 10.5, color: '#9ca3af' }}>
+                        <span>pred {hist.length} {hist.length === 1 ? 'dňom' : hist.length < 5 ? 'dňami' : 'dňami'}</span>
+                        <span>dnes</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}

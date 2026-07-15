@@ -26,9 +26,10 @@ type Form = {
   phone: string;
   ico: string;
   notion_page_id: string;
+  report_email: string;
 };
 
-const EMPTY: Form = { name: '', company: '', contract_type: '', monthly_fee_eur: '', email: '', phone: '', ico: '', notion_page_id: '' };
+const EMPTY: Form = { name: '', company: '', contract_type: '', monthly_fee_eur: '', email: '', phone: '', ico: '', notion_page_id: '', report_email: '' };
 
 function fromClient(c: Client): Form {
   return {
@@ -40,6 +41,7 @@ function fromClient(c: Client): Form {
     phone: c.phone ?? '',
     ico: c.ico ?? '',
     notion_page_id: c.notion_page_id ?? '',
+    report_email: c.report_email ?? '',
   };
 }
 
@@ -122,6 +124,12 @@ function ClientsView() {
       setSaving(false);
       return;
     }
+    const reportEmail = form.report_email.trim();
+    if (reportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reportEmail)) {
+      setErr('Report e-mail nie je platný.');
+      setSaving(false);
+      return;
+    }
     const payload = {
       name: form.name.trim(),
       company: form.company.trim() || null,
@@ -131,6 +139,7 @@ function ClientsView() {
       phone: form.phone.trim() || null,
       ico: form.ico.trim() || null,
       notion_page_id: form.notion_page_id.trim() || null,
+      report_email: reportEmail || null,
     };
     if (editing === 'new' && !orgId) {
       setErr('Organizácia sa nenačítala — obnov stránku a skús znova.');
@@ -152,6 +161,11 @@ function ClientsView() {
 
   const setStatus = async (c: Client, status: string) => {
     const res = await supabase.from('clients').update({ status }).eq('id', c.id);
+    if (!res.error) await reload();
+  };
+
+  const toggleStatusPage = async (c: Client) => {
+    const res = await supabase.from('clients').update({ status_enabled: !c.status_enabled }).eq('id', c.id);
     if (!res.error) await reload();
   };
 
@@ -223,11 +237,18 @@ function ClientsView() {
                   </div>
                   {c.slug && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '9px 11px', background: 'var(--surface-secondary)', borderRadius: 9 }}>
-                      <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>Verejný stav</span>
-                      <code style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: "'Geist Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>/status/{c.slug}</code>
                       <button
+                        onClick={() => toggleStatusPage(c)}
+                        title={c.status_enabled ? 'Verejná status page je zapnutá — klikni pre vypnutie' : 'Verejná status page je vypnutá — klikni pre zapnutie'}
+                        style={{ fontSize: 11, fontWeight: 700, color: c.status_enabled ? 'var(--ok-color)' : 'var(--text-tertiary)', background: c.status_enabled ? 'var(--ok-bg)' : 'var(--surface-primary)', border: c.status_enabled ? 'none' : '1px solid var(--border-primary)', borderRadius: 20, padding: '3px 9px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        {c.status_enabled ? '● verejná' : '○ vypnutá'}
+                      </button>
+                      <code style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: c.status_enabled ? 'var(--text-secondary)' : 'var(--text-tertiary)', fontFamily: "'Geist Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: c.status_enabled ? 'none' : 'line-through' }}>/status/{c.slug}</code>
+                      <button
+                        disabled={!c.status_enabled}
                         onClick={() => { try { navigator.clipboard.writeText(`${window.location.origin}/status/${c.slug}`); setNotice(`Skopírované: /status/${c.slug}`); setTimeout(() => setNotice(null), 2000); } catch { /* ignore */ } }}
-                        style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--accent-primary)', background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: 7, padding: '4px 9px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        style={{ fontSize: 11.5, fontWeight: 600, color: c.status_enabled ? 'var(--accent-primary)' : 'var(--text-tertiary)', background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: 7, padding: '4px 9px', cursor: c.status_enabled ? 'pointer' : 'default', whiteSpace: 'nowrap', opacity: c.status_enabled ? 1 : 0.5 }}
                       >
                         Kopírovať
                       </button>
@@ -270,9 +291,10 @@ function ClientsView() {
                 ['email', 'E-mail', 'kontakt@…'],
                 ['phone', 'Telefón', '+421…'],
                 ['ico', 'IČO', '12345678'],
+                ['report_email', 'Report e-mail (klient)', 'kam chodí mesačný report'],
                 ['notion_page_id', 'Notion page ID', 'voliteľné'],
               ] as const).map(([k, label, ph]) => (
-                <div key={k} style={{ gridColumn: k === 'name' || k === 'company' || k === 'notion_page_id' ? '1 / -1' : 'auto' }}>
+                <div key={k} style={{ gridColumn: k === 'name' || k === 'company' || k === 'notion_page_id' || k === 'report_email' ? '1 / -1' : 'auto' }}>
                   <label style={lbl}>{label}</label>
                   <input style={input} value={form[k]} placeholder={ph} inputMode={k === 'monthly_fee_eur' ? 'decimal' : undefined} onInput={(e) => set(k, (e.target as HTMLInputElement).value)} />
                 </div>

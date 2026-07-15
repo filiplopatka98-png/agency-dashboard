@@ -43,8 +43,9 @@ async function main() {
   const endDay = end.toISOString().slice(0, 10);
   const monthLabel = `${MONTHS[start.getUTCMonth()]} ${start.getUTCFullYear()}`;
 
-  const sites = await get('sites?select=id,org_id,domain&is_active=eq.true');
+  const sites = await get('sites?select=id,org_id,domain,client_id&is_active=eq.true');
   const orgs = await get('organizations?select=id,name');
+  const clientsList = await get('clients?select=id,org_id,name,company,report_email&status=eq.active');
   const [daily, incidents, seo, wp, settings] = await Promise.all([
     get(`uptime_daily?select=site_id,day,uptime_pct&day=gte.${startDay}&day=lt.${endDay}`),
     get(`incidents?select=site_id,started_at&started_at=gte.${start.toISOString()}&started_at=lt.${end.toISOString()}`),
@@ -65,45 +66,72 @@ async function main() {
   const wpM = new Map(wp.map((r) => [r.site_id, r]));
   const setById = new Map(settings.map((s) => [s.org_id, s]));
 
+  const buildSite = (s) => {
+    const a = upAcc.get(s.id);
+    const issues = seoM.get(s.id)?.issues ?? [];
+    const vulnsArr = wpM.get(s.id)?.vulns ?? null;
+    return {
+      domain: s.domain,
+      uptime: a && a.n ? a.sum / a.n : null,
+      incidents: incCount.get(s.id) ?? 0,
+      openIssues: Array.isArray(issues) ? issues.length : 0,
+      vulns: Array.isArray(vulnsArr) ? vulnsArr.length : 0,
+      criticalVulns: Array.isArray(vulnsArr) ? vulnsArr.filter((v) => v.severity === 'critical' || v.severity === 'high').length : 0,
+    };
+  };
+
   let sent = 0, failed = 0, skipped = 0;
+
+  // 1) Interný agregát za org (všetky weby) → admin príjemcovia.
   for (const org of orgs) {
     const st = setById.get(org.id);
     if (st && st.monthly_report === false) { skipped++; continue; }
     const orgSites = sites.filter((s) => s.org_id === org.id);
     if (!orgSites.length) continue;
-
-    const reportSites = orgSites.map((s) => {
-      const a = upAcc.get(s.id);
-      const issues = seoM.get(s.id)?.issues ?? [];
-      const vulnsArr = wpM.get(s.id)?.vulns ?? null;
-      const vulns = Array.isArray(vulnsArr) ? vulnsArr.length : 0;
-      const criticalVulns = Array.isArray(vulnsArr) ? vulnsArr.filter((v) => v.severity === 'critical' || v.severity === 'high').length : 0;
-      return {
-        domain: s.domain,
-        uptime: a && a.n ? a.sum / a.n : null,
-        incidents: incCount.get(s.id) ?? 0,
-        openIssues: Array.isArray(issues) ? issues.length : 0,
-        vulns,
-        criticalVulns,
-      };
-    });
-
+    const reportSites = orgSites.map(buildSite);
     const { subject, html, text } = renderMonthlyReport({ monthLabel, orgName: org.name ?? 'Org', sites: reportSites });
     const recipients = (st?.recipients?.length ? st.recipients : (adminTo ? [adminTo] : []));
     if (!resendReady || !recipients.length) {
       skipped++;
-      console.log(JSON.stringify({ ev: 'report.skipped', org: org.id, reason: !resendReady ? 'resend_not_ready' : 'no_recipients', month: monthLabel, sites: reportSites.length }));
+      console.log(JSON.stringify({ ev: 'report.skipped', scope: 'org', org: org.id, reason: !resendReady ? 'resend_not_ready' : 'no_recipients', month: monthLabel, sites: reportSites.length }));
       continue;
     }
     try {
       await sendEmail(resendKey, from, recipients, subject, html, text);
       sent++;
-      console.log(JSON.stringify({ ev: 'report.sent', org: org.id, to: recipients.length, month: monthLabel }));
+      console.log(JSON.stringify({ ev: 'report.sent', scope: 'org', org: org.id, to: recipients.length, month: monthLabel }));
     } catch (e) {
       failed++;
-      console.log(JSON.stringify({ ev: 'report.fail', org: org.id, error: String(e?.message ?? e) }));
+      console.log(JSON.stringify({ ev: 'report.fail', scope: 'org', org: org.id, error: String(e?.message ?? e) }));
     }
   }
+
+  // 2) Klientsky report — len klientove weby → jeho report_email (opt-in prítomnosťou e-mailu).
+  //    Gated org prepínačom monthly_report + Resend.
+  for (const cl of clientsList) {
+    if (!cl.report_email) continue;
+    const st = setById.get(cl.org_id);
+    if (st && st.monthly_report === false) continue;
+    const clientSites = sites.filter((s) => s.client_id === cl.id);
+    if (!clientSites.length) continue;
+    const reportSites = clientSites.map(buildSite);
+    const label = cl.company || cl.name || 'Klient';
+    const { subject, html, text } = renderMonthlyReport({ monthLabel, orgName: label, sites: reportSites });
+    if (!resendReady) {
+      skipped++;
+      console.log(JSON.stringify({ ev: 'report.skipped', scope: 'client', client: cl.id, reason: 'resend_not_ready', month: monthLabel, sites: reportSites.length }));
+      continue;
+    }
+    try {
+      await sendEmail(resendKey, from, [cl.report_email], subject, html, text);
+      sent++;
+      console.log(JSON.stringify({ ev: 'report.sent', scope: 'client', client: cl.id, month: monthLabel }));
+    } catch (e) {
+      failed++;
+      console.log(JSON.stringify({ ev: 'report.fail', scope: 'client', client: cl.id, error: String(e?.message ?? e) }));
+    }
+  }
+
   console.log(JSON.stringify({ ev: 'report.done', month: monthLabel, sent, failed, skipped }));
   await recordJobRun(url, srv, 'report', sent, failed);
 }

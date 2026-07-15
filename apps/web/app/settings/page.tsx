@@ -59,6 +59,10 @@ function rel(ms: number): string {
   return `${Math.round(h / 24)} d`;
 }
 
+// Worker endpoint pre ručné spustenie (dispatchne GitHub workflow). Scheduler beží na cron → nedispatchovateľný.
+const WORKER_URL = 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev';
+const DISPATCHABLE = new Set(['psi', 'tls', 'security', 'aeo', 'gsc', 'seo', 'infra', 'cve', 'history', 'digest', 'report']);
+
 const jobStatusColor: Record<string, [string, string]> = {
   ok: ['var(--ok-color)', 'var(--ok-bg)'],
   partial: ['var(--warning-color)', 'var(--warning-bg)'],
@@ -79,6 +83,24 @@ export default function SettingsPage() {
   const [recipText, setRecipText] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+  const [trig, setTrig] = useState<Record<string, 'run' | 'ok' | 'err'>>({});
+
+  const runNow = async (jobKey: string) => {
+    setTrig((t) => ({ ...t, [jobKey]: 'run' }));
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch(`${WORKER_URL}/trigger`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job: jobKey }),
+      });
+      setTrig((t) => ({ ...t, [jobKey]: res.ok ? 'ok' : 'err' }));
+    } catch {
+      setTrig((t) => ({ ...t, [jobKey]: 'err' }));
+    }
+    setTimeout(() => setTrig((t) => { const n = { ...t }; delete n[jobKey]; return n; }), 4000);
+  };
 
   useEffect(() => {
     let active = true;
@@ -189,6 +211,16 @@ export default function SettingsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', whiteSpace: 'nowrap' }}>
                         <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{last}{cnt}</span>
                         <span style={{ fontSize: '11px', fontWeight: 700, color: c, background: bg, padding: '3px 9px', borderRadius: '20px', minWidth: '52px', textAlign: 'center' }}>{run ? run.status : '—'}</span>
+                        {DISPATCHABLE.has(j.key) && (
+                          <button
+                            onClick={() => runNow(j.key)}
+                            disabled={trig[j.key] === 'run'}
+                            title="Spustiť job teraz (GitHub Action)"
+                            style={{ fontSize: '11px', fontWeight: 600, color: trig[j.key] === 'ok' ? 'var(--ok-color)' : trig[j.key] === 'err' ? 'var(--critical-color)' : 'var(--accent-primary)', background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: '7px', padding: '3px 9px', cursor: trig[j.key] === 'run' ? 'default' : 'pointer', minWidth: '64px' }}
+                          >
+                            {trig[j.key] === 'run' ? '…' : trig[j.key] === 'ok' ? 'spustené ✓' : trig[j.key] === 'err' ? 'chyba' : 'Spustiť'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -339,8 +371,8 @@ export default function SettingsPage() {
                 {saved && <span style={{ fontSize: '12px', fontWeight: 600, color: saved.startsWith('Chyba') ? 'var(--critical-color)' : 'var(--ok-color)' }}>{saved}</span>}
               </div>
               <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-                Komu chodia týždenný digest a mesačný report. Prázdny zoznam = fallback na admin e-mail{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>.
+                Interný prehľad (všetky weby) — komu chodí týždenný digest a mesačný agregát. Prázdny zoznam = fallback na admin e-mail{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>. Report pre konkrétneho klienta (len jeho weby) nastavíš pri klientovi v sekcii <strong style={{ color: 'var(--text-primary)' }}>Klienti</strong> (pole „Report e-mail").
               </div>
               {notif ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px' }}>
