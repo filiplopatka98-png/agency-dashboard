@@ -23,7 +23,12 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // Veta pre web, na ktorom sa nič nedialo — bez tvrdení, ktoré nevieme doložiť.
-function quietLine(s: ClientReportSite): string {
+// „Stabilne bez problémov" je nárok na stabilitu odvodený z meraní — bez
+// aspoň jednej kontroly nemáme čo tvrdiť. Vracia null, keď sa nič nemeralo;
+// vigilance riadok (renderVigilance) v tom prípade nad touto vetou už povedal
+// pravdu („nemáme merania"), takže tu ju neopakujeme.
+function quietLine(s: ClientReportSite): string | null {
+  if (s.vigilance.checks === 0) return null;
   const parts = [`${fmtNum(s.vigilance.checks)} kontrol`];
   if (s.vigilance.uptimePct !== null) parts.push(`${fmtPct(s.vigilance.uptimePct)} % dostupnosť`);
   if (s.knownVulns === 0) parts.push('žiadne známe zraniteľnosti');
@@ -36,9 +41,12 @@ export function renderClientReport(data: ClientReportData): { subject: string; h
 
   const siteHtml = data.sites
     .map((s) => {
+      const quiet = quietLine(s);
       const body = s.lines.length
         ? `<ul style="margin:8px 0 0;padding-left:18px;color:#444;font-size:14px;line-height:1.7">${s.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`
-        : `<div style="margin-top:8px;color:#16a34a;font-size:14px">${esc(quietLine(s))}</div>`;
+        : quiet !== null
+          ? `<div style="margin-top:8px;color:#16a34a;font-size:14px">${esc(quiet)}</div>`
+          : '';
       return `<div style="padding:16px 0;border-bottom:1px solid #eee">
         <div style="font-weight:700;color:#111;font-size:15px">${esc(s.domain)}</div>
         <div style="font-size:13px;color:#6b7280;margin-top:3px">${esc(renderVigilance(s.vigilance, data.periodLabel))}</div>
@@ -62,9 +70,10 @@ export function renderClientReport(data: ClientReportData): { subject: string; h
     `Váš web v skratke — ${data.monthLabel}\n${data.clientName}\n\n` +
     data.sites
       .map((s) => {
+        const quiet = quietLine(s);
         const head = `${s.domain}\n${renderVigilance(s.vigilance, data.periodLabel)}`;
-        const body = s.lines.length ? s.lines.map((l) => `  • ${l}`).join('\n') : `  ${quietLine(s)}`;
-        return `${head}\n${body}`;
+        const body = s.lines.length ? s.lines.map((l) => `  • ${l}`).join('\n') : quiet !== null ? `  ${quiet}` : '';
+        return body ? `${head}\n${body}` : head;
       })
       .join('\n\n');
 

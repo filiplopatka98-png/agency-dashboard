@@ -97,6 +97,11 @@ describe('renderVigilance', () => {
     expect(renderVigilance({ checks: 8640, uptimePct: 99.98, downtimeSeconds: 240 }, 'V júli'))
       .toBe('V júli sme spravili 8 640 kontrol dostupnosti. Web bol dostupný 99,98 % času, celkový výpadok 4 minúty.');
   });
+  it('nula kontrol → netvrdí 0 kontrol, priznáva chýbajúce merania', () => {
+    const out = renderVigilance({ checks: 0, uptimePct: null, downtimeSeconds: 0 }, 'V júni');
+    expect(out).toBe('Za toto obdobie nemáme merania dostupnosti.');
+    expect(out).not.toContain('0 kontrol');
+  });
 });
 
 describe('buildClientLines', () => {

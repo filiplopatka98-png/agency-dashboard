@@ -47,4 +47,18 @@ describe('renderClientReport', () => {
     const r = renderClientReport({ monthLabel: 'M', periodLabel: 'V júli', clientName: 'K', sites: [site({})] });
     expect(r.text).toContain('8 640 kontrol dostupnosti');
   });
+
+  it('web bez meraní (0 kontrol) netvrdí stabilitu, priznáva chýbajúce merania', () => {
+    const r = renderClientReport({
+      monthLabel: 'Jún 2026',
+      periodLabel: 'V júni',
+      clientName: 'K',
+      sites: [site({ domain: 'natur-life.sk', vigilance: { checks: 0, uptimePct: null, downtimeSeconds: 0 } })],
+    });
+    expect(r.text).not.toContain('Stabilne bez problémov');
+    expect(r.html).not.toContain('Stabilne bez problémov');
+    expect(r.text).toContain('Za toto obdobie nemáme merania dostupnosti.');
+    expect(r.html).toContain('Za toto obdobie nemáme merania dostupnosti.');
+    expect(r.text).not.toContain('0 kontrol');
+  });
 });

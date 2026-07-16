@@ -134,6 +134,10 @@ export interface Vigilance {
 }
 
 export function renderVigilance(v: Vigilance, periodLabel: string): string {
+  // Nula kontrol = nemonitorovali sme, nie „stabilne bez problémov". Nulu
+  // nesmieme podať ako pozitívnu vetu ani rámcovať cez periodLabel — nič sme
+  // nezmerali, takže nič netvrdíme.
+  if (v.checks === 0) return 'Za toto obdobie nemáme merania dostupnosti.';
   const pct = v.uptimePct === null ? null : fmtPct(v.uptimePct);
   const head = `${periodLabel} sme spravili ${fmtNum(v.checks)} kontrol dostupnosti.`;
   if (pct === null) return head;
