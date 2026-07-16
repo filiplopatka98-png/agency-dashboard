@@ -7,6 +7,7 @@
 //
 // Env (DB režim): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { analyzePage, buildSeoIssues } from '../../packages/core/dist/seo.js';
+import { diffSeoIssues } from '../../packages/core/dist/events.js';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 const TIMEOUT = 12_000;
@@ -115,11 +116,20 @@ async function main() {
   let failed = 0;
 
   for (const s of sites) {
+    // Starý zoznam issues PRED prepísaním (prvý beh → prevIssues null → žiadne udalosti).
+    const prevRes = await fetch(`${url}/rest/v1/seo_snapshots?select=issues&site_id=eq.${s.id}`, { headers: restHeaders(key) });
+    const prevRows = prevRes.ok ? await prevRes.json() : [];
+    const prevIssues = prevRows[0]?.issues ?? null;
+
     let row;
+    let events = [];
     try {
       const r = await crawlSite(s.domain);
       if (r.pages_crawled === 0) throw new Error('žiadna stránka sa nenačítala');
       row = { site_id: s.id, org_id: s.org_id, ...r, measured_at: now, error: null };
+      // Diffujeme LEN pri úspešnom crawle — pri zlyhaní nemáme issues a hlásili by
+      // sme „opravené" pre všetko, čo tam v skutočnosti stále je.
+      events = diffSeoIssues(prevIssues, (r.issues ?? []).map((i) => ({ type: i.type, count: i.count })));
       ok++;
       console.log(JSON.stringify({ ev: 'seo.ok', domain: s.domain, pages: r.pages_crawled, issues: r.issues.length }));
     } catch (e) {
@@ -129,6 +139,18 @@ async function main() {
     }
     const up = await fetch(`${url}/rest/v1/seo_snapshots?on_conflict=site_id`, { method: 'POST', headers: { ...restHeaders(key), Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify(row) });
     if (!up.ok) console.log(JSON.stringify({ ev: 'seo.upsert_fail', domain: s.domain, status: up.status, body: await up.text() }));
+
+    // Best-effort — zlyhanie zápisu udalostí nesmie zhodiť crawl.
+    if (events.length) {
+      const log = await fetch(`${url}/rest/v1/change_log`, {
+        method: 'POST',
+        headers: { ...restHeaders(key), Prefer: 'return=minimal' },
+        body: JSON.stringify(events.map((e) => ({
+          site_id: s.id, org_id: s.org_id, kind: e.kind, severity: e.severity, message: e.message, payload: e.payload,
+        }))),
+      });
+      if (!log.ok) console.log(JSON.stringify({ ev: 'seo.changelog_fail', domain: s.domain, status: log.status }));
+    }
   }
   console.log(JSON.stringify({ ev: 'seo.done', ok, failed, total: sites.length }));
   await recordJobRun(url, key, 'seo', ok, failed);
