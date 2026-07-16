@@ -32,15 +32,20 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function isPluginInfo(v: unknown): v is PluginInfo {
-  return isRecord(v) && typeof v.slug === 'string';
+  return isRecord(v) && typeof v.slug === 'string' && typeof v.version === 'string';
 }
 
+// `target` sa interpoluje priamo do klientskej vety (renderClient) — rovnaký
+// dôvod ako `version` vyššie: zle typovaná hodnota (napr. `true`) by inak
+// prešla guardom a klient by si prečítal "...zraniteľnosť v module true."
 function isVulnInfo(v: unknown): v is VulnInfo {
-  return isRecord(v) && typeof v.slug === 'string';
+  return isRecord(v) && typeof v.slug === 'string' && typeof v.target === 'string';
 }
 
+// `count`/`was_count` sa interpoluje priamo do klientskej vety (renderClient) —
+// rovnaký dôvod ako `version`/`target` vyššie.
 function isSeoIssueInfo(v: unknown): v is SeoIssueInfo {
-  return isRecord(v) && typeof v.type === 'string';
+  return isRecord(v) && typeof v.type === 'string' && typeof v.count === 'number';
 }
 
 // prev == null → prvý ingest: zámerne nič, inak by sme nahlásili celý stav ako zmenu.
@@ -76,17 +81,25 @@ export function diffPlugins(prev: unknown, next: unknown): ChangeEvent[] {
   return out;
 }
 
-const vulnKey = (v: VulnInfo) => `${v.cve ?? v.title}|${v.slug}`;
+// Identita zraniteľnosti je LEN CVE id (+ slug pre istotu, keby to isté CVE
+// sedelo na dvoch cieľoch). Title NIE JE stabilná identita — WPScan entries
+// bez CVE id sú bežné (voľný tier, čerstvo nahlásené zraniteľnosti) a WPScan
+// vie title medzi behmi upraviť. Title-keyed párovanie by v tom prípade
+// vygenerovalo `fixed` + `new` pár pre TÚ ISTÚ, stále prítomnú zraniteľnosť —
+// a `fixed` je klientovi viditeľné ("Odstránená zraniteľnosť..."), čo je
+// fabrikácia. CVE-less záznamy sa preto do diffu vôbec nezarátavajú (žiadny
+// fixed, žiadny new) — no naďalej sa ukladajú a počítajú v knownVulns inde.
+const vulnKey = (v: VulnInfo) => `${v.cve}|${v.slug}`;
 
 export function diffVulns(prev: unknown, next: unknown): ChangeEvent[] {
   if (!Array.isArray(prev) || !Array.isArray(next)) return [];
   const before = new Map<string, VulnInfo>();
   for (const raw of prev) {
-    if (isVulnInfo(raw)) before.set(vulnKey(raw), raw);
+    if (isVulnInfo(raw) && raw.cve) before.set(vulnKey(raw), raw);
   }
   const after = new Map<string, VulnInfo>();
   for (const raw of next) {
-    if (isVulnInfo(raw)) after.set(vulnKey(raw), raw);
+    if (isVulnInfo(raw) && raw.cve) after.set(vulnKey(raw), raw);
   }
   const out: ChangeEvent[] = [];
   for (const [k, v] of before) {

@@ -52,6 +52,13 @@ describe('diffPlugins', () => {
     const evs2 = diffPlugins([], []);
     expect(evs2).toEqual([]);
   });
+  it('verzia nie je string (napr. true) → záznam sa ignoruje, nehádže a nefabrikuje "verziu true"', () => {
+    const evs = diffPlugins(
+      [plugin({ version: '5.1' })],
+      [{ name: 'WooCommerce', slug: 'woocommerce', version: true as unknown as string }],
+    );
+    expect(evs).toEqual([]);
+  });
 });
 
 describe('diffVulns', () => {
@@ -69,8 +76,14 @@ describe('diffVulns', () => {
     expect(ev!.severity).toBe('critical');
     expect(ev!.payload).toMatchObject({ direction: 'new' });
   });
-  it('CVE bez id sa páruje podľa title', () => {
+  it('CVE bez id sa nepáruje (žiadna identita bez CVE), aj keď title sedí', () => {
     expect(diffVulns([vuln({ cve: null })], [vuln({ cve: null })])).toEqual([]);
+  });
+  it('CVE bez id zmizne → žiadna "fixed" udalosť (mohlo len zmiznúť z výpisu/zmeniť title)', () => {
+    expect(diffVulns([vuln({ cve: null })], [])).toEqual([]);
+  });
+  it('CVE bez id pribudne → žiadna "new" udalosť (nemáme stabilnú identitu)', () => {
+    expect(diffVulns([], [vuln({ cve: null })])).toEqual([]);
   });
   it('malformovaný prev (objekt, nie pole) → žiadne udalosti, nehádže', () => {
     expect(diffVulns({ foo: 'bar' }, [vuln({})])).toEqual([]);
@@ -87,6 +100,10 @@ describe('diffVulns', () => {
   it('prev === [] je legitímny baseline → diffuje normálne (CVE pribudla)', () => {
     const [ev] = diffVulns([], [vuln({})]);
     expect(ev!.payload).toMatchObject({ direction: 'new' });
+  });
+  it('target nie je string (napr. true) → záznam sa ignoruje, nehádže a nefabrikuje "modul true"', () => {
+    const evs = diffVulns([vuln({ target: true as unknown as string })], []);
+    expect(evs).toEqual([]);
   });
 });
 
@@ -119,6 +136,10 @@ describe('diffSeoIssues', () => {
   it('prev === [] je legitímny baseline → diffuje normálne (typ pribudol)', () => {
     const [ev] = diffSeoIssues([], [{ type: 'x', count: 1 }]);
     expect(ev!.payload).toMatchObject({ direction: 'new' });
+  });
+  it('count nie je number (napr. true) → záznam sa ignoruje, nehádže a nefabrikuje "na true stránkach"', () => {
+    const evs = diffSeoIssues([{ type: 'x', count: true as unknown as number }], []);
+    expect(evs).toEqual([]);
   });
 });
 
