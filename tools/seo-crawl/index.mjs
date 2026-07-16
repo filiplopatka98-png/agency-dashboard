@@ -51,8 +51,11 @@ export async function crawlSite(domain) {
   const status = new Map();
   const queue = [origin + '/'];
   const pages = [];
-  // Počet stránok, kde `get()` pohltil sieťovú chybu/timeout (vrátil null) — tie
-  // sa potichu vynechajú z `pages` a teda aj z buildSeoIssues. Ak je > 0, tento
+  // Počet stránok, ktoré sa nepodarilo úspešne načítať — sieťová chyba/timeout
+  // (`get()` vrátil null) ALEBO HTTP chybový stav (5xx/429/403…, `res.ok` je
+  // false). Obe sa potichu vynechajú z `pages` a teda aj z buildSeoIssues.
+  // (2xx odpoveď, ktorá jednoducho nie je HTML, sa NEPOČÍTA — to je legitímny
+  // výsledok „nie je to crawlovateľná stránka", nie zlyhanie.) Ak je > 0, tento
   // beh je NEÚPLNY a hore (main) sa podľa toho nesmie diffovať (viď komentár tam).
   let failedPages = 0;
 
@@ -62,7 +65,10 @@ export async function crawlSite(domain) {
     if (visited.has(norm)) continue;
     visited.add(norm);
     const res = await get(url);
-    if (!res) failedPages++;
+    // Počítaj ako zlyhanie aj HTTP chybové stavy (5xx/429/403…) — `fetch()`
+    // pri nich nevyhodí výnimku, takže `!res` samotné by ich nezachytilo a
+    // stránka by potichu vypadla z `pages` bez inkrementácie `failedPages`.
+    if (!res || !res.ok) failedPages++;
     status.set(url, res ? res.status : 0);
     if (res && res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
       const html = (await res.text()).slice(0, 800_000);
@@ -124,9 +130,18 @@ async function main() {
 
   for (const s of sites) {
     // Starý zoznam issues PRED prepísaním (prvý beh → prevIssues null → žiadne udalosti).
-    const prevRes = await fetch(`${url}/rest/v1/seo_snapshots?select=issues&site_id=eq.${s.id}`, { headers: restHeaders(key) });
-    const prevRows = prevRes.ok ? await prevRes.json() : [];
-    const prevIssues = prevRows[0]?.issues ?? null;
+    // Fail-safe: ak toto čítanie zlyhá (výpadok Supabase/DNS), `prevIssues`
+    // zostane `null` — bez baseline sa diff nespustí (prázdne `events`), takže
+    // sa klientovi nikdy nedostane fabrikovaná „opravené" správa. Zlyhanie
+    // tohto jedného webu tiež nesmie zhodiť celý beh pre ostatné weby.
+    let prevIssues = null;
+    try {
+      const prevRes = await fetch(`${url}/rest/v1/seo_snapshots?select=issues&site_id=eq.${s.id}`, { headers: restHeaders(key) });
+      const prevRows = prevRes.ok ? await prevRes.json() : [];
+      prevIssues = prevRows[0]?.issues ?? null;
+    } catch (e) {
+      console.log(JSON.stringify({ ev: 'seo.prev_read_fail', domain: s.domain, message: String(e?.message ?? e) }));
+    }
 
     let row;
     let events = [];
