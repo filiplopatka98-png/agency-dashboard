@@ -11,6 +11,7 @@
 // Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, (voliteľne) NVD_API_KEY
 import { recordJobRun } from '../_shared/jobRun.mjs';
 import { severityFromScore } from '../../packages/core/dist/cve.js';
+import { diffVulns } from '../../packages/core/dist/events.js';
 
 const WPSCAN_BASE = 'https://wpscan.com/api/v3';
 const UA = 'MonitorixCVE/1.0 (+https://dash.lopatka.sk)';
@@ -152,7 +153,7 @@ async function main() {
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
 
-  const rows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,wp_version,plugins&wp_version=not.is.null`, { headers: restHeaders(srv) })).json();
+  const rows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,org_id,wp_version,plugins,vulns&wp_version=not.is.null`, { headers: restHeaders(srv) })).json();
   const cache = new Map();
   const nvdCache = new Map(); // CVE id -> score|null (dedup NVD naprieč webmi)
   const nvdKey = process.env.NVD_API_KEY || null;
@@ -164,12 +165,30 @@ async function main() {
     try {
       const { vulns, rateLimited } = await collectVulns(wp, token, cache, budget);
       await enrichSeverity(vulns, nvdCache, nvdKey);
+      // Rate-limited beh = neúplný zoznam. Nezapisuj ani nediffuj — inak by sme
+      // ohlásili „zraniteľnosť vyriešená" pri CVE, ktoré tam stále je.
+      if (rateLimited) {
+        console.log(JSON.stringify({ ev: 'cve.skip_rate_limited', site_id: wp.site_id }));
+        continue;
+      }
+      // Diff proti uloženému zoznamu (prvý beh: vulns === null → žiadne udalosti).
+      const events = diffVulns(wp.vulns ?? null, vulns);
       const up = await fetch(`${url}/rest/v1/wp_snapshots?site_id=eq.${wp.site_id}`, {
         method: 'PATCH',
         headers: { ...restHeaders(srv), Prefer: 'return=minimal' },
         body: JSON.stringify({ vulns }),
       });
       if (!up.ok) throw new Error(`patch ${up.status}: ${await up.text()}`);
+      if (events.length) {
+        const log = await fetch(`${url}/rest/v1/change_log`, {
+          method: 'POST',
+          headers: { ...restHeaders(srv), Prefer: 'return=minimal' },
+          body: JSON.stringify(events.map((e) => ({
+            site_id: wp.site_id, org_id: wp.org_id, kind: e.kind, severity: e.severity, message: e.message, payload: e.payload,
+          }))),
+        });
+        if (!log.ok) console.log(JSON.stringify({ ev: 'cve.changelog_fail', site_id: wp.site_id, status: log.status }));
+      }
       ok++;
       console.log(JSON.stringify({ ev: 'cve.ok', site_id: wp.site_id, vulns: vulns.length, rate_limited: rateLimited }));
     } catch (e) {
