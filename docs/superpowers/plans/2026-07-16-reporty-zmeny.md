@@ -589,7 +589,11 @@ const SEVERITY_SK: Record<string, string> = {
 
 const pages = (n: number) => (n === 1 ? 'stránke' : 'stránkach');
 const minutes = (n: number) => (n === 1 ? 'minútu' : n < 5 ? 'minúty' : 'minút');
-const nbsp = (n: number) => n.toLocaleString('sk-SK').replace(/ /g, ' ');
+
+// Zdieľané formátovanie (importuje aj clientReport.ts — nech nie je na dvoch miestach).
+// Tisícky s pevnou medzerou, percentá s desatinnou čiarkou a bez „,00".
+export const fmtNum = (n: number): string => n.toLocaleString('sk-SK').replace(/\s/g, '\u00a0');
+export const fmtPct = (p: number): string => p.toFixed(2).replace('.', ',').replace(',00', '');
 
 export function renderClient(ev: ChangeEvent): string {
   switch (ev.kind) {
@@ -644,8 +648,8 @@ export interface Vigilance {
 }
 
 export function renderVigilance(v: Vigilance, periodLabel: string): string {
-  const pct = v.uptimePct === null ? null : v.uptimePct.toFixed(2).replace('.', ',').replace(',00', '');
-  const head = `${periodLabel} sme spravili ${nbsp(v.checks)} kontrol dostupnosti.`;
+  const pct = v.uptimePct === null ? null : fmtPct(v.uptimePct);
+  const head = `${periodLabel} sme spravili ${fmtNum(v.checks)} kontrol dostupnosti.`;
   if (pct === null) return head;
   const mins = Math.round(v.downtimeSeconds / 60);
   return mins > 0
@@ -683,6 +687,8 @@ export {
   renderIncident,
   renderVigilance,
   buildClientLines,
+  fmtNum,
+  fmtPct,
   SEO_CLIENT_LABELS,
   type Vigilance,
   type TimedLine,
@@ -1113,7 +1119,7 @@ Create `packages/core/src/clientReport.ts`:
 // zaisťuje buildClientLines). Tichý web nerámujeme ako prázdno, ale ako dôkaz
 // dohľadu. Tvrdíme len to, čo vieme: knownVulns/pluginsCurrent === null → mlčíme.
 
-import { renderVigilance, type Vigilance } from './reportText';
+import { renderVigilance, fmtNum, fmtPct, type Vigilance } from './reportText';
 
 export interface ClientReportSite {
   domain: string;
@@ -1135,8 +1141,8 @@ const esc = (s: string) =>
 
 // Veta pre web, na ktorom sa nič nedialo — bez tvrdení, ktoré nevieme doložiť.
 function quietLine(s: ClientReportSite): string {
-  const parts = [`${s.vigilance.checks.toLocaleString('sk-SK').replace(/ /g, ' ')} kontrol`];
-  if (s.vigilance.uptimePct !== null) parts.push(`${s.vigilance.uptimePct.toFixed(2).replace('.', ',').replace(',00', '')} % dostupnosť`);
+  const parts = [`${fmtNum(s.vigilance.checks)} kontrol`];
+  if (s.vigilance.uptimePct !== null) parts.push(`${fmtPct(s.vigilance.uptimePct)} % dostupnosť`);
   if (s.knownVulns === 0) parts.push('žiadne známe zraniteľnosti');
   if (s.pluginsCurrent === true) parts.push('všetky pluginy aktuálne');
   return `Stabilne bez problémov — ${parts.join(', ')}.`;
