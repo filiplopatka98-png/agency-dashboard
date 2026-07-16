@@ -4,7 +4,16 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
 type DaySeg = { d: string; u: number | null };
-type PublicSite = { domain: string; status: 'up' | 'down' | 'maintenance'; uptime30: number | null; history?: DaySeg[] };
+type PublicIncident = { started_at: string; minutes: number };
+type PublicVigilance = { checks: number; uptime_pct: number | null } | null;
+type PublicSite = {
+  domain: string;
+  status: 'up' | 'down' | 'maintenance';
+  uptime30: number | null;
+  history?: DaySeg[];
+  vigilance?: PublicVigilance;
+  incidents?: PublicIncident[];
+};
 type PublicStatus = { client: string; generated_at: string; sites: PublicSite[] } | null;
 
 // Farba dennej kocky — rovnaké prahy ako interný segColor (>=99.5 ok, >=95 warn, inak crit).
@@ -17,6 +26,14 @@ function dayColor(u: number | null): string {
 const fmtDay = (d: string) => {
   const [y, m, dd] = d.split('-');
   return `${Number(dd)}. ${Number(m)}. ${y}`;
+};
+
+const fmtIncident = (i: PublicIncident) => {
+  const d = new Date(i.started_at);
+  const date = d.toLocaleDateString('sk-SK', { day: 'numeric', month: 'numeric' });
+  const time = d.toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' });
+  const m = Math.round(i.minutes);
+  return `${date} o ${time} — výpadok ${m} ${m === 1 ? 'minúta' : m < 5 ? 'minúty' : 'minút'}, vyriešené`;
 };
 
 const STATUS_META: Record<PublicSite['status'], { label: string; color: string; bg: string; dot: string }> = {
@@ -127,6 +144,20 @@ export function StatusClient({ slug }: { slug: string }) {
                         <span>dnes</span>
                       </div>
                     </>
+                  )}
+                  {s.vigilance && s.vigilance.checks > 0 && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: '#6b7280' }}>
+                      Za 90 dní {s.vigilance.checks.toLocaleString('sk-SK').replace(/ /g, ' ')} kontrol dostupnosti
+                      {s.vigilance.uptime_pct != null ? ` · ${Number(s.vigilance.uptime_pct).toFixed(2)} % dostupnosť` : ''}
+                    </div>
+                  )}
+                  {(s.incidents?.length ?? 0) > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f1f3' }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7280', marginBottom: 5 }}>História výpadkov (90 dní)</div>
+                      {s.incidents!.slice(0, 10).map((i, idx) => (
+                        <div key={idx} style={{ fontSize: 12, color: '#444', padding: '3px 0' }}>{fmtIncident(i)}</div>
+                      ))}
+                    </div>
                   )}
                 </div>
               );
