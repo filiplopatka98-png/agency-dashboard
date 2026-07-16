@@ -75,3 +75,5 @@ export {
   type Vigilance,
   type TimedLine,
 } from './reportText';
+
+export { renderClientReport, type ClientReportData, type ClientReportSite } from './clientReport';
