@@ -6,8 +6,12 @@
 // Env: RESEND_API_KEY, ALERT_EMAIL_FROM, ALERT_EMAIL_TO, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { recordJobRun } from '../_shared/jobRun.mjs';
 import { renderMonthlyReport } from '../../packages/core/dist/report.js';
+import { buildClientLines } from '../../packages/core/dist/reportText.js';
+import { renderClientReport } from '../../packages/core/dist/clientReport.js';
 
 const MONTHS = ['Január', 'Február', 'Marec', 'Apríl', 'Máj', 'Jún', 'Júl', 'August', 'September', 'Október', 'November', 'December'];
+// „V júli" — lokál pre vigilance vetu.
+const MONTHS_IN = ['V januári', 'Vo februári', 'V marci', 'V apríli', 'V máji', 'V júni', 'V júli', 'V auguste', 'V septembri', 'V októbri', 'V novembri', 'V decembri'];
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -42,24 +46,47 @@ async function main() {
   const startDay = start.toISOString().slice(0, 10);
   const endDay = end.toISOString().slice(0, 10);
   const monthLabel = `${MONTHS[start.getUTCMonth()]} ${start.getUTCFullYear()}`;
+  const periodLabel = MONTHS_IN[start.getUTCMonth()];
 
   const sites = await get('sites?select=id,org_id,domain,client_id&is_active=eq.true');
   const orgs = await get('organizations?select=id,name');
   const clientsList = await get('clients?select=id,org_id,name,company,report_email&status=eq.active');
-  const [daily, incidents, seo, wp, settings] = await Promise.all([
-    get(`uptime_daily?select=site_id,day,uptime_pct&day=gte.${startDay}&day=lt.${endDay}`),
+  const [daily, incidents, seo, wp, settings, changeLog, workLog, resolvedIncidents] = await Promise.all([
+    get(`uptime_daily?select=site_id,day,uptime_pct,checks,downtime_seconds&day=gte.${startDay}&day=lt.${endDay}`),
     get(`incidents?select=site_id,started_at&started_at=gte.${start.toISOString()}&started_at=lt.${end.toISOString()}`),
     get('seo_snapshots?select=site_id,issues'),
-    get('wp_snapshots?select=site_id,vulns'),
+    get('wp_snapshots?select=site_id,vulns,plugins'),
     get('notification_settings?select=org_id,monthly_report,recipients'),
+    get(`change_log?select=site_id,kind,severity,message,payload,created_at&created_at=gte.${start.toISOString()}&created_at=lt.${end.toISOString()}&order=created_at.asc`),
+    get(`work_log?select=site_id,happened_at,text&happened_at=gte.${startDay}&happened_at=lt.${endDay}&order=happened_at.asc`),
+    get(`incidents?select=site_id,started_at,resolved_at&started_at=gte.${start.toISOString()}&started_at=lt.${end.toISOString()}&resolved_at=not.is.null`),
   ]);
+
+  const groupBy = (arr, key) => {
+    const m = new Map();
+    for (const r of arr) {
+      const list = m.get(r[key]) ?? [];
+      list.push(r);
+      m.set(r[key], list);
+    }
+    return m;
+  };
+  const eventsBySite = groupBy(changeLog, 'site_id');
+  const diaryBySite = groupBy(workLog, 'site_id');
+  const resolvedBySite = groupBy(resolvedIncidents, 'site_id');
 
   const upAcc = new Map();
   for (const d of daily) {
-    if (d.uptime_pct == null) continue;
-    const a = upAcc.get(d.site_id) ?? { sum: 0, n: 0 };
-    a.sum += Number(d.uptime_pct); a.n++; upAcc.set(d.site_id, a);
+    const a = upAcc.get(d.site_id) ?? { sum: 0, n: 0, checks: 0, downtime: 0 };
+    if (d.uptime_pct != null) { a.sum += Number(d.uptime_pct); a.n++; }
+    a.checks += Number(d.checks ?? 0);
+    a.downtime += Number(d.downtime_seconds ?? 0);
+    upAcc.set(d.site_id, a);
   }
+  const vigilanceFor = (id) => {
+    const a = upAcc.get(id);
+    return { checks: a?.checks ?? 0, uptimePct: a && a.n ? a.sum / a.n : null, downtimeSeconds: a?.downtime ?? 0 };
+  };
   const incCount = new Map();
   for (const i of incidents) incCount.set(i.site_id, (incCount.get(i.site_id) ?? 0) + 1);
   const seoM = new Map(seo.map((r) => [r.site_id, r]));
@@ -114,9 +141,27 @@ async function main() {
     if (st && st.monthly_report === false) continue;
     const clientSites = sites.filter((s) => s.client_id === cl.id);
     if (!clientSites.length) continue;
-    const reportSites = clientSites.map(buildSite);
+    const reportSites = clientSites.map((s) => {
+      const wp = wpM.get(s.id);
+      const vulnsArr = wp?.vulns ?? null;
+      const plugins = wp?.plugins ?? null;
+      return {
+        domain: s.domain,
+        vigilance: vigilanceFor(s.id),
+        lines: buildClientLines({
+          events: (eventsBySite.get(s.id) ?? []).filter((e) => e.payload).map((e) => ({
+            at: e.created_at,
+            ev: { kind: e.kind, severity: e.severity, message: e.message, payload: e.payload },
+          })),
+          diary: diaryBySite.get(s.id) ?? [],
+          incidents: resolvedBySite.get(s.id) ?? [],
+        }).map((l) => l.text),
+        knownVulns: Array.isArray(vulnsArr) ? vulnsArr.length : null,
+        pluginsCurrent: Array.isArray(plugins) ? plugins.every((p) => !p.update_version) : null,
+      };
+    });
     const label = cl.company || cl.name || 'Klient';
-    const { subject, html, text } = renderMonthlyReport({ monthLabel, orgName: label, sites: reportSites });
+    const { subject, html, text } = renderClientReport({ monthLabel, periodLabel, clientName: label, sites: reportSites });
     if (!resendReady) {
       skipped++;
       console.log(JSON.stringify({ ev: 'report.skipped', scope: 'client', client: cl.id, reason: 'resend_not_ready', month: monthLabel, sites: reportSites.length }));
