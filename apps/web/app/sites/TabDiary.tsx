@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 type Entry = { id: number; happened_at: string; text: string };
@@ -20,14 +20,25 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
   const [date, setDate] = useState(todayIso());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  // Ref namiesto `saving` stavu — dva rýchle Entery môžu obidva vidieť starú
+  // hodnotu stavu (React state update je async), kým ref je synchrónne pravdivý
+  // hneď po prvom volaní add().
+  const savingRef = useRef(false);
 
   const load = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('work_log')
       .select('id, happened_at, text')
       .eq('site_id', siteId)
       .order('happened_at', { ascending: false })
       .limit(100);
+    if (error) {
+      setLoadErr(`Načítanie zlyhalo: ${error.message}`);
+      setEntries(null);
+      return;
+    }
+    setLoadErr(null);
     setEntries((data ?? []) as Entry[]);
   }, [siteId]);
 
@@ -36,11 +47,14 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
   }, [load]);
 
   const add = async () => {
+    if (savingRef.current) return; // re-entrancy guard proti duplicitnému odoslaniu
     const t = text.trim();
     if (!t || !orgId) return;
+    savingRef.current = true;
     setSaving(true);
     setErr(null);
     const { error } = await supabase.from('work_log').insert({ site_id: siteId, org_id: orgId, happened_at: date, text: t });
+    savingRef.current = false;
     setSaving(false);
     if (error) {
       setErr(`Uloženie zlyhalo: ${error.message}`);
@@ -54,7 +68,11 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
   const del = async (id: number) => {
     if (!window.confirm('Vymazať tento záznam?')) return;
     const { error } = await supabase.from('work_log').delete().eq('id', id);
-    if (!error) await load();
+    if (error) {
+      setErr(`Vymazanie zlyhalo: ${error.message}`);
+      return;
+    }
+    await load();
   };
 
   return (
@@ -90,7 +108,9 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
       </div>
 
       <div style={{ ...card, overflow: 'hidden' }}>
-        {entries === null ? (
+        {loadErr ? (
+          <div style={{ margin: 16, fontSize: 13, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: 10 }}>{loadErr}</div>
+        ) : entries === null ? (
           <div style={{ padding: 20, fontSize: 13, color: 'var(--text-tertiary)' }}>Načítavam…</div>
         ) : entries.length === 0 ? (
           <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
