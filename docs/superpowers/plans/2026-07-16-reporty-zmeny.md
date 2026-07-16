@@ -142,7 +142,7 @@ In `packages/db/src/types.generated.ts`, inside `change_log`, add `payload: Json
 
 - [ ] **Step 3: Verify types compile**
 
-Run: `pnpm --filter @agency/db build && pnpm --filter web exec tsc --noEmit`
+Run: `pnpm --filter @agency/db typecheck && pnpm --filter web exec tsc --noEmit`
 Expected: no errors.
 
 - [ ] **Step 4: Commit**
