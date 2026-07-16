@@ -89,6 +89,10 @@ export function diffPlugins(prev: unknown, next: unknown): ChangeEvent[] {
 // a `fixed` je klientovi viditeľné ("Odstránená zraniteľnosť..."), čo je
 // fabrikácia. CVE-less záznamy sa preto do diffu vôbec nezarátavajú (žiadny
 // fixed, žiadny new) — no naďalej sa ukladajú a počítajú v knownVulns inde.
+// Invariant: LEN CVE id je stabilná identita naprieč behmi — `before`/`after`
+// nižšie obsahujú výhradne záznamy s neprázdnym `cve` (viď filter pri ich
+// plnení), takže `v.cve` je tu vždy string; žiadny title fallback nie je
+// potrebný ani dosiahnuteľný.
 const vulnKey = (v: VulnInfo) => `${v.cve}|${v.slug}`;
 
 export function diffVulns(prev: unknown, next: unknown): ChangeEvent[] {
@@ -107,7 +111,7 @@ export function diffVulns(prev: unknown, next: unknown): ChangeEvent[] {
     out.push({
       kind: 'cve',
       severity: 'info',
-      message: `${v.cve ?? v.title} fixed (${v.target})`,
+      message: `${v.cve} fixed (${v.target})`,
       payload: { direction: 'fixed', cve: v.cve, target: v.target, severity: v.severity },
     });
   }
@@ -116,7 +120,7 @@ export function diffVulns(prev: unknown, next: unknown): ChangeEvent[] {
     out.push({
       kind: 'cve',
       severity: 'critical',
-      message: `${v.cve ?? v.title} new (${v.target})`,
+      message: `${v.cve} new (${v.target})`,
       payload: { direction: 'new', cve: v.cve, target: v.target, severity: v.severity },
     });
   }
