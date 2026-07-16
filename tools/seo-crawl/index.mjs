@@ -51,6 +51,10 @@ export async function crawlSite(domain) {
   const status = new Map();
   const queue = [origin + '/'];
   const pages = [];
+  // Počet stránok, kde `get()` pohltil sieťovú chybu/timeout (vrátil null) — tie
+  // sa potichu vynechajú z `pages` a teda aj z buildSeoIssues. Ak je > 0, tento
+  // beh je NEÚPLNY a hore (main) sa podľa toho nesmie diffovať (viď komentár tam).
+  let failedPages = 0;
 
   while (queue.length && pages.length < MAX_PAGES) {
     const url = queue.shift();
@@ -58,6 +62,7 @@ export async function crawlSite(domain) {
     if (visited.has(norm)) continue;
     visited.add(norm);
     const res = await get(url);
+    if (!res) failedPages++;
     status.set(url, res ? res.status : 0);
     if (res && res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
       const html = (await res.text()).slice(0, 800_000);
@@ -87,7 +92,9 @@ export async function crawlSite(domain) {
 
   const issues = buildSeoIssues(pages, broken);
   const canonicalOk = pages.length > 0 && pages.every((p) => p.hasCanonical);
-  return { pages_crawled: pages.length, sitemap_ok: sitemapOk, robots_ok: robotsOk, canonical_ok: canonicalOk, issues };
+  // `failed_pages` je len signál pre volajúceho (main) — NESMIE sa dostať do
+  // seo_snapshots (viď row v main(), kde sa spreadá cielene bez tohto poľa).
+  return { pages_crawled: pages.length, sitemap_ok: sitemapOk, robots_ok: robotsOk, canonical_ok: canonicalOk, issues, failed_pages: failedPages };
 }
 
 import { recordJobRun } from '../_shared/jobRun.mjs';
@@ -126,12 +133,29 @@ async function main() {
     try {
       const r = await crawlSite(s.domain);
       if (r.pages_crawled === 0) throw new Error('žiadna stránka sa nenačítala');
-      row = { site_id: s.id, org_id: s.org_id, ...r, measured_at: now, error: null };
-      // Diffujeme LEN pri úspešnom crawle — pri zlyhaní nemáme issues a hlásili by
-      // sme „opravené" pre všetko, čo tam v skutočnosti stále je.
-      events = diffSeoIssues(prevIssues, (r.issues ?? []).map((i) => ({ type: i.type, count: i.count })));
+      // `failed_pages` je len interný signál (partial crawl) — vyber ho zo `r`
+      // predtým, než ho spreadneme do `row`, nech sa nedostane do seo_snapshots.
+      const { failed_pages, ...snapshot } = r;
+      row = { site_id: s.id, org_id: s.org_id, ...snapshot, measured_at: now, error: null };
+      const partial = failed_pages > 0;
+      if (partial) {
+        // Neúplný beh: niektoré stránky sa nenačítali (timeout/sieťová chyba),
+        // takže `issues` môže chýbať problém, ktorý v skutočnosti stále existuje
+        // na nenačítanej stránke. Diff by to nesprávne ohlásil ako „opravené" —
+        // fabrikovaná dobrá správa pre klienta. Preto pri partial crawle diff
+        // PRESKOČÍME (events zostáva []), ale snapshot ULOŽÍME — je to naša
+        // aktuálne najlepšia znalosť a dashboard ju zobrazuje s `measured_at`.
+        // Opačný smer je bezpečný: ak neskorší KOMPLETNÝ crawl uvidí issue typ,
+        // ktorý predtým partial beh nezachytil, zaloguje sa ako „new" — a „new"
+        // SEO udalosti sú admin-only (isClientVisible v reportText.ts vracia
+        // false pre kind:'seo' + direction:'new'), takže sa k žiadnemu klientovi
+        // nedostane fabrikovaný záver.
+        console.log(JSON.stringify({ ev: 'seo.skip_partial', domain: s.domain, failed_pages }));
+      } else {
+        events = diffSeoIssues(prevIssues, (r.issues ?? []).map((i) => ({ type: i.type, count: i.count })));
+      }
       ok++;
-      console.log(JSON.stringify({ ev: 'seo.ok', domain: s.domain, pages: r.pages_crawled, issues: r.issues.length }));
+      console.log(JSON.stringify({ ev: 'seo.ok', domain: s.domain, pages: r.pages_crawled, issues: r.issues.length, failed_pages }));
     } catch (e) {
       row = { site_id: s.id, org_id: s.org_id, pages_crawled: 0, measured_at: now, error: String(e?.message ?? e) };
       failed++;
