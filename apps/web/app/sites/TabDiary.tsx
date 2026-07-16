@@ -61,15 +61,20 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
       }
       setText('');
       setDate(todayIso());
-      await load();
     } catch (e) {
       // Neočakávaná klientská výnimka (nie Postgrest chyba) — zobraz v tom istom banneri.
       setErr(`Uloženie zlyhalo: ${e instanceof Error ? e.message : String(e)}`);
+      return;
     } finally {
       // finally namiesto priradenia hneď po await — guard sa uvoľní aj keď insert vyhodí výnimku.
       savingRef.current = false;
       setSaving(false);
     }
+    // Zámerne MIMO try/catch vyššie: insert už prebehol úspešne, takže zlyhanie
+    // reloadu (napr. sieť) nesmie nahlásiť "Uloženie zlyhalo" — to by bola lož,
+    // ktorá pozve na retry a v klientskom reporte vyrobí duplicitný riadok.
+    // load() si chybu rieši sama (setLoadErr) a nehádže.
+    await load();
   };
 
   const del = async (id: number) => {
