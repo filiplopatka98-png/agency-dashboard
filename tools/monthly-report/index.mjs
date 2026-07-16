@@ -157,7 +157,12 @@ async function main() {
           incidents: resolvedBySite.get(s.id) ?? [],
         }).map((l) => l.text),
         knownVulns: Array.isArray(vulnsArr) ? vulnsArr.length : null,
-        pluginsCurrent: Array.isArray(plugins) ? plugins.every((p) => !p.update_version) : null,
+        // Prázdne pole pluginov je nerozlíšiteľné od zlyhaného/nedokončeného
+        // skenu (wpIngest.ts vždy zapíše `plugins: body.plugins ?? []`) — preto
+        // `[]` (aj non-array/chýbajúci riadok) znamená "nevieme", nie "všetko OK".
+        pluginsCurrent: Array.isArray(plugins) && plugins.length > 0
+          ? plugins.every((p) => !p.update_version)
+          : null,
       };
     });
     const label = cl.company || cl.name || 'Klient';
