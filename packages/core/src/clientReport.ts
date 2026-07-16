@@ -23,12 +23,20 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // Veta pre web, na ktorom sa nič nedialo — bez tvrdení, ktoré nevieme doložiť.
-// „Stabilne bez problémov" je nárok na stabilitu odvodený z meraní — bez
-// aspoň jednej kontroly nemáme čo tvrdiť. Vracia null, keď sa nič nemeralo;
-// vigilance riadok (renderVigilance) v tom prípade nad touto vetou už povedal
-// pravdu („nemáme merania"), takže tu ju neopakujeme.
+// „Stabilne bez problémov" je nárok na stabilitu odvodený z meraní dostupnosti
+// — bez aspoň jednej kontroly nemáme čo tvrdiť o stabilite. knownVulns a
+// pluginsCurrent ale prichádzajú z wp_snapshots — nezávislý zdroj od uptime
+// monitoringu — takže aj pri checks === 0 ich vieme (ak nie sú null) pravdivo
+// nahlásiť, len bez akejkoľvek zmienky o dostupnosti (tú už povedal
+// vigilance riadok / renderVigilance vyššie, tu ju neopakujeme).
 function quietLine(s: ClientReportSite): string | null {
-  if (s.vigilance.checks === 0) return null;
+  if (s.vigilance.checks === 0) {
+    const known: string[] = [];
+    if (s.knownVulns === 0) known.push('žiadne známe zraniteľnosti');
+    if (s.pluginsCurrent === true) known.push('všetky pluginy aktuálne');
+    if (known.length === 0) return null;
+    return `Zo zabezpečenia vieme: ${known.join(', ')}.`;
+  }
   const parts = [`${fmtNum(s.vigilance.checks)} kontrol`];
   if (s.vigilance.uptimePct !== null) parts.push(`${fmtPct(s.vigilance.uptimePct)} % dostupnosť`);
   if (s.knownVulns === 0) parts.push('žiadne známe zraniteľnosti');

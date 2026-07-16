@@ -61,4 +61,41 @@ describe('renderClientReport', () => {
     expect(r.html).toContain('Za toto obdobie nemáme merania dostupnosti.');
     expect(r.text).not.toContain('0 kontrol');
   });
+
+  it('web bez meraní ale so známymi bezpečnostnými faktami ich uvedie bez tvrdenia o stabilite', () => {
+    const r = renderClientReport({
+      monthLabel: 'M',
+      periodLabel: 'V júni',
+      clientName: 'K',
+      sites: [
+        site({
+          vigilance: { checks: 0, uptimePct: null, downtimeSeconds: 0 },
+          knownVulns: 0,
+          pluginsCurrent: true,
+        }),
+      ],
+    });
+    expect(r.text).not.toContain('Stabilne bez problémov');
+    expect(r.html).not.toContain('Stabilne bez problémov');
+    expect(r.text).toContain('žiadne známe zraniteľnosti');
+    expect(r.text).toContain('všetky pluginy aktuálne');
+  });
+
+  it('web bez meraní a bez známych bezpečnostných faktov netvrdí nič naviac', () => {
+    const r = renderClientReport({
+      monthLabel: 'M',
+      periodLabel: 'V júni',
+      clientName: 'K',
+      sites: [
+        site({
+          vigilance: { checks: 0, uptimePct: null, downtimeSeconds: 0 },
+          knownVulns: null,
+          pluginsCurrent: null,
+        }),
+      ],
+    });
+    expect(r.text).not.toContain('Stabilne bez problémov');
+    expect(r.text).not.toContain('žiadne známe zraniteľnosti');
+    expect(r.text).not.toContain('všetky pluginy aktuálne');
+  });
 });
