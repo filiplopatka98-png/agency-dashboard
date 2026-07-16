@@ -149,6 +149,7 @@ export type Database = {
           kind: string
           message: string
           org_id: string
+          payload: Json | null
           severity: string
           site_id: string | null
         }
@@ -158,6 +159,7 @@ export type Database = {
           kind: string
           message: string
           org_id: string
+          payload?: Json | null
           severity?: string
           site_id?: string | null
         }
@@ -167,6 +169,7 @@ export type Database = {
           kind?: string
           message?: string
           org_id?: string
+          payload?: Json | null
           severity?: string
           site_id?: string | null
         }
@@ -1085,6 +1088,48 @@ export type Database = {
             foreignKeyName: "wp_snapshots_site_id_fkey"
             columns: ["site_id"]
             isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      work_log: {
+        Row: {
+          created_at: string
+          happened_at: string
+          id: number
+          org_id: string
+          site_id: string
+          text: string
+        }
+        Insert: {
+          created_at?: string
+          happened_at?: string
+          id?: never
+          org_id: string
+          site_id: string
+          text: string
+        }
+        Update: {
+          created_at?: string
+          happened_at?: string
+          id?: never
+          org_id?: string
+          site_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_log_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_log_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
             referencedRelation: "sites"
             referencedColumns: ["id"]
           },
