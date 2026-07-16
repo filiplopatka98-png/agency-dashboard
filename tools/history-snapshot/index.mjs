@@ -140,7 +140,12 @@ async function main() {
   }
   if (changeRows.length) {
     const r = await fetch(`${url}/rest/v1/change_log`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(changeRows) });
-    if (!r.ok) throw new Error(`changelog insert ${r.status}: ${await r.text()}`);
+    // Log-and-continue (nie throw) — rovnako ako u ostatných collectorov
+    // (wpIngest.ts, wp-cve, seo-crawl), diff/log zápis nesmie zablokovať
+    // zvyšok main() (alertRows nižšie ani recordJobRun na konci) — inak by
+    // zlyhanie change_log insertu spôsobilo, že proaktívne degradačné e-maily
+    // sa nikdy nezapíšu a job bude vyzerať ako nikdy nespustený.
+    if (!r.ok) console.log(JSON.stringify({ ev: 'history.changelog_fail', status: r.status, body: await r.text() }));
   }
   // Proaktívne alerty — ignoruj konflikt (dedupe_key unique), pošle ich runAlerts.
   if (alertRows.length) {

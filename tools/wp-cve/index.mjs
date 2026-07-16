@@ -168,6 +168,18 @@ async function main() {
 
   for (const wp of rows) {
     try {
+      // Prázdny/chýbajúci zoznam pluginov je takmer vždy zlyhanie zberu (WP
+      // agent get_plugins() nevidel mu-pluginy, request vynechal `plugins`
+      // atď.), nie fakt "web nemá žiadne pluginy" — bežiaci WordPress bez
+      // jediného pluginu je v praxi zanedbateľný prípad. Traktuj to ako
+      // neúplný beh rovnako ako rate-limit/API chybu nižšie: preskoč web bez
+      // zápisu — `vulns: []` by sa PATCHlo, monthly-report by to prečítal ako
+      // knownVulns: 0 a klientovi by sme fabrikovali "žiadne známe
+      // zraniteľnosti" o webe, ktorého pluginy sme vôbec neskenovali.
+      if (!Array.isArray(wp.plugins) || wp.plugins.length === 0) {
+        console.log(JSON.stringify({ ev: 'cve.skip_no_plugins', site_id: wp.site_id }));
+        continue;
+      }
       const { vulns, rateLimited, incomplete } = await collectVulns(wp, token, cache, budget);
       await enrichSeverity(vulns, nvdCache, nvdKey);
       // Neúplný beh (rate-limit ALEBO API chyba na ktoromkoľvek cieli) = neúplný
