@@ -29,17 +29,20 @@ const esc = (s: string) =>
 // dodať (žiadny bezpečnostný fakt), vraciame null — vigilance riadok je sám
 // o sebe kompletný. „Stabilne bez problémov" je nárok na stabilitu odvodený
 // z meraní dostupnosti — bez aspoň jednej kontroly nemáme čo tvrdiť o
-// stabilite, preto pri checks === 0 používame inú vetu ("Zo zabezpečenia
-// vieme"). knownVulns a pluginsCurrent ale prichádzajú z wp_snapshots —
-// nezávislý zdroj od uptime monitoringu — takže aj pri checks === 0 ich
-// vieme (ak nie sú null) pravdivo nahlásiť.
+// stabilite (checks === 0), ani keď kontroly boli ale nahlásili výpadok
+// (downtimeSeconds > 0) — vigilance riadok už výpadok pravdivo priznal o
+// riadok vyššie, takže „stabilne bez problémov" by mu priamo protirečilo.
+// V oboch prípadoch používame inú vetu ("Zo zabezpečenia vieme"). knownVulns
+// a pluginsCurrent ale prichádzajú z wp_snapshots — nezávislý zdroj od
+// uptime monitoringu — takže ich vieme (ak nie sú null) pravdivo nahlásiť
+// bez ohľadu na to, čo vigilance riadok povedal o dostupnosti.
 function quietLine(s: ClientReportSite): string | null {
   const known: string[] = [];
   if (s.knownVulns === 0) known.push('žiadne známe zraniteľnosti');
   if (s.pluginsCurrent === true) known.push('všetky pluginy aktuálne');
   if (known.length === 0) return null;
-  if (s.vigilance.checks === 0) return `Zo zabezpečenia vieme: ${known.join(', ')}.`;
-  return `Stabilne bez problémov — ${known.join(', ')}.`;
+  if (s.vigilance.checks > 0 && s.vigilance.downtimeSeconds === 0) return `Stabilne bez problémov — ${known.join(', ')}.`;
+  return `Zo zabezpečenia vieme: ${known.join(', ')}.`;
 }
 
 export function renderClientReport(data: ClientReportData): { subject: string; html: string; text: string } {

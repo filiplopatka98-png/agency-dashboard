@@ -85,6 +85,25 @@ describe('renderClientReport', () => {
     expect(r.text).toContain('všetky pluginy aktuálne');
   });
 
+  it('web s meraným výpadkom netvrdí stabilitu, ale bezpečnostné fakty uvedie (nekontradikcia s vigilance riadkom)', () => {
+    const r = renderClientReport({
+      monthLabel: 'Júl 2026',
+      periodLabel: 'V júli',
+      clientName: 'K',
+      sites: [
+        site({
+          vigilance: { checks: 8640, uptimePct: 99.94, downtimeSeconds: 300 },
+          knownVulns: 0,
+          pluginsCurrent: true,
+        }),
+      ],
+    });
+    expect(r.text).toContain('celkový výpadok 5 minút');
+    expect(r.text).not.toContain('Stabilne bez problémov');
+    expect(r.html).not.toContain('Stabilne bez problémov');
+    expect(r.text).toContain('Zo zabezpečenia vieme: žiadne známe zraniteľnosti, všetky pluginy aktuálne.');
+  });
+
   it('web bez meraní a bez známych bezpečnostných faktov netvrdí nič naviac', () => {
     const r = renderClientReport({
       monthLabel: 'M',
