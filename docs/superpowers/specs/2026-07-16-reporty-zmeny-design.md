@@ -121,6 +121,13 @@ s fallbackom na pôvodný text pri neznámom kľúči.
 
 ## 4. Výstupy
 
+### Kedy sa posiela
+
+- **Mesačný report (klient aj admin): vždy 1. deň v mesiaci**, cron `0 7 1 * *`
+  (07:00 UTC = 8:00 SEČ / 9:00 SELČ). Pokrýva **predchádzajúci celý kalendárny
+  mesiac** (1.–31. 7. → odchádza 1. 8.). Toto je fixná požiadavka — nemeniť.
+- **Týždenný digest (admin): pondelok 08:00 UTC**, pokrýva posledných 7 dní.
+
 ### Klientsky mesačný report (len jeho weby)
 1. **Zhrnutie dohľadu** — reálne čísla z `uptime_daily`
 2. **Per web „Čo sa dialo"** — chronologicky zlúčené: denník + client-visible udalosti + vyriešené výpadky
