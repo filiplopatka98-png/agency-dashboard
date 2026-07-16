@@ -1,0 +1,118 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+
+type Entry = { id: number; happened_at: string; text: string };
+
+const card = {
+  background: 'var(--surface-primary)',
+  border: '1px solid var(--border-primary)',
+  borderRadius: 'var(--radius)',
+  boxShadow: 'var(--shadow-sm)',
+} as const;
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | null }) {
+  const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [text, setText] = useState('');
+  const [date, setDate] = useState(todayIso());
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from('work_log')
+      .select('id, happened_at, text')
+      .eq('site_id', siteId)
+      .order('happened_at', { ascending: false })
+      .limit(100);
+    setEntries((data ?? []) as Entry[]);
+  }, [siteId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const add = async () => {
+    const t = text.trim();
+    if (!t || !orgId) return;
+    setSaving(true);
+    setErr(null);
+    const { error } = await supabase.from('work_log').insert({ site_id: siteId, org_id: orgId, happened_at: date, text: t });
+    setSaving(false);
+    if (error) {
+      setErr(`Uloženie zlyhalo: ${error.message}`);
+      return;
+    }
+    setText('');
+    setDate(todayIso());
+    await load();
+  };
+
+  const del = async (id: number) => {
+    if (!window.confirm('Vymazať tento záznam?')) return;
+    const { error } = await supabase.from('work_log').delete().eq('id', id);
+    if (!error) await load();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ ...card, padding: 20 }}>
+        <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 4 }}>Pracovný denník</h3>
+        <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 14 }}>
+          Zapíš, čo si na webe spravil. Záznamy sa objavia v mesačnom reporte pre klienta — tvojím hlasom, tak ako ich napíšeš.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            style={{ padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 13.5 }}
+          />
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void add(); }}
+            placeholder="napr. Optimalizovali sme obrázky v e-shope"
+            style={{ flex: 1, minWidth: 220, padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 13.5 }}
+          />
+          <button
+            onClick={() => void add()}
+            disabled={saving || !text.trim()}
+            style={{ padding: '10px 18px', background: saving || !text.trim() ? 'var(--text-tertiary)' : 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13.5, fontWeight: 600, cursor: saving || !text.trim() ? 'default' : 'pointer' }}
+          >
+            {saving ? 'Ukladám…' : 'Pridať'}
+          </button>
+        </div>
+        {err && <div style={{ marginTop: 10, fontSize: 13, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: 10 }}>{err}</div>}
+      </div>
+
+      <div style={{ ...card, overflow: 'hidden' }}>
+        {entries === null ? (
+          <div style={{ padding: 20, fontSize: 13, color: 'var(--text-tertiary)' }}>Načítavam…</div>
+        ) : entries.length === 0 ? (
+          <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
+            Zatiaľ žiadne záznamy. Prvý pridaj vyššie — objaví sa v najbližšom mesačnom reporte.
+          </div>
+        ) : (
+          entries.map((e, i) => (
+            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 18px', borderBottom: i < entries.length - 1 ? '1px solid var(--border-primary)' : 'none' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: "'Geist Mono', monospace", whiteSpace: 'nowrap' }}>
+                {new Date(e.happened_at).toLocaleDateString('sk-SK', { day: 'numeric', month: 'numeric', year: '2-digit' })}
+              </span>
+              <span style={{ flex: 1, fontSize: 13.5, color: 'var(--text-primary)' }}>{e.text}</span>
+              <button
+                onClick={() => void del(e.id)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-tertiary)', fontSize: 12, cursor: 'pointer' }}
+              >
+                Vymazať
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}

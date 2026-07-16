@@ -29,6 +29,7 @@ export interface IncidentVM {
 
 export interface SiteVM {
   id: string;
+  orgId: string;
   name: string;
   domain: string;
   url: string;
@@ -371,6 +372,7 @@ export async function loadDashboard(): Promise<{
 
     return {
       id: s.id,
+      orgId: s.org_id,
       name: s.name,
       domain: s.domain,
       url: s.url,

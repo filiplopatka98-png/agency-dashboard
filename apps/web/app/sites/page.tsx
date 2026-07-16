@@ -18,6 +18,7 @@ import {
 } from '../lib/design';
 import { relativeTime } from '../lib/format';
 import type { FreshKey } from '../lib/data';
+import { TabDiary } from './TabDiary';
 
 const card = {
   background: 'var(--surface-primary)',
@@ -137,6 +138,7 @@ const TABS = [
   { id: 'seo', label: 'SEO' },
   { id: 'aeo', label: 'AEO' },
   { id: 'infra', label: 'Infra' },
+  { id: 'diary', label: 'Denník' },
   { id: 'client', label: 'Klient' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
@@ -284,6 +286,7 @@ function SiteDetail({ id }: { id: string }) {
         {tab === 'seo' && <TabSeo site={site} />}
         {tab === 'aeo' && <TabAeo site={site} />}
         {tab === 'infra' && <TabInfra site={site} />}
+        {tab === 'diary' && <TabDiary siteId={site.id} orgId={site.orgId ?? null} />}
         {tab === 'client' && <TabClient site={site} />}
       </div>
     </div>
