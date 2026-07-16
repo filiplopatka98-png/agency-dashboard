@@ -22,9 +22,30 @@ export interface PluginInfo { name: string; slug: string; version: string }
 export interface VulnInfo { cve: string | null; target: string; slug: string; title: string; severity: string }
 export interface SeoIssueInfo { type: string; count: number }
 
+// Diff funkcie čítajú `prev` priamo z DB (jsonb bez shape-constraintu) — nedôveryhodná
+// hranica. Garbage (nie-pole, alebo pole s nepoužiteľnými prvkami) sa NESMIE prejaviť
+// ako throw; správa sa ako "žiadny použiteľný baseline" → []. Prázdne pole `[]` je ale
+// legitímny baseline ("minule sme skenovali a nič sme nenašli") a musí sa diffovať
+// normálne — nezamieňať "nie je pole" s "je prázdne pole".
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+function isPluginInfo(v: unknown): v is PluginInfo {
+  return isRecord(v) && typeof v.slug === 'string';
+}
+
+function isVulnInfo(v: unknown): v is VulnInfo {
+  return isRecord(v) && typeof v.slug === 'string';
+}
+
+function isSeoIssueInfo(v: unknown): v is SeoIssueInfo {
+  return isRecord(v) && typeof v.type === 'string';
+}
+
 // prev == null → prvý ingest: zámerne nič, inak by sme nahlásili celý stav ako zmenu.
-export function diffCore(prev: string | null | undefined, next: string | null | undefined): ChangeEvent[] {
-  if (!prev || !next || prev === next) return [];
+export function diffCore(prev: unknown, next: unknown): ChangeEvent[] {
+  if (typeof prev !== 'string' || typeof next !== 'string' || !prev || !next || prev === next) return [];
   return [{
     kind: 'update',
     severity: 'info',
@@ -33,19 +54,23 @@ export function diffCore(prev: string | null | undefined, next: string | null | 
   }];
 }
 
-export function diffPlugins(prev: PluginInfo[] | null | undefined, next: PluginInfo[]): ChangeEvent[] {
-  if (!prev) return [];
-  const before = new Map(prev.map((p) => [p.slug, p]));
+export function diffPlugins(prev: unknown, next: unknown): ChangeEvent[] {
+  if (!Array.isArray(prev) || !Array.isArray(next)) return [];
+  const before = new Map<string, PluginInfo>();
+  for (const raw of prev) {
+    if (isPluginInfo(raw)) before.set(raw.slug, raw);
+  }
   const out: ChangeEvent[] = [];
-  for (const p of next) {
-    const old = before.get(p.slug);
-    if (!old || !old.version || !p.version) continue; // nový plugin → v1 ignoruje (YAGNI)
-    if (old.version === p.version) continue;
+  for (const raw of next) {
+    if (!isPluginInfo(raw)) continue;
+    const old = before.get(raw.slug);
+    if (!old || !old.version || !raw.version) continue; // nový plugin → v1 ignoruje (YAGNI)
+    if (old.version === raw.version) continue;
     out.push({
       kind: 'update',
       severity: 'info',
-      message: `${p.name} ${old.version} → ${p.version}`,
-      payload: { target: 'plugin', name: p.name, slug: p.slug, from: old.version, to: p.version },
+      message: `${raw.name} ${old.version} → ${raw.version}`,
+      payload: { target: 'plugin', name: raw.name, slug: raw.slug, from: old.version, to: raw.version },
     });
   }
   return out;
@@ -53,10 +78,16 @@ export function diffPlugins(prev: PluginInfo[] | null | undefined, next: PluginI
 
 const vulnKey = (v: VulnInfo) => `${v.cve ?? v.title}|${v.slug}`;
 
-export function diffVulns(prev: VulnInfo[] | null | undefined, next: VulnInfo[]): ChangeEvent[] {
-  if (!prev) return [];
-  const before = new Map(prev.map((v) => [vulnKey(v), v]));
-  const after = new Map(next.map((v) => [vulnKey(v), v]));
+export function diffVulns(prev: unknown, next: unknown): ChangeEvent[] {
+  if (!Array.isArray(prev) || !Array.isArray(next)) return [];
+  const before = new Map<string, VulnInfo>();
+  for (const raw of prev) {
+    if (isVulnInfo(raw)) before.set(vulnKey(raw), raw);
+  }
+  const after = new Map<string, VulnInfo>();
+  for (const raw of next) {
+    if (isVulnInfo(raw)) after.set(vulnKey(raw), raw);
+  }
   const out: ChangeEvent[] = [];
   for (const [k, v] of before) {
     if (after.has(k)) continue;
@@ -79,10 +110,16 @@ export function diffVulns(prev: VulnInfo[] | null | undefined, next: VulnInfo[])
   return out;
 }
 
-export function diffSeoIssues(prev: SeoIssueInfo[] | null | undefined, next: SeoIssueInfo[]): ChangeEvent[] {
-  if (!prev) return [];
-  const before = new Map(prev.map((i) => [i.type, i.count]));
-  const after = new Map(next.map((i) => [i.type, i.count]));
+export function diffSeoIssues(prev: unknown, next: unknown): ChangeEvent[] {
+  if (!Array.isArray(prev) || !Array.isArray(next)) return [];
+  const before = new Map<string, number>();
+  for (const raw of prev) {
+    if (isSeoIssueInfo(raw)) before.set(raw.type, raw.count);
+  }
+  const after = new Map<string, number>();
+  for (const raw of next) {
+    if (isSeoIssueInfo(raw)) after.set(raw.type, raw.count);
+  }
   const out: ChangeEvent[] = [];
   for (const [type, count] of before) {
     if (after.has(type)) continue;
