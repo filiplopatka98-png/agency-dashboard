@@ -33,4 +33,58 @@ describe('renderMonthlyReport', () => {
     expect(r.text).toContain('—');
     expect(r.html).toContain('&lt;x&gt;');
   });
+
+  it('zobrazuje zhoršenia (nový CVE, pokles skóre) — klientský filter sa NEaplikuje', () => {
+    const r = renderMonthlyReport({
+      monthLabel: 'M', orgName: 'O',
+      sites: [site({
+        changes: [
+          { message: 'CVE-2024-1234 new (WooCommerce)', severity: 'critical' },
+          { message: 'AEO 78 → 48', severity: 'warning' },
+        ],
+      })],
+    });
+    expect(r.text).toContain('CVE-2024-1234 new (WooCommerce)');
+    expect(r.text).toContain('AEO 78 → 48');
+    expect(r.html).toContain('CVE-2024-1234 new (WooCommerce)');
+    expect(r.html).toContain('AEO 78 → 48');
+  });
+
+  it('zoraďuje zmeny podľa závažnosti — kritické/zhoršenia pred zlepšeniami', () => {
+    const r = renderMonthlyReport({
+      monthLabel: 'M', orgName: 'O',
+      sites: [site({
+        changes: [
+          { message: 'WooCommerce 5.1 → 5.4', severity: 'info' },
+          { message: 'AEO 48 → 78', severity: 'info' },
+          { message: 'CVE-2024-1234 new (WooCommerce)', severity: 'critical' },
+          { message: 'Chýbajúci title — new (3)', severity: 'warning' },
+        ],
+      })],
+    });
+    const iCritical = r.text.indexOf('CVE-2024-1234 new (WooCommerce)');
+    const iWarning = r.text.indexOf('Chýbajúci title — new (3)');
+    const iInfo1 = r.text.indexOf('WooCommerce 5.1 → 5.4');
+    const iInfo2 = r.text.indexOf('AEO 48 → 78');
+    expect(iCritical).toBeGreaterThan(-1);
+    expect(iCritical).toBeLessThan(iWarning);
+    expect(iWarning).toBeLessThan(iInfo1);
+    expect(iWarning).toBeLessThan(iInfo2);
+  });
+
+  it('escapuje HTML v správe zmeny', () => {
+    const r = renderMonthlyReport({
+      monthLabel: 'M', orgName: 'O',
+      sites: [site({ changes: [{ message: '<script>alert(1)</script>', severity: 'info' }] })],
+    });
+    expect(r.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(r.html).not.toContain('<script>alert(1)</script>');
+  });
+
+  it('web bez zmien vyrenderuje presne ako predtým (chýbajúce aj prázdne pole)', () => {
+    const withoutField = renderMonthlyReport({ monthLabel: 'M', orgName: 'O', sites: [site({})] });
+    const withEmptyArray = renderMonthlyReport({ monthLabel: 'M', orgName: 'O', sites: [site({ changes: [] })] });
+    expect(withoutField.html).toBe(withEmptyArray.html);
+    expect(withoutField.text).toBe(withEmptyArray.text);
+  });
 });

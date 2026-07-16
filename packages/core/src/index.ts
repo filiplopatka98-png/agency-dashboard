@@ -43,7 +43,7 @@ export { computeFreshness, freshnessFor, MAX_AGE_HOURS, type MetricKey, type Fre
 
 export { renderDigest, type DigestData, type DigestSite } from './digest';
 
-export { renderMonthlyReport, type ReportData, type ReportSite } from './report';
+export { renderMonthlyReport, type ReportData, type ReportSite, type ReportChange } from './report';
 
 export {
   diffCore,

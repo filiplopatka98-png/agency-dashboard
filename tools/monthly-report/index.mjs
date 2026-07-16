@@ -97,6 +97,14 @@ async function main() {
     const a = upAcc.get(s.id);
     const issues = seoM.get(s.id)?.issues ?? [];
     const vulnsArr = wpM.get(s.id)?.vulns ?? null;
+    // Admin vidí VŠETKY change_log riadky za mesiac vrátane legacy `kind:'status'`
+    // (výpadok/obnova z runUptime.ts) — na rozdiel od klientskeho `.filter((e) =>
+    // e.payload)` (ten filtruje, lebo renderClient potrebuje payload na zostavenie
+    // vety). Admin renderuje hotové `message`, ktoré majú aj legacy riadky bez
+    // payloadu — a týždenný digest (digest.ts / tools/weekly-digest) tieto riadky
+    // administrátorovi už dnes ukazuje bez filtra, takže mesačný report je s ním
+    // konzistentný.
+    const changes = (eventsBySite.get(s.id) ?? []).map((e) => ({ message: e.message, severity: e.severity }));
     return {
       domain: s.domain,
       uptime: a && a.n ? a.sum / a.n : null,
@@ -104,6 +112,7 @@ async function main() {
       openIssues: Array.isArray(issues) ? issues.length : 0,
       vulns: Array.isArray(vulnsArr) ? vulnsArr.length : 0,
       criticalVulns: Array.isArray(vulnsArr) ? vulnsArr.filter((v) => v.severity === 'critical' || v.severity === 'high').length : 0,
+      changes,
     };
   };
 
