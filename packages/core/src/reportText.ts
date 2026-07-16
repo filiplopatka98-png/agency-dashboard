@@ -29,6 +29,14 @@ const METRIC_SENTENCE: Record<string, (from: number, to: number) => string> = {
   perf_desktop: (f, t) => `Rýchlosť na počítači sa zlepšila zo ${f} na ${t} bodov.`,
 };
 
+// Zrkadlové vety pre zhoršenie (direction: 'down') — rovnaký rod, opačný smer.
+const METRIC_SENTENCE_DOWN: Record<string, (from: number, to: number) => string> = {
+  aeo: (f, t) => `Pripravenosť webu pre AI vyhľadávače sa zhoršila zo ${f} na ${t} bodov.`,
+  security: (f, t) => `Bezpečnostné nastavenia sa zhoršili zo ${f} na ${t} bodov.`,
+  perf_mobile: (f, t) => `Rýchlosť na mobile sa zhoršila zo ${f} na ${t} bodov.`,
+  perf_desktop: (f, t) => `Rýchlosť na počítači sa zhoršila zo ${f} na ${t} bodov.`,
+};
+
 // SEO typy sú v seo.ts už po slovensky, ale technicky — preklad do klientskej reči.
 // Fallback = pôvodný text (zrozumiteľný, nič si nevymýšľa).
 export const SEO_CLIENT_LABELS: Record<string, string> = {
@@ -53,9 +61,16 @@ const minutes = (n: number) => (n === 1 ? 'minútu' : n < 5 ? 'minúty' : 'minú
 
 // Zdieľané formátovanie (importuje aj clientReport.ts — nech nie je na dvoch miestach).
 // Tisícky s pevnou medzerou, percentá s desatinnou čiarkou a bez „,00".
-export const fmtNum = (n: number): string => n.toLocaleString('sk-SK').replace(/\s/g, String.fromCharCode(32));
+// Pozn.: toLocaleString('sk-SK') závisí od ICU dát skompilovaných do Node — tento
+// projekt vyžaduje a CI používa oficiálne Node ≥22 distribúcie, ktoré sú
+// full-ICU predvolene. Normalizácia /\s/g nižšie pokrýva varianty medzier
+// (NBSP, narrow-NBSP, medzera), ktoré takéto plné-ICU zostavenia produkujú.
+export const fmtNum = (n: number): string => n.toLocaleString('sk-SK').replace(/\s/g, ' ');
 export const fmtPct = (p: number): string => p.toFixed(2).replace('.', ',').replace(',00', '');
 
+// Renderuje pravdivo v OBOCH smeroch (fixed/new, up/down) — nerozhoduje, čo klient
+// smie vidieť. Filtrovanie podľa publika je zodpovednosť volajúceho cez
+// isClientVisible (napr. buildClientLines) — tu sa to zámerne nemení.
 export function renderClient(ev: ChangeEvent): string {
   switch (ev.kind) {
     case 'update': {
@@ -65,6 +80,11 @@ export function renderClient(ev: ChangeEvent): string {
     case 'cve': {
       const p = ev.payload as CvePayload;
       const sev = SEVERITY_SK[p.severity];
+      if (p.direction === 'new') {
+        return sev
+          ? `Zistená nová bezpečnostná zraniteľnosť ${sev} závažnosti v module ${p.target}.`
+          : `Zistená nová bezpečnostná zraniteľnosť v module ${p.target}.`;
+      }
       return sev
         ? `Odstránená bezpečnostná zraniteľnosť ${sev} závažnosti v module ${p.target}.`
         : `Odstránená bezpečnostná zraniteľnosť v module ${p.target}.`;
@@ -72,13 +92,18 @@ export function renderClient(ev: ChangeEvent): string {
     case 'seo': {
       const p = ev.payload as SeoPayload;
       const label = SEO_CLIENT_LABELS[p.type] ?? p.type;
-      return `Opravené: ${label} — na ${p.was_count} ${pages(p.was_count)}.`;
+      const verb = p.direction === 'new' ? 'Zistené' : 'Opravené';
+      return `${verb}: ${label} — na ${p.was_count} ${pages(p.was_count)}.`;
     }
     case 'score': {
       const p = ev.payload as ScorePayload;
-      const sentence = METRIC_SENTENCE[p.metric];
       const from = Math.round(p.from);
       const to = Math.round(p.to);
+      if (p.direction === 'down') {
+        const sentenceDown = METRIC_SENTENCE_DOWN[p.metric];
+        return sentenceDown ? sentenceDown(from, to) : `${p.metric}: zhoršenie zo ${from} na ${to} bodov.`;
+      }
+      const sentence = METRIC_SENTENCE[p.metric];
       return sentence ? sentence(from, to) : `${p.metric}: zlepšenie zo ${from} na ${to} bodov.`;
     }
     default:

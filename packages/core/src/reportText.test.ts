@@ -51,6 +51,32 @@ describe('renderClient', () => {
   it('neznáma metrika → fallback', () => {
     expect(renderClient(ev({ kind: 'score', payload: { metric: 'xy', from: 1, to: 2, direction: 'up' } }))).toContain('xy');
   });
+
+  // renderClient je audience-agnostic — musí byť pravdivý aj v smere 'new'/'down',
+  // hoci buildClientLines/isClientVisible tieto smery klientovi nikdy nezobrazí.
+  it('nová CVE — pravdivá veta, netvrdí odstránenie', () => {
+    const out = renderClient(ev({ kind: 'cve', payload: { direction: 'new', cve: 'CVE-2024-1', target: 'WooCommerce', severity: 'high' } }));
+    expect(out).toBe('Zistená nová bezpečnostná zraniteľnosť vysokej závažnosti v module WooCommerce.');
+    expect(out).not.toContain('Odstránená');
+  });
+  it('nová CVE — neznáma závažnosť → fallback bez závažnosti', () => {
+    const out = renderClient(ev({ kind: 'cve', payload: { direction: 'new', cve: 'CVE-2024-2', target: 'WooCommerce', severity: 'unknown' } }));
+    expect(out).toBe('Zistená nová bezpečnostná zraniteľnosť v module WooCommerce.');
+  });
+  it('nové SEO — pravdivá veta, netvrdí opravu', () => {
+    expect(renderClient(ev({ kind: 'seo', payload: { direction: 'new', type: 'Chýbajúci canonical', was_count: 3 } })))
+      .toBe('Zistené: chýbajúce označenie hlavnej verzie stránky — na 3 stránkach.');
+  });
+  it('zhoršenie skóre — správny slovenský rod, netvrdí zlepšenie', () => {
+    expect(renderClient(ev({ kind: 'score', payload: { metric: 'aeo', from: 78, to: 48, direction: 'down' } })))
+      .toBe('Pripravenosť webu pre AI vyhľadávače sa zhoršila zo 78 na 48 bodov.');
+    expect(renderClient(ev({ kind: 'score', payload: { metric: 'security', from: 90, to: 70, direction: 'down' } })))
+      .toBe('Bezpečnostné nastavenia sa zhoršili zo 90 na 70 bodov.');
+  });
+  it('zhoršenie neznámej metriky → fallback', () => {
+    expect(renderClient(ev({ kind: 'score', payload: { metric: 'xy', from: 2, to: 1, direction: 'down' } })))
+      .toBe('xy: zhoršenie zo 2 na 1 bodov.');
+  });
 });
 
 describe('renderIncident', () => {
