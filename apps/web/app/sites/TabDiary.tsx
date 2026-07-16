@@ -53,16 +53,23 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
     savingRef.current = true;
     setSaving(true);
     setErr(null);
-    const { error } = await supabase.from('work_log').insert({ site_id: siteId, org_id: orgId, happened_at: date, text: t });
-    savingRef.current = false;
-    setSaving(false);
-    if (error) {
-      setErr(`Uloženie zlyhalo: ${error.message}`);
-      return;
+    try {
+      const { error } = await supabase.from('work_log').insert({ site_id: siteId, org_id: orgId, happened_at: date, text: t });
+      if (error) {
+        setErr(`Uloženie zlyhalo: ${error.message}`);
+        return;
+      }
+      setText('');
+      setDate(todayIso());
+      await load();
+    } catch (e) {
+      // Neočakávaná klientská výnimka (nie Postgrest chyba) — zobraz v tom istom banneri.
+      setErr(`Uloženie zlyhalo: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      // finally namiesto priradenia hneď po await — guard sa uvoľní aj keď insert vyhodí výnimku.
+      savingRef.current = false;
+      setSaving(false);
     }
-    setText('');
-    setDate(todayIso());
-    await load();
   };
 
   const del = async (id: number) => {
@@ -72,6 +79,7 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
       setErr(`Vymazanie zlyhalo: ${error.message}`);
       return;
     }
+    setErr(null);
     await load();
   };
 
