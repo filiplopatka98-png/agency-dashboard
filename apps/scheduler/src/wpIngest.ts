@@ -1,3 +1,4 @@
+import { diffCore, diffPlugins, type PluginInfo, type ChangeEvent } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
 
@@ -49,6 +50,20 @@ export async function wpIngest(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ error: 'site not found', host: h }), { status: 404, headers: { 'content-type': 'application/json' } });
   }
 
+  // Diff pred prepísaním snapshotu — inak sa stará verzia stratí. Prvý ingest
+  // (žiadny predchádzajúci riadok) zámerne nelogujeme.
+  const { data: prevSnap } = await db
+    .from('wp_snapshots')
+    .select('wp_version, plugins')
+    .eq('site_id', site.id)
+    .maybeSingle();
+  const events: ChangeEvent[] = prevSnap
+    ? [
+        ...diffCore(prevSnap.wp_version, body.wp_version ?? null),
+        ...diffPlugins(prevSnap.plugins as unknown as PluginInfo[] | null, (body.plugins ?? []) as PluginInfo[]),
+      ]
+    : [];
+
   const { error } = await db.from('wp_snapshots').upsert(
     {
       site_id: site.id,
@@ -68,6 +83,22 @@ export async function wpIngest(request: Request, env: Env): Promise<Response> {
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'content-type': 'application/json' } });
   }
+
+  // Zápis udalostí je best-effort — nesmie zhodiť ingest (dáta > zoznam udalostí).
+  if (events.length) {
+    const { error: logErr } = await db.from('change_log').insert(
+      events.map((e) => ({
+        site_id: site.id,
+        org_id: site.org_id,
+        kind: e.kind,
+        severity: e.severity,
+        message: e.message,
+        payload: e.payload as unknown as Record<string, unknown>,
+      })),
+    );
+    if (logErr) console.log(JSON.stringify({ ev: 'wp.changelog_fail', message: logErr.message }));
+  }
+
   console.log(JSON.stringify({ ev: 'wp.ingest', domain: site.domain, wp: body.wp_version }));
   return new Response(JSON.stringify({ ok: true, matched: site.domain }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
