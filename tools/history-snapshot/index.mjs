@@ -11,17 +11,19 @@ function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
 
-// Metriky: [key, label, kind, threshold, dir] — dir: 'up_good' (viac=lepšie) / 'down_good' (menej=lepšie)
+// Len skóre — presné CVE/SEO udalosti teraz logujú wp-cve a seo-crawl.
+// Prahy: AEO/Security ±3 (deterministické kontroly z HTML/robots.txt → zmena je
+// skutočná). Výkon ostáva ±10 — PageSpeed dá tomu istému webu bežne ±5 medzi
+// behmi a nižší prah by hlásil zlepšenia, ktoré sú len šum merania.
 const METRICS = [
-  { key: 'aeo', label: 'AEO skóre', kind: 'score', th: 5, dir: 'up_good' },
-  { key: 'security', label: 'Security skóre', kind: 'score', th: 5, dir: 'up_good' },
+  { key: 'aeo', label: 'AEO skóre', kind: 'score', th: 3, dir: 'up_good' },
+  { key: 'security', label: 'Security skóre', kind: 'score', th: 3, dir: 'up_good' },
   { key: 'perf_mobile', label: 'Výkon (mobil)', kind: 'score', th: 10, dir: 'up_good' },
   { key: 'perf_desktop', label: 'Výkon (desktop)', kind: 'score', th: 10, dir: 'up_good' },
-  { key: 'seo_issues', label: 'SEO issues', kind: 'seo', th: 1, dir: 'down_good' },
-  { key: 'wp_vulns', label: 'Zraniteľnosti', kind: 'cve', th: 1, dir: 'down_good' },
 ];
-// Metriky len pre trend (bez logovania — týždenne šumové):
-const TREND_ONLY = ['gsc_clicks', 'gsc_impressions', 'gsc_position'];
+// Trend bez logovania (týždenne šumové) — seo_issues a wp_vulns tu ostávajú
+// kvôli histórii, ale udalosti k nim vyrábajú príslušné collectory.
+const TREND_ONLY = ['gsc_clicks', 'gsc_impressions', 'gsc_position', 'seo_issues', 'wp_vulns'];
 
 // ISO týždeň (pre dedupe proaktívnych alertov — max 1 per web+metrika+týždeň).
 function isoWeek(d) {
@@ -102,26 +104,28 @@ async function main() {
       const diff = cur - before;
       if (Math.abs(diff) < m.th) continue;
       const improved = m.dir === 'up_good' ? diff > 0 : diff < 0;
-      let message, severity;
-      if (m.kind === 'cve') {
-        message = diff > 0 ? `${Math.round(diff)} nových zraniteľností (spolu ${cur})` : `${Math.round(-diff)} zraniteľností vyriešených (zostáva ${cur})`;
-        severity = diff > 0 ? 'critical' : 'info';
-      } else {
-        message = `${m.label}: ${Math.round(before)} → ${Math.round(cur)}`;
-        severity = improved ? 'info' : 'warning';
-      }
-      changeRows.push({ site_id: s.id, org_id: s.org_id, kind: m.kind, severity, message, created_at: now });
+      const message = `${m.label}: ${Math.round(before)} → ${Math.round(cur)}`;
+      const severity = improved ? 'info' : 'warning';
+      changeRows.push({
+        site_id: s.id,
+        org_id: s.org_id,
+        kind: 'score',
+        severity,
+        message,
+        payload: { metric: m.key, from: Math.round(before), to: Math.round(cur), direction: improved ? 'up' : 'down' },
+        created_at: now,
+      });
 
-      // Proaktívny alert len pri ZHORŠENÍ (nie pri zlepšení). CVE = critical,
-      // ostatné poklesy = warning. Dedupe: 1 per web+metrika+ISO týždeň.
+      // Proaktívny alert len pri ZHORŠENÍ (nie pri zlepšení). Dedupe: 1 per
+      // web+metrika+ISO týždeň.
       if (!improved) {
         const dom = nameById.get(s.id) ?? 'web';
         alertRows.push({
           org_id: s.org_id,
           site_id: s.id,
-          type: m.kind === 'cve' ? 'new_cve' : 'metric_drop',
-          severity: m.kind === 'cve' ? 'critical' : 'warning',
-          title: m.kind === 'cve' ? `${dom}: nové zraniteľnosti` : `${dom}: ${m.label} kleslo`,
+          type: 'metric_drop',
+          severity: 'warning',
+          title: `${dom}: ${m.label} kleslo`,
           body: message,
           dedupe_key: `proactive:${s.id}:${m.key}:${wk}`,
         });
