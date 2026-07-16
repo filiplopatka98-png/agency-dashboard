@@ -62,3 +62,16 @@ export {
   type VulnInfo,
   type SeoIssueInfo,
 } from './events';
+
+export {
+  isClientVisible,
+  renderClient,
+  renderIncident,
+  renderVigilance,
+  buildClientLines,
+  fmtNum,
+  fmtPct,
+  SEO_CLIENT_LABELS,
+  type Vigilance,
+  type TimedLine,
+} from './reportText';
