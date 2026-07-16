@@ -40,6 +40,14 @@ const SEVERITY_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2
 const sortChanges = (changes: ReportChange[]) =>
   [...changes].sort((a, b) => (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3));
 
+// Rovnaký limit ako digest.ts ("Za posledný týždeň") — nech oba renderery
+// ostanú konzistentné. Bez stropu vie flapping web vyrenderovať stovky
+// riadkov (desiatky kB) do jedného mailu a stena červených stavov prevalcuje
+// tú jednu skutočnú novinku. Sortujeme podľa závažnosti PRED orezaním, takže
+// strop drží najzávažnejšie zmeny, nie prvých N chronologicky.
+const CHANGE_CAP = 12;
+const changeWord = (n: number) => (n === 1 ? 'zmena' : n >= 2 && n <= 4 ? 'zmeny' : 'zmien');
+
 export function renderMonthlyReport(data: ReportData): { subject: string; html: string; text: string } {
   const sites = [...data.sites].sort((a, b) => (a.uptime ?? 101) - (b.uptime ?? 101)); // najhorší uptime hore
   const avgUptime =
@@ -58,11 +66,13 @@ export function renderMonthlyReport(data: ReportData): { subject: string; html: 
       if (s.criticalVulns) extra.push(`<span style="color:#dc2626">${s.criticalVulns} kritických CVE</span>`);
       else if (s.vulns) extra.push(`${s.vulns} CVE`);
       if (s.openIssues) extra.push(`${s.openIssues} SEO issues`);
-      const changes = s.changes && s.changes.length ? sortChanges(s.changes) : [];
+      const allChanges = s.changes && s.changes.length ? sortChanges(s.changes) : [];
+      const changes = allChanges.slice(0, CHANGE_CAP);
+      const hiddenCount = allChanges.length - changes.length;
       const changesHtml = changes.length
         ? `<div style="margin-top:6px">${changes
             .map((c) => `<div style="font-size:12px;color:#444;padding:2px 0"><span style="color:${changeColor(c.severity)};font-weight:700">•</span> ${esc(c.message)}</div>`)
-            .join('')}</div>`
+            .join('')}${hiddenCount > 0 ? `<div style="font-size:12px;color:#9ca3af;padding:2px 0">… a ešte ${hiddenCount} ${changeWord(hiddenCount)} (nezobrazené)</div>` : ''}</div>`
         : '';
       return `<tr>
         <td style="padding:11px 0;border-bottom:1px solid #eee"><div style="font-weight:600;color:#111">${esc(s.domain)}</div>${extra.length ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${extra.join(' · ')}</div>` : ''}${changesHtml}</td>
@@ -89,8 +99,12 @@ export function renderMonthlyReport(data: ReportData): { subject: string; html: 
         const extra = [s.incidents ? `${s.incidents} incid.` : '', s.criticalVulns ? `${s.criticalVulns} krit. CVE` : s.vulns ? `${s.vulns} CVE` : '', s.openIssues ? `${s.openIssues} issues` : '']
           .filter(Boolean)
           .join(', ');
-        const changes = s.changes && s.changes.length ? sortChanges(s.changes) : [];
-        const changesText = changes.length ? `\n${changes.map((c) => `    • ${c.message}`).join('\n')}` : '';
+        const allChanges = s.changes && s.changes.length ? sortChanges(s.changes) : [];
+        const changes = allChanges.slice(0, CHANGE_CAP);
+        const hiddenCount = allChanges.length - changes.length;
+        const changesText = changes.length
+          ? `\n${changes.map((c) => `    • ${c.message}`).join('\n')}${hiddenCount > 0 ? `\n    … a ešte ${hiddenCount} ${changeWord(hiddenCount)} (nezobrazené)` : ''}`
+          : '';
         return `- ${s.domain}: uptime ${fmtUptime(s.uptime)}${extra ? ` — ${extra}` : ''}${changesText}`;
       })
       .join('\n');

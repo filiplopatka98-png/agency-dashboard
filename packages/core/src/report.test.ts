@@ -81,6 +81,22 @@ describe('renderMonthlyReport', () => {
     expect(r.html).not.toContain('<script>alert(1)</script>');
   });
 
+  it('obmedzí zoznam zmien na 12 a povie, koľko ďalších je skrytých; strop drží najzávažnejšie zmeny', () => {
+    const infoChanges = Array.from({ length: 15 }, (_, i) => ({ message: `info zmena ${i}`, severity: 'info' }));
+    const r = renderMonthlyReport({
+      monthLabel: 'M',
+      orgName: 'O',
+      sites: [site({ changes: [...infoChanges, { message: 'CVE-2024-9999 new (Plugin)', severity: 'critical' }] })],
+    });
+    // 16 zmien spolu, cap 12 → 4 skryté, povedané nahlas (nie ticho orezané).
+    expect(r.text).toContain('a ešte 4 zmeny');
+    expect(r.html).toContain('a ešte 4 zmeny');
+    // Kritická zmena bola posledná chronologicky (16. z 16), ale musí prežiť orezanie,
+    // lebo cap triedi podľa závažnosti PRED orezaním, nie podľa poradia.
+    expect(r.text).toContain('CVE-2024-9999 new (Plugin)');
+    expect(r.html).toContain('CVE-2024-9999 new (Plugin)');
+  });
+
   it('web bez zmien vyrenderuje presne ako predtým (chýbajúce aj prázdne pole)', () => {
     const withoutField = renderMonthlyReport({ monthLabel: 'M', orgName: 'O', sites: [site({})] });
     const withEmptyArray = renderMonthlyReport({ monthLabel: 'M', orgName: 'O', sites: [site({ changes: [] })] });
