@@ -17,16 +17,20 @@ describe('renderClientReport', () => {
     expect(r.html).toContain('Krivošík');
   });
 
-  it('tichý web → rámcuje ticho ako dohľad, nie prázdno', () => {
+  it('tichý web → rámcuje ticho ako dohľad, nie prázdno (bez duplicity kontrol/dostupnosti)', () => {
     const r = renderClientReport({ monthLabel: 'M', periodLabel: 'V júli', clientName: 'K', sites: [site({})] });
-    expect(r.text).toContain('Stabilne bez problémov');
-    expect(r.text).toContain('žiadne známe zraniteľnosti');
-    expect(r.text).toContain('všetky pluginy aktuálne');
+    // Vigilance riadok povie kontroly + dostupnosť presne raz...
+    expect(r.text).toContain('V júli sme spravili 8 640 kontrol dostupnosti. Web bol dostupný 100 % času.');
+    // ...a quiet riadok k tomu pridá LEN bezpečnostné fakty, nie tie isté čísla znova.
+    expect(r.text).toContain('Stabilne bez problémov — žiadne známe zraniteľnosti, všetky pluginy aktuálne.');
+    expect(r.text.match(/kontrol/g)?.length).toBe(1);
+    expect(r.text.match(/dostupný/g)?.length).toBe(1);
   });
 
-  it('tichý web bez overených údajov netvrdí, čo nevie', () => {
+  it('tichý web bez overených údajov o zabezpečení nič nedodáva navyše (vigilance riadok stačí)', () => {
     const r = renderClientReport({ monthLabel: 'M', periodLabel: 'V júli', clientName: 'K', sites: [site({ knownVulns: null, pluginsCurrent: null })] });
-    expect(r.text).toContain('Stabilne bez problémov');
+    expect(r.text).toContain('V júli sme spravili 8 640 kontrol dostupnosti. Web bol dostupný 100 % času.');
+    expect(r.text).not.toContain('Stabilne bez problémov');
     expect(r.text).not.toContain('žiadne známe zraniteľnosti');
     expect(r.text).not.toContain('všetky pluginy aktuálne');
   });
