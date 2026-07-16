@@ -125,6 +125,9 @@ async function wpscan(kind, id, token, cache, budget) {
 }
 
 // Vyhodnotí CVE pre jeden web z jeho (uložených) pluginov + core.
+// `incomplete` je true, ak ČOKOĽVEK z cieľov skončilo rate-limitom alebo API
+// chybou (nie 2xx) — v oboch prípadoch je zoznam vulns pre tento web neúplný
+// a nesmie sa ani zapísať, ani diffovať (viď main()).
 async function collectVulns(wp, token, cache, budget) {
   const out = [];
   const targets = [];
@@ -134,16 +137,18 @@ async function collectVulns(wp, token, cache, budget) {
     targets.push({ kind: 'plugin', id: p.slug, slug: p.slug, label: p.name, version: p.version });
   }
   let rateLimited = false;
+  let apiError = false;
   for (const t of targets) {
     const r = await wpscan(t.kind, t.id, token, cache, budget);
     if (r.rateLimited) rateLimited = true;
+    if (r.error != null) apiError = true;
     for (const v of r.vulns) {
       if (isAffected(t.version, v.fixed_in)) {
         out.push({ target: t.label, slug: t.slug, version: t.version, title: v.title, cve: v.cve, fixed_in: v.fixed_in, cvss: v.cvss ?? null });
       }
     }
   }
-  return { vulns: out, rateLimited };
+  return { vulns: out, rateLimited, apiError, incomplete: rateLimited || apiError };
 }
 
 async function main() {
@@ -163,16 +168,25 @@ async function main() {
 
   for (const wp of rows) {
     try {
-      const { vulns, rateLimited } = await collectVulns(wp, token, cache, budget);
+      const { vulns, rateLimited, incomplete } = await collectVulns(wp, token, cache, budget);
       await enrichSeverity(vulns, nvdCache, nvdKey);
-      // Rate-limited beh = neúplný zoznam. Nezapisuj ani nediffuj — inak by sme
-      // ohlásili „zraniteľnosť vyriešená" pri CVE, ktoré tam stále je.
-      if (rateLimited) {
-        console.log(JSON.stringify({ ev: 'cve.skip_rate_limited', site_id: wp.site_id }));
+      // Neúplný beh (rate-limit ALEBO API chyba na ktoromkoľvek cieli) = neúplný
+      // zoznam vulns. Nezapisuj ani nediffuj — inak by sme ohlásili „vyriešené"
+      // pre zraniteľnosť, ktorá tam v skutočnosti stále je, a zmazali by sme ju
+      // z DB (diff by ju videl ako chýbajúcu → fabrikovaná dobrá správa).
+      if (incomplete) {
+        console.log(JSON.stringify({ ev: 'cve.skip_incomplete', site_id: wp.site_id, reason: rateLimited ? 'rate_limited' : 'api_error' }));
         continue;
       }
       // Diff proti uloženému zoznamu (prvý beh: vulns === null → žiadne udalosti).
-      const events = diffVulns(wp.vulns ?? null, vulns);
+      // Vlastný try/catch: hypotetický throw v diffe nesmie zablokovať PATCH
+      // (izolácia zápisu snapshotu od diff/eventov, konzistentné s wpIngest.ts).
+      let events = [];
+      try {
+        events = diffVulns(wp.vulns ?? null, vulns);
+      } catch (e) {
+        console.log(JSON.stringify({ ev: 'cve.diff_fail', site_id: wp.site_id, error: String(e?.message ?? e) }));
+      }
       const up = await fetch(`${url}/rest/v1/wp_snapshots?site_id=eq.${wp.site_id}`, {
         method: 'PATCH',
         headers: { ...restHeaders(srv), Prefer: 'return=minimal' },
@@ -190,7 +204,7 @@ async function main() {
         if (!log.ok) console.log(JSON.stringify({ ev: 'cve.changelog_fail', site_id: wp.site_id, status: log.status }));
       }
       ok++;
-      console.log(JSON.stringify({ ev: 'cve.ok', site_id: wp.site_id, vulns: vulns.length, rate_limited: rateLimited }));
+      console.log(JSON.stringify({ ev: 'cve.ok', site_id: wp.site_id, vulns: vulns.length, events: events.length }));
     } catch (e) {
       failed++;
       console.log(JSON.stringify({ ev: 'cve.fail', site_id: wp.site_id, error: String(e?.message ?? e) }));
