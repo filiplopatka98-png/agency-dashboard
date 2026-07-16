@@ -1,4 +1,4 @@
-import { diffCore, diffPlugins, type PluginInfo, type ChangeEvent } from '@agency/core';
+import { diffCore, diffPlugins, type ChangeEvent } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
 
@@ -52,17 +52,28 @@ export async function wpIngest(request: Request, env: Env): Promise<Response> {
 
   // Diff pred prepísaním snapshotu — inak sa stará verzia stratí. Prvý ingest
   // (žiadny predchádzajúci riadok) zámerne nelogujeme.
-  const { data: prevSnap } = await db
+  const { data: prevSnap, error: prevErr } = await db
     .from('wp_snapshots')
     .select('wp_version, plugins')
     .eq('site_id', site.id)
     .maybeSingle();
-  const events: ChangeEvent[] = prevSnap
-    ? [
+  if (prevErr) console.log(JSON.stringify({ ev: 'wp.prev_read_fail', message: prevErr.message }));
+
+  // Diff funkcie čítajú nedôveryhodný jsonb stĺpec (`prevSnap.plugins`) — sú defenzívne,
+  // ale keby aj napriek tomu niečo prehodili, diff je len "pekné-mať" a nesmie zhodiť
+  // ingest (upsert nižšie musí prebehnúť, aby sa prípadný zlý riadok prepísal).
+  let events: ChangeEvent[] = [];
+  if (prevSnap) {
+    try {
+      events = [
         ...diffCore(prevSnap.wp_version, body.wp_version ?? null),
-        ...diffPlugins(prevSnap.plugins as unknown as PluginInfo[] | null, (body.plugins ?? []) as PluginInfo[]),
-      ]
-    : [];
+        ...diffPlugins(prevSnap.plugins, body.plugins ?? []),
+      ];
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(JSON.stringify({ ev: 'wp.diff_fail', message }));
+    }
+  }
 
   const { error } = await db.from('wp_snapshots').upsert(
     {
