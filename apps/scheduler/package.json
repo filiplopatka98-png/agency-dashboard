@@ -8,6 +8,7 @@
     "deploy": "wrangler deploy",
     "build": "wrangler deploy --dry-run --outdir dist",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude \"**/*.integration.test.ts\"",
     "test:integration": "vitest run --no-file-parallelism src/runUptime.integration.test.ts src/runAlerts.integration.test.ts src/runDomains.integration.test.ts src/runRegion.integration.test.ts",
     "tail": "wrangler tail"
   },

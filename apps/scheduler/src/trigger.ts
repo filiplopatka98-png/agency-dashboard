@@ -2,14 +2,20 @@ import type { Env } from './env';
 import { serviceClient } from './supabase';
 
 // Ručné spustenie collector jobu z UI. Bezpečnosť: over Supabase access-token
-// (HS256 podpis + exp) → potom over cez service_role klienta, že `sub`
-// (user id) je owner/staff membership v nejakej org (audit 6, "/trigger
+// (ES256 podpis cez JWKS + exp) → potom over cez service_role klienta, že
+// `sub` (user id) je owner/staff membership v nejakej org (audit 6, "/trigger
 // pustí hocijakého prihláseného" — `payload.role === 'authenticated'` je
 // Supabase GLOBÁLNA auth rola, ktorú má KAŽDÝ prihlásený účet, nie appková
 // rola owner/staff/client z `memberships`. Dnes má login len owner, takže
 // diera je spiaca, ale read-only účet by inak vedel dispatchnúť všetkých 11
 // GH workflow). Potom dispatchne GitHub workflow. GH token je serverový
 // secret (nikdy v prehliadači).
+//
+// Supabase projekt prešiel na asymetrické JWT signing keys (ES256 cez JWKS),
+// preto sa access-tokeny NEDAJÚ overiť ako HS256 zdieľaným secretom — starý
+// kód overoval nesprávny algoritmus (fungoval len s ručne podpísaným HS256
+// tokenom, nikdy s reálnym Supabase tokenom → "Spustiť" v produkcii vždy
+// vrátilo 401).
 
 // job kľúč → workflow súbor. Scheduler beží na Worker cron → nedispatchovateľný.
 const WORKFLOWS: Record<string, string> = {
@@ -38,19 +44,116 @@ function b64urlToBytes(s: string): Uint8Array {
   return out;
 }
 
-// Overí Supabase JWT (HS256). Vráti payload alebo null.
-async function verifyJwt(token: string, secret: string): Promise<Record<string, unknown> | null> {
+// JWKS cache v module scope (Workers znovupoužívajú izolát medzi requestmi,
+// kým beží). TTL 10 minút: dosť dlho aby "Spustiť" (nízkofrekventovaný admin
+// klik) nefetchovalo JWKS pri každom requeste, dosť krátko aby rotácia
+// signing keys na strane Supabase nezostala zamrznutá donekonečna. Neznámy
+// `kid` navyše vynúti jednorazový okamžitý refetch (pozri `verifyJwt`) —
+// TTL cache tak nie je jediná obrana proti rotácii.
+const JWKS_TTL_MS = 10 * 60 * 1000;
+
+interface Jwk extends JsonWebKey {
+  kid?: string;
+}
+
+interface JwksCache {
+  keys: Jwk[];
+  fetchedAt: number;
+}
+
+let jwksCache: JwksCache | null = null;
+
+async function fetchJwks(env: Env): Promise<Jwk[]> {
+  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`);
+  if (!res.ok) throw new Error(`JWKS fetch zlyhal (${res.status})`);
+  const body = (await res.json()) as { keys?: Jwk[] };
+  return body.keys ?? [];
+}
+
+// `forceRefresh` sa použije LEN pri neznámom `kid` (možná rotácia kľúčov) —
+// nikdy pri bežnom volaní, aby neznámy kid nešiel zneužiť ako fetch-per-request
+// DoS páka (viď `verifyJwt`, ktorý refetchuje najviac raz na verifikáciu).
+async function getJwks(env: Env, forceRefresh = false): Promise<Jwk[]> {
+  const now = Date.now();
+  if (!forceRefresh && jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
+    return jwksCache.keys;
+  }
+  const keys = await fetchJwks(env);
+  jwksCache = { keys, fetchedAt: now };
+  return keys;
+}
+
+type JwtCheck =
+  | { status: 'ok'; payload: Record<string, unknown> }
+  | { status: 'unknown-kid' }
+  | { status: 'invalid' };
+
+// Čistá overovacia logika (bez fetchu) — testovateľná so statickou JWKS sadou.
+// Overuje ES256 podpis cez Web Crypto (ECDSA/P-256). JWS ES256 podpis je
+// surová r||s (64 bajtov) forma, presne to, čo `crypto.subtle.verify` s
+// ECDSA čaká — netreba DER konverziu.
+export async function verifyEs256(token: string, jwks: Jwk[]): Promise<JwtCheck> {
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) return { status: 'invalid' };
   const [h, p, sig] = parts;
-  if (!h || !p || !sig) return null;
+  if (!h || !p || !sig) return { status: 'invalid' };
+
+  let header: Record<string, unknown>;
+  let payload: Record<string, unknown>;
   try {
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-    const ok = await crypto.subtle.verify('HMAC', key, b64urlToBytes(sig), new TextEncoder().encode(`${h}.${p}`));
-    if (!ok) return null;
-    const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(p))) as Record<string, unknown>;
-    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) return null;
-    return payload;
+    header = JSON.parse(new TextDecoder().decode(b64urlToBytes(h))) as Record<string, unknown>;
+    payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(p))) as Record<string, unknown>;
+  } catch {
+    return { status: 'invalid' };
+  }
+
+  // Nikdy nedôveruj `alg` z tokenu na VOĽBU overovacej cesty — tu ho len
+  // porovnávame s presne jednou povolenou hodnotou. Odmieta HS256 (algorithm
+  // confusion — token podpísaný verejným JWKS materiálom ako HMAC kľúčom) aj
+  // `none` aj čokoľvek iné.
+  if (header.alg !== 'ES256') return { status: 'invalid' };
+
+  const kid = typeof header.kid === 'string' ? header.kid : '';
+  const jwk = jwks.find((k) => k.kid === kid);
+  if (!jwk) return { status: 'unknown-kid' };
+
+  try {
+    const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      b64urlToBytes(sig),
+      new TextEncoder().encode(`${h}.${p}`),
+    );
+    if (!ok) return { status: 'invalid' };
+  } catch {
+    // Fail closed: zlý JWK tvar, nepodporovaná krivka, čokoľvek — reject.
+    return { status: 'invalid' };
+  }
+
+  const now = Date.now() / 1000;
+  if (typeof payload.exp === 'number' && payload.exp < now) return { status: 'invalid' };
+  if (typeof payload.nbf === 'number' && payload.nbf > now) return { status: 'invalid' };
+  // Malá tolerancia (60s) na drift hodín — token vydaný "v budúcnosti" o viac
+  // než to je podozrivý.
+  if (typeof payload.iat === 'number' && payload.iat > now + 60) return { status: 'invalid' };
+
+  return { status: 'ok', payload };
+}
+
+// Overí Supabase JWT (ES256 cez JWKS). Vráti payload alebo null. Zlyhanie
+// akéhokoľvek druhu (sieť, parse, podpis, expirácia) = fail closed.
+async function verifyJwt(token: string, env: Env): Promise<Record<string, unknown> | null> {
+  try {
+    const jwks = await getJwks(env);
+    let result = await verifyEs256(token, jwks);
+    if (result.status === 'unknown-kid') {
+      // Kľúč mohol rotovať — refetchni JWKS PRESNE raz (nie pri každom
+      // requeste), potom over znova. Ak stále neznámy kid, reject.
+      const fresh = await getJwks(env, true);
+      result = await verifyEs256(token, fresh);
+    }
+    return result.status === 'ok' ? result.payload : null;
   } catch {
     return null;
   }
@@ -75,21 +178,25 @@ async function isOwnerOrStaff(env: Env, userId: string): Promise<boolean> {
 }
 
 export async function triggerJob(request: Request, env: Env): Promise<Response> {
-  if (!env.GH_DISPATCH_TOKEN || !env.GH_REPO || !env.SUPABASE_JWT_SECRET) {
-    return json({ error: 'Ručné spustenie nie je nakonfigurované (chýba GH token / JWT secret).' }, 503);
+  if (!env.GH_DISPATCH_TOKEN || !env.GH_REPO) {
+    return json({ error: 'Ručné spustenie nie je nakonfigurované (chýba GH token / repo).' }, 503);
   }
   const auth = request.headers.get('Authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  const payload = token ? await verifyJwt(token, env.SUPABASE_JWT_SECRET) : null;
+  const payload = token ? await verifyJwt(token, env) : null;
   if (!payload || payload.role !== 'authenticated' || typeof payload.sub !== 'string' || !payload.sub) {
-    return json({ error: 'Neautorizované.' }, 401);
+    // Odlíšené od chýbajúcej owner/staff role nižšie — tento diagnostický
+    // detail bol dôvod, prečo bol HS256/ES256 bug ťažké odhaliť (oba prípady
+    // vracali identické "Neautorizované."). Nástroj má jedného operátora,
+    // diagnostická hodnota prevažuje nad marginálnym info-leakom.
+    return json({ error: 'Neplatný alebo expirovaný token.' }, 401);
   }
   // `role: 'authenticated'` je len globálna Supabase auth rola (má ju hocikto
   // s platným loginom) — appková autorizácia (owner/staff smie dispatchovať,
   // client nie) žije v `memberships`, cez `sub` (user id). Zlyhanie dotazu
   // = fail closed (žiadny dispatch), nie fail open.
   if (!(await isOwnerOrStaff(env, payload.sub))) {
-    return json({ error: 'Neautorizované.' }, 401);
+    return json({ error: 'Účet nemá owner/staff oprávnenie.' }, 401);
   }
 
   let job = '';
