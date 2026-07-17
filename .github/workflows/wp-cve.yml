@@ -1,10 +1,17 @@
 name: wp-cve
 
-# Týždenná CVE matica: pluginy/verzie z wp_snapshots (poslal WP agent) × WPScan → vulns.
+# Denná CVE matica: pluginy/verzie z wp_snapshots (poslal WP agent) × WPScan → vulns.
 # Vyžaduje WPSCAN_TOKEN (wpscan.com, free 25/deň).
+#
+# MUSÍ bežať denne, nie týždenne: WPScan kvóta je 25 za DEŇ, takže týždenný beh
+# z nej vie využiť len 25/týždeň. Naplnenie cache (~188 cieľov) by trvalo ~8
+# týždňov a na 30-dňový TTL refresh by bolo treba ~188 lookupov/mesiac, kým
+# týždenný beh dodá len ~107 → cache by sa nikdy nestihla obnoviť. Denne = 175
+# využiteľných lookupov/týždeň, naplnenie za ~8 dní. Pondelkový beh ostáva o
+# 06:00 pred history.yml (07:00), ktorý na CVE dáta nadväzuje.
 on:
   schedule:
-    - cron: '0 6 * * 1' # každý pondelok 06:00 UTC
+    - cron: '0 6 * * *' # denne 06:00 UTC
   workflow_dispatch: {}
 
 jobs:
