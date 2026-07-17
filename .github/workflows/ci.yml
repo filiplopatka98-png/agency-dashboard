@@ -29,8 +29,3 @@ jobs:
 
       - name: Lint (celý workspace)
         run: pnpm run lint
-        # NEBLOKUJÚCE: packages/core má aktuálne ~5 pred-existujúcich lint
-        # chýb (unused vars v clientReport.ts/digest.ts/resendNotifier.test.ts),
-        # ktoré nesúvisia s touto zmenou. Non-blocking, aby CI mohla ísť live
-        # hneď a zostať zelená — opravu tých chýb rieš samostatne.
-        continue-on-error: true

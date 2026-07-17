@@ -2,7 +2,7 @@
 // zaisťuje buildClientLines). Tichý web nerámujeme ako prázdno, ale ako dôkaz
 // dohľadu. Tvrdíme len to, čo vieme: knownVulns/pluginsCurrent === null → mlčíme.
 
-import { renderVigilance, fmtNum, fmtPct, type Vigilance } from './reportText.js';
+import { renderVigilance, type Vigilance } from './reportText.js';
 
 export interface ClientReportSite {
   domain: string;

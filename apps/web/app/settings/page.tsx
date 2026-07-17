@@ -394,7 +394,7 @@ export default function SettingsPage() {
               </div>
               <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
                 Interný prehľad (všetky weby) — komu chodí týždenný digest a mesačný agregát. Prázdny zoznam = fallback na admin e-mail{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>. Report pre konkrétneho klienta (len jeho weby) nastavíš pri klientovi v sekcii <strong style={{ color: 'var(--text-primary)' }}>Klienti</strong> (pole „Report e-mail").
+                <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>. Report pre konkrétneho klienta (len jeho weby) nastavíš pri klientovi v sekcii <strong style={{ color: 'var(--text-primary)' }}>Klienti</strong> (pole „Report e-mail&quot;).
               </div>
               {notif ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px' }}>

@@ -41,7 +41,6 @@ function priority(s: DigestSite): number {
 export function renderDigest(data: DigestData): { subject: string; html: string; text: string } {
   const sites = [...data.sites].sort((a, b) => priority(b) - priority(a));
   const down = sites.filter((s) => s.status === 'down').length;
-  const totalVulns = sites.reduce((n, s) => n + s.vulns, 0);
   const totalCritical = sites.reduce((n, s) => n + s.criticalVulns, 0);
   // Súčet len zo známych hodnôt — web s neznámym SEO stavom (null) do súhrnu
   // NEPRIDÁVA 0 (to by bolo tiché tvrdenie „žiadne issues", ktoré nevieme

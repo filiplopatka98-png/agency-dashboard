@@ -43,7 +43,14 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
   }, [siteId]);
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    (async () => {
+      if (cancelled) return;
+      await load();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
   const add = async () => {

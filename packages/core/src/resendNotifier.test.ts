@@ -29,10 +29,7 @@ describe('renderAlertHtml', () => {
 
 describe('ResendNotifier', () => {
   it('POST na Resend s Bearer tokenom a správnym payloadom', async () => {
-    const fetchImpl = vi.fn(
-      async (_url: string | URL | Request, _init?: RequestInit) =>
-        new Response('{"id":"x"}', { status: 200 }),
-    );
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response('{"id":"x"}', { status: 200 }));
     const n = new ResendNotifier(
       { apiKey: 'k', from: 'a@lopatka.sk', to: 'b@lopatka.sk' },
       fetchImpl as unknown as typeof fetch,
