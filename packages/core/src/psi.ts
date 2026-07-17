@@ -85,7 +85,14 @@ export async function fetchPsi(
   for (const c of ['performance', 'accessibility', 'best-practices', 'seo']) params.append('category', c);
   const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`;
   try {
-    const res = await fetchImpl(endpoint, { signal: AbortSignal.timeout(60_000) });
+    // 120 s, nie 60. Lighthouse na `mobile` škrtí sieť na pomalé 4G, takže ťažká
+    // stránka sa cez 60 s nestihne zmerať a spadne na timeout — hoci desktop
+    // (bez škrtenia) prejde. Reálny prípad: soccercoacheshub.com má 8 MB a LCP
+    // 16 s na mobile; desktop zmeria, mobile hranične nestíhal. Google pri
+    // takýchto stránkach bežne potrebuje 60–90 s a denný job má času dosť.
+    // Nie je to maskovanie chyby: meranie buď prejde s pravdivými číslami,
+    // alebo poctivo padne a psi-probe zapíše error + vynuluje skóre.
+    const res = await fetchImpl(endpoint, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       return { ok: false, error: `psi ${res.status}: ${body.slice(0, 160)}` };
