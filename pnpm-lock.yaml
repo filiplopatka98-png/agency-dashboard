@@ -45,6 +45,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@agency/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@supabase/supabase-js':
         specifier: ^2.110.1
         version: 2.110.1

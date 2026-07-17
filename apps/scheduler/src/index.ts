@@ -2,6 +2,7 @@ import type { Env } from './env';
 import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
 import { runDomains } from './runDomains';
+import { runJobHealth } from './runJobHealth';
 import { defaultDomainResolver } from './domainResolver';
 import { serviceClient } from './supabase';
 import { wpIngest } from './wpIngest';
@@ -27,6 +28,7 @@ export default {
         try {
           await runUptime(env); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
           await runDomains(env, defaultDomainResolver, { limit: 3 }); // round-robin doména (>20 h)
+          await runJobHealth(env); // dead-man's switch — insertne job_overdue alert, ak nejaký job zaspal (audit 3.3)
           await runAlerts(env); // odoslanie nevyslaných alertov (dedupe už v DB)
           await recordSchedulerRun(env, 'ok', null);
         } catch (err: unknown) {

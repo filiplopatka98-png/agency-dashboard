@@ -3,30 +3,29 @@
 import { useEffect, useState } from 'react';
 import { Shell } from '../components/Shell';
 import { supabase } from '../lib/supabase';
+// JOB_SCHEDULES/isOverdue žijú v @agency/core (zdieľané s apps/scheduler —
+// Worker z nich počíta ten istý dead-man's switch, viď runJobHealth.ts).
+// Jediný zdroj pravdy pre očakávaný interval jobu — nehardcoduj druhú kópiu.
+import { JOB_SCHEDULES, isOverdue, type JobSchedule } from '@agency/core/jobSchedule';
 
-type JobRun = { status: string; ok: number | null; failed: number | null; finished_at: string };
-type Sched =
-  | { kind: 'every5' }
-  | { kind: 'daily'; hh: number; mm: number }
-  | { kind: 'weekly'; dow: number; hh: number; mm: number }
-  | { kind: 'monthly'; dom: number; hh: number; mm: number };
+type JobRun = { status: string; ok: number | null; failed: number | null; error: string | null; finished_at: string };
 
-const JOBS: { key: string; label: string; desc: string; sched: Sched }[] = [
-  { key: 'scheduler', label: 'Scheduler — uptime + domény', desc: 'každých 5 minút', sched: { kind: 'every5' } },
-  { key: 'psi', label: 'PageSpeed / výkon', desc: 'denne 02:00 UTC', sched: { kind: 'daily', hh: 2, mm: 0 } },
-  { key: 'tls', label: 'TLS certifikáty', desc: 'pondelok 03:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 0 } },
-  { key: 'security', label: 'Security + Safe Browsing', desc: 'pondelok 03:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 0 } },
-  { key: 'aeo', label: 'AEO analýza', desc: 'pondelok 03:30 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 30 } },
-  { key: 'gsc', label: 'Search Console', desc: 'pondelok 03:30 UTC', sched: { kind: 'weekly', dow: 1, hh: 3, mm: 30 } },
-  { key: 'seo', label: 'SEO crawl', desc: 'pondelok 04:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 4, mm: 0 } },
-  { key: 'infra', label: 'Infra (hosting/server/TLS)', desc: 'pondelok 04:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 4, mm: 0 } },
-  { key: 'cve', label: 'WPScan CVE matica', desc: 'pondelok 06:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 6, mm: 0 } },
-  { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 7, mm: 0 } },
-  { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC', sched: { kind: 'weekly', dow: 1, hh: 8, mm: 0 } },
-  { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC', sched: { kind: 'monthly', dom: 1, hh: 7, mm: 0 } },
-];
+const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] = [
+  { key: 'scheduler', label: 'Scheduler — uptime + domény', desc: 'každých 5 minút' },
+  { key: 'psi', label: 'PageSpeed / výkon', desc: 'denne 02:00 UTC' },
+  { key: 'tls', label: 'TLS certifikáty', desc: 'pondelok 03:00 UTC' },
+  { key: 'security', label: 'Security + Safe Browsing', desc: 'pondelok 03:00 UTC' },
+  { key: 'aeo', label: 'AEO analýza', desc: 'pondelok 03:30 UTC' },
+  { key: 'gsc', label: 'Search Console', desc: 'pondelok 03:30 UTC' },
+  { key: 'seo', label: 'SEO crawl', desc: 'pondelok 04:00 UTC' },
+  { key: 'infra', label: 'Infra (hosting/server/TLS)', desc: 'pondelok 04:00 UTC' },
+  { key: 'cve', label: 'WPScan CVE matica', desc: 'pondelok 06:00 UTC' },
+  { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC' },
+  { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC' },
+  { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC' },
+].map((j) => ({ ...j, sched: JOB_SCHEDULES[j.key]! }));
 
-function nextRun(sched: Sched, from: Date): Date {
+function nextRun(sched: JobSchedule, from: Date): Date {
   const n = new Date(from.getTime());
   if (sched.kind === 'every5') {
     n.setUTCSeconds(0, 0);
@@ -116,7 +115,7 @@ export default function SettingsPage() {
         headCount('security_snapshots'),
         headCount('aeo_snapshots'),
         headCount('seo_snapshots'),
-        supabase.from('job_runs').select('job, status, ok, failed, finished_at').order('finished_at', { ascending: false }).limit(300),
+        supabase.from('job_runs').select('job, status, ok, failed, error, finished_at').order('finished_at', { ascending: false }).limit(300),
         supabase.from('notification_settings').select('org_id, weekly_digest, monthly_report, recipients').limit(1).maybeSingle(),
       ]);
       if (!active) return;
@@ -198,28 +197,51 @@ export default function SettingsPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {JOBS.map((j) => {
                   const run = jobs?.[j.key];
-                  const [c, bg] = run ? jobStatusColor[run.status] ?? ['var(--text-tertiary)', 'var(--surface-secondary)'] : ['var(--text-tertiary)', 'var(--surface-secondary)'];
+                  // Dead-man's switch (audit 3.3): job, čo naposledy uspel pred
+                  // dvoma mesiacmi, nesmie svietiť zeleno len preto, že jeho
+                  // POSLEDNÝ status bol 'ok' — ak od finished_at ubehlo > 2× jeho
+                  // očakávaný interval, je to alarmujúce bez ohľadu na status.
+                  const overdue = Boolean(run && now && isOverdue(run.finished_at, j.sched, now.getTime()));
+                  const [c, bg] = overdue
+                    ? jobStatusColor.error
+                    : run
+                      ? jobStatusColor[run.status] ?? ['var(--text-tertiary)', 'var(--surface-secondary)']
+                      : ['var(--text-tertiary)', 'var(--surface-secondary)'];
                   const last = run && now ? `pred ${rel(now.getTime() - new Date(run.finished_at).getTime())}` : 'nikdy';
                   const next = now ? `o ${rel(nextRun(j.sched, now).getTime() - now.getTime())}` : '—';
                   const cnt = run && (run.ok != null || run.failed != null) ? ` · ${run.ok ?? 0}✓${run.failed ? ` ${run.failed}✗` : ''}` : '';
+                  const badgeText = overdue ? 'meškanie' : run ? run.status : '—';
+                  const badgeTitle = overdue
+                    ? `Posledný beh ${last} (status ${run!.status}) — očakávaný interval prekročený viac než 2×`
+                    : undefined;
+                  // FIX 3.5 — error text sa zbieral, ale nikde sa nezobrazoval;
+                  // skrátené nabok od odznaku, celý text v title (bez otvárania Supabase).
+                  const errText = run?.error ? (run.error.length > 72 ? `${run.error.slice(0, 72)}…` : run.error) : null;
                   return (
                     <div key={j.key} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px', alignItems: 'center', padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: '10px' }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>{j.label}</div>
                         <div style={{ fontSize: '11.5px', color: 'var(--text-tertiary)' }}>{j.desc} · ďalší {next}</div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{last}{cnt}</span>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: c, background: bg, padding: '3px 9px', borderRadius: '20px', minWidth: '52px', textAlign: 'center' }}>{run ? run.status : '—'}</span>
-                        {DISPATCHABLE.has(j.key) && (
-                          <button
-                            onClick={() => runNow(j.key)}
-                            disabled={trig[j.key] === 'run'}
-                            title="Spustiť job teraz (GitHub Action)"
-                            style={{ fontSize: '11px', fontWeight: 600, color: trig[j.key] === 'ok' ? 'var(--ok-color)' : trig[j.key] === 'err' ? 'var(--critical-color)' : 'var(--accent-primary)', background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: '7px', padding: '3px 9px', cursor: trig[j.key] === 'run' ? 'default' : 'pointer', minWidth: '64px' }}
-                          >
-                            {trig[j.key] === 'run' ? '…' : trig[j.key] === 'ok' ? 'spustené ✓' : trig[j.key] === 'err' ? 'chyba' : 'Spustiť'}
-                          </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{last}{cnt}</span>
+                          <span title={badgeTitle} style={{ fontSize: '11px', fontWeight: 700, color: c, background: bg, padding: '3px 9px', borderRadius: '20px', minWidth: '52px', textAlign: 'center' }}>{badgeText}</span>
+                          {DISPATCHABLE.has(j.key) && (
+                            <button
+                              onClick={() => runNow(j.key)}
+                              disabled={trig[j.key] === 'run'}
+                              title="Spustiť job teraz (GitHub Action)"
+                              style={{ fontSize: '11px', fontWeight: 600, color: trig[j.key] === 'ok' ? 'var(--ok-color)' : trig[j.key] === 'err' ? 'var(--critical-color)' : 'var(--accent-primary)', background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: '7px', padding: '3px 9px', cursor: trig[j.key] === 'run' ? 'default' : 'pointer', minWidth: '64px' }}
+                            >
+                              {trig[j.key] === 'run' ? '…' : trig[j.key] === 'ok' ? 'spustené ✓' : trig[j.key] === 'err' ? 'chyba' : 'Spustiť'}
+                            </button>
+                          )}
+                        </div>
+                        {errText && (
+                          <div title={run?.error ?? undefined} style={{ fontSize: '11px', color: 'var(--critical-color)', maxWidth: '360px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {errText}
+                          </div>
                         )}
                       </div>
                     </div>

@@ -13,6 +13,8 @@ export { LocalPinger, type LocalPingerDeps } from './localPinger';
 export { ResendNotifier, renderAlertHtml, type ResendConfig } from './resendNotifier';
 export { isNightInBratislava, NIGHT_DEFERRED_TYPES, hourBucketUtc } from './schedule';
 
+export { JOB_SCHEDULES, expectedIntervalMs, isOverdue, type JobSchedule } from './jobSchedule';
+
 export {
   pickDomainStrategy,
   parseRdapExpiry,
