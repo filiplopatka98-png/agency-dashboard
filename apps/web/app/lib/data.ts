@@ -5,19 +5,33 @@ import {
   domainExpiryColor,
   tlsExpiryColor,
   expiryBadgeColor,
-  segColor,
   type StatusKey,
 } from './design';
 import { relativeTime } from './format';
+import {
+  isoDay,
+  freshState,
+  type FreshKey,
+  fetchAllPaged,
+  type UptimeDailyRow,
+  type UptimeSeg,
+  buildDailyMaps,
+  aggUptime,
+  buildUptimeSegs,
+  buildUptimeP95Series,
+  computeIncidentStats,
+  mttrMinFromStats,
+  daysSinceIncidentFromStats,
+} from './dataMath';
+
+// Re-exportované kvôli spätnej kompatibilite (SiteVM.freshness používa
+// FreshKey) — čistá výpočtová logika žije v `./dataMath` (testovateľná bez
+// `./supabase`, ktorý pri importe vytvára Supabase klienta z env premenných).
+export type { FreshKey };
 
 export interface ExpiryIssue {
   label: string;
   color: string;
-}
-export interface UptimeSeg {
-  color: string;
-  date: string;
-  value: number | null;
 }
 export interface IncidentVM {
   title: string;
@@ -138,19 +152,6 @@ export interface SiteVM {
   freshness: Partial<Record<FreshKey, { measuredAt: string | null; stale: boolean }>>;
 }
 
-export type FreshKey = 'aeo' | 'security' | 'seo' | 'perf' | 'gsc' | 'infra' | 'wp';
-
-// Prahy neaktuálnosti (h) — kopírujú core/freshness MAX_AGE_HOURS (týždenné joby + rezerva).
-const FRESH_MAX_H: Record<FreshKey, number> = {
-  aeo: 216, security: 216, seo: 216, perf: 216, infra: 216, wp: 216, gsc: 264,
-};
-function freshState(key: FreshKey, measuredAt: string | null | undefined): { measuredAt: string | null; stale: boolean } {
-  if (!measuredAt) return { measuredAt: null, stale: false };
-  const t = Date.parse(measuredAt);
-  if (Number.isNaN(t)) return { measuredAt: null, stale: false };
-  return { measuredAt, stale: Date.now() - t > FRESH_MAX_H[key] * 3_600_000 };
-}
-
 export interface PerfSnapVM {
   performanceScore: number;
   accessibility: number;
@@ -175,64 +176,21 @@ function daysUntilDate(dateStr: string | null): number | null {
   return Math.ceil((t - Date.now()) / 86400000);
 }
 
-function isoDay(offsetDays: number): string {
-  return new Date(Date.now() - offsetDays * 86400000).toISOString().slice(0, 10);
-}
-
 function fmtDuration(sec: number | null): string {
   if (!sec) return '—';
   if (sec < 3600) return `${Math.round(sec / 60)} min`;
   return `${(sec / 3600).toFixed(1)} h`;
 }
 
-interface UptimeDailyRow {
-  site_id: string;
-  day: string;
-  uptime_pct: number;
-  checks: number;
-  up: number;
-  p95_ms: number | null;
-}
-
-const UPTIME_PAGE_SIZE = 1000; // PostgREST max_rows — potvrdené na živom projekte.
-// Poistka proti nekonečnej slučke, keby stránkovanie z nejakého dôvodu nikdy
-// nevrátilo kratšiu stranu (napr. zlá odpoveď). 200 strán = 200k riadkov, ďaleko
-// nad current 8 weby × 90 dní (720 riadkov). Radšej nahlas zlyhať, než ticho
-// vydávať čiastočné dáta za kompletné.
-const UPTIME_MAX_PAGES = 200;
-
-/**
- * `uptime_daily` za 90 dní bez `.order()`/`.range()` narazí na PostgREST
- * `max_rows = 1000` (1 riadok/web/deň × 90 dní → strop ~11 webov) a PostgREST
- * ticho vráti len prvých 1000 riadkov bez chyby — a bez `.order()` je
- * nedeterministické, ktorým webom história z UI zmizne. Fix: deterministický
- * `.order()` (site_id, day) + `.range()` stránkovanie, kým strana nevráti
- * menej riadkov než `UPTIME_PAGE_SIZE` (jediný spoľahlivý signál konca dát cez
- * PostgREST range API — presný počet celkových riadkov by vyžadoval druhý
- * `count: 'exact'` dopyt navyše). Krátke čítanie = koniec; inak sa nikdy
- * nesmie potichu prijať čiastočný výsledok ako kompletný (fabrikačné pravidlo).
- */
 async function fetchUptimeDaily(sinceDay: string): Promise<UptimeDailyRow[]> {
-  const out: UptimeDailyRow[] = [];
-  let from = 0;
-  for (let page = 0; page < UPTIME_MAX_PAGES; page++) {
-    const to = from + UPTIME_PAGE_SIZE - 1;
-    const { data, error } = await supabase
+  return fetchAllPaged<UptimeDailyRow>('uptime_daily', (from, to) =>
+    supabase
       .from('uptime_daily')
       .select('site_id, day, uptime_pct, checks, up, p95_ms')
       .gte('day', sinceDay)
       .order('site_id', { ascending: true })
       .order('day', { ascending: true })
-      .range(from, to);
-    if (error) throw new Error(`uptime_daily (strana ${page}, from=${from}): ${error.message}`);
-    const rows = (data ?? []) as UptimeDailyRow[];
-    out.push(...rows);
-    if (rows.length < UPTIME_PAGE_SIZE) return out; // krátke čítanie → koniec dát
-    from += UPTIME_PAGE_SIZE;
-  }
-  // Nikdy nezahodiť chybu ticho — inak by neúplné dáta vyzerali kompletne.
-  throw new Error(
-    `uptime_daily: stránkovanie neskončilo po ${UPTIME_MAX_PAGES} stranách (${UPTIME_MAX_PAGES * UPTIME_PAGE_SIZE} riadkov) — pravdepodobne chyba, nie legitímny objem dát.`,
+      .range(from, to),
   );
 }
 
@@ -301,22 +259,7 @@ export async function loadDashboard(): Promise<{
   // uptime_daily → map[siteId][day] = pct (zobrazenie per-deň segmentov) a
   // map[siteId][day] = {checks, up} (vážený agregát cez viac dní, viď agg()
   // nižšie) a map[siteId][day] = p95_ms.
-  const dailyBySite = new Map<string, Map<string, number>>();
-  const dailyCountsBySite = new Map<string, Map<string, { checks: number; up: number }>>();
-  const p95BySite = new Map<string, Map<string, number>>();
-  for (const d of dailyRows) {
-    const m = dailyBySite.get(d.site_id) ?? new Map<string, number>();
-    m.set(d.day as string, Number(d.uptime_pct));
-    dailyBySite.set(d.site_id, m);
-    const c = dailyCountsBySite.get(d.site_id) ?? new Map<string, { checks: number; up: number }>();
-    c.set(d.day as string, { checks: Number(d.checks), up: Number(d.up) });
-    dailyCountsBySite.set(d.site_id, c);
-    if (d.p95_ms != null) {
-      const p = p95BySite.get(d.site_id) ?? new Map<string, number>();
-      p.set(d.day as string, Number(d.p95_ms));
-      p95BySite.set(d.site_id, p);
-    }
-  }
+  const { dailyBySite, dailyCountsBySite, p95BySite } = buildDailyMaps(dailyRows);
   const domBySite = new Map((domRes.data ?? []).map((d) => [d.site_id, d]));
   const tlsBySite = new Map((tlsRes.data ?? []).map((t) => [t.site_id, t]));
 
@@ -346,59 +289,15 @@ export async function loadDashboard(): Promise<{
   }
 
   // Incident metriky per site (posledných 30 dní).
-  const cut30 = Date.now() - 30 * 86400000;
-  interface IncStats { count30: number; durSum: number; durN: number; lastStart: number | null }
-  const incStats = new Map<string, IncStats>();
-  for (const i of incRes.data ?? []) {
-    const st = incStats.get(i.site_id) ?? { count30: 0, durSum: 0, durN: 0, lastStart: null };
-    const started = new Date(i.started_at).getTime();
-    if (started >= cut30) st.count30++;
-    if (i.duration_seconds != null) {
-      st.durSum += i.duration_seconds;
-      st.durN++;
-    }
-    st.lastStart = st.lastStart === null ? started : Math.max(st.lastStart, started);
-    incStats.set(i.site_id, st);
-  }
+  const incStats = computeIncidentStats(incRes.data ?? []);
 
   // Vážený priemer — SUM(up) / SUM(checks), nie priemer denných percent.
   // Deň s 3 kontrolami by inak vážil rovnako ako deň s 288 (audit 2.6) — na
   // riedkom dni jeden výpadok urobí obrovský výkyv v %, na hustom dni ho
   // zriedi. `uptime_daily` už `checks`/`up` ukladá práve na toto.
-  const agg = (siteId: string, days: number): number | null => {
-    const m = dailyCountsBySite.get(siteId);
-    if (!m) return null;
-    let checksSum = 0;
-    let upSum = 0;
-    for (let i = 0; i < days; i++) {
-      const c = m.get(isoDay(i));
-      if (c !== undefined) {
-        checksSum += c.checks;
-        upSum += c.up;
-      }
-    }
-    return checksSum === 0 ? null : Math.round((upSum / checksSum) * 10000) / 100;
-  };
-  const buildSegs = (siteId: string, days: number): UptimeSeg[] => {
-    const m = dailyBySite.get(siteId);
-    const out: UptimeSeg[] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const day = isoDay(i);
-      const pct = m?.get(day) ?? null;
-      out.push({ color: segColor(pct), date: day, value: pct });
-    }
-    return out;
-  };
-  const buildP95Series = (siteId: string): number[] => {
-    const m = p95BySite.get(siteId);
-    if (!m) return [];
-    const out: number[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const v = m.get(isoDay(i));
-      if (v !== undefined) out.push(v);
-    }
-    return out;
-  };
+  const agg = (siteId: string, days: number): number | null => aggUptime(dailyCountsBySite, siteId, days);
+  const buildSegs = (siteId: string, days: number): UptimeSeg[] => buildUptimeSegs(dailyBySite, siteId, days);
+  const buildP95Series = (siteId: string): number[] => buildUptimeP95Series(p95BySite, siteId);
 
   const sites: SiteVM[] = (sitesRes.data ?? []).map((s) => {
     const key = s.maintenance ? 'maintenance' : statusKey(s.consecutive_failures, s.last_checked_at);
@@ -479,14 +378,8 @@ export async function loadDashboard(): Promise<{
       incidents: incBySite.get(s.id) ?? [],
       p95Series: buildP95Series(s.id),
       incidentCount30: incStats.get(s.id)?.count30 ?? 0,
-      mttrMin: (() => {
-        const st = incStats.get(s.id);
-        return st && st.durN > 0 ? Math.round(st.durSum / st.durN / 60) : null;
-      })(),
-      daysSinceIncident: (() => {
-        const st = incStats.get(s.id);
-        return st?.lastStart ? Math.floor((Date.now() - st.lastStart) / 86400000) : null;
-      })(),
+      mttrMin: mttrMinFromStats(incStats.get(s.id)),
+      daysSinceIncident: daysSinceIncidentFromStats(incStats.get(s.id)),
       slaOk: (u30 ?? 0) >= 99.5,
       openIssues: openIssuesBySite.get(s.id) ?? 0,
       isWordPress: isWp,
