@@ -1,4 +1,4 @@
-import { supabase, type Alert, type Client } from './supabase';
+import { supabase, type Alert, type Client, type Incident } from './supabase';
 import {
   STATUS,
   statusKey,
@@ -194,6 +194,42 @@ async function fetchUptimeDaily(sinceDay: string): Promise<UptimeDailyRow[]> {
   );
 }
 
+/**
+ * Incidenty: predtým `.limit(200)` naprieč VŠETKÝMI webmi (audit "flat top-N
+ * cap") — pri raste počtu webov/incidentov mohlo pár hlučných webov vytlačiť
+ * staršie eventy tichších klientov z okna, bez akéhokoľvek náznaku orezania.
+ * Fix: dátovo orezaný filter namiesto plochého stropu — `.or()` vráti
+ * incident, ak je BUD stále otvorený (`resolved_at is null`, bez ohľadu na
+ * vek — otvorený issue je relevantný vždy) ALEBO začal v posledných 90 dňoch
+ * (rovnaké okno ako `uptime_daily`/`public_client_status`). `incidentCount30`
+ * aj `mttrMin`/`daysSinceIncident` sa počítajú z tohto okna — 90 dní s rezervou
+ * pokrýva 30-dňovú štatistiku aj rozumný pohľad na "odkedy bez výpadku".
+ */
+async function fetchIncidents(sinceDay: string): Promise<Incident[]> {
+  return fetchAllPaged<Incident>('incidents', (from, to) =>
+    supabase
+      .from('incidents')
+      .select('*')
+      .or(`resolved_at.is.null,started_at.gte.${sinceDay}`)
+      .order('started_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to),
+  );
+}
+
+/** Alerty: rovnaký fix ako `fetchIncidents` — otvorené vždy, uzavreté za posledných 90 dní. */
+async function fetchAlerts(sinceDay: string): Promise<Alert[]> {
+  return fetchAllPaged<Alert>('alerts', (from, to) =>
+    supabase
+      .from('alerts')
+      .select('*')
+      .or(`resolved_at.is.null,created_at.gte.${sinceDay}`)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, to),
+  );
+}
+
 /** Načíta všetko pre dashboard — výhradne reálne dáta z DB (žiadne fabrikované). */
 export async function loadDashboard(): Promise<{
   sites: SiteVM[];
@@ -201,14 +237,14 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRows, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes, infraRes] = await Promise.all([
+  const [sitesRes, dailyRows, domRes, tlsRes, incRows, cliRes, alRows, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes, infraRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
     fetchUptimeDaily(since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
     supabase.from('tls_certs').select('site_id, valid_to, issuer'),
-    supabase.from('incidents').select('*').order('started_at', { ascending: false }).limit(200),
+    fetchIncidents(since90),
     supabase.from('clients').select('*').order('name'),
-    supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(100),
+    fetchAlerts(since90),
     supabase.from('aeo_snapshots').select('site_id, score, checks, ai_bots, schema_types, measured_at'),
     supabase.from('seo_snapshots').select('site_id, pages_crawled, sitemap_ok, robots_ok, canonical_ok, issues, error, measured_at'),
     supabase.from('perf_snapshots').select('*'),
@@ -265,15 +301,15 @@ export async function loadDashboard(): Promise<{
 
   // Otvorené issues per site = otvorené incidenty + nevyriešené alerty.
   const openIssuesBySite = new Map<string, number>();
-  for (const i of incRes.data ?? []) {
+  for (const i of incRows) {
     if (!i.resolved_at) openIssuesBySite.set(i.site_id, (openIssuesBySite.get(i.site_id) ?? 0) + 1);
   }
-  for (const a of alRes.data ?? []) {
+  for (const a of alRows) {
     if (!a.resolved_at && a.site_id)
       openIssuesBySite.set(a.site_id, (openIssuesBySite.get(a.site_id) ?? 0) + 1);
   }
   const incBySite = new Map<string, IncidentVM[]>();
-  for (const i of incRes.data ?? []) {
+  for (const i of incRows) {
     const list = incBySite.get(i.site_id) ?? [];
     if (list.length < 10) {
       const open = !i.resolved_at;
@@ -288,8 +324,9 @@ export async function loadDashboard(): Promise<{
     incBySite.set(i.site_id, list);
   }
 
-  // Incident metriky per site (posledných 30 dní).
-  const incStats = computeIncidentStats(incRes.data ?? []);
+  // Incident metriky per site (posledných 30 dní pre count30/mttr; celá
+  // dodaná (90-dňová + vždy-otvorené) sada pre daysSinceIncident).
+  const incStats = computeIncidentStats(incRows);
 
   // Vážený priemer — SUM(up) / SUM(checks), nie priemer denných percent.
   // Deň s 3 kontrolami by inak vážil rovnako ako deň s 288 (audit 2.6) — na
@@ -470,5 +507,5 @@ export async function loadDashboard(): Promise<{
     };
   });
 
-  return { sites, clients, alerts: (alRes.data ?? []) as Alert[] };
+  return { sites, clients, alerts: alRows };
 }
