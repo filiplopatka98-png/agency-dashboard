@@ -1,8 +1,15 @@
 import type { Env } from './env';
+import { serviceClient } from './supabase';
 
 // Ručné spustenie collector jobu z UI. Bezpečnosť: over Supabase access-token
-// (HS256 podpis + exp + role=authenticated) → len prihlásený admin. Potom
-// dispatchne GitHub workflow. GH token je serverový secret (nikdy v prehliadači).
+// (HS256 podpis + exp) → potom over cez service_role klienta, že `sub`
+// (user id) je owner/staff membership v nejakej org (audit 6, "/trigger
+// pustí hocijakého prihláseného" — `payload.role === 'authenticated'` je
+// Supabase GLOBÁLNA auth rola, ktorú má KAŽDÝ prihlásený účet, nie appková
+// rola owner/staff/client z `memberships`. Dnes má login len owner, takže
+// diera je spiaca, ale read-only účet by inak vedel dispatchnúť všetkých 11
+// GH workflow). Potom dispatchne GitHub workflow. GH token je serverový
+// secret (nikdy v prehliadači).
 
 // job kľúč → workflow súbor. Scheduler beží na Worker cron → nedispatchovateľný.
 const WORKFLOWS: Record<string, string> = {
@@ -49,6 +56,24 @@ async function verifyJwt(token: string, secret: string): Promise<Record<string, 
   }
 }
 
+// Fail closed: akékoľvek zlyhanie dotazu (sieť, chýbajúci service-role kľúč,
+// neočakávaná výnimka) vráti `false` — neautorizované, nie "predpokladaj OK".
+async function isOwnerOrStaff(env: Env, userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await serviceClient(env)
+      .from('memberships')
+      .select('role')
+      .eq('user_id', userId)
+      .in('role', ['owner', 'staff'])
+      .limit(1)
+      .maybeSingle();
+    if (error) return false;
+    return data !== null;
+  } catch {
+    return false;
+  }
+}
+
 export async function triggerJob(request: Request, env: Env): Promise<Response> {
   if (!env.GH_DISPATCH_TOKEN || !env.GH_REPO || !env.SUPABASE_JWT_SECRET) {
     return json({ error: 'Ručné spustenie nie je nakonfigurované (chýba GH token / JWT secret).' }, 503);
@@ -56,7 +81,14 @@ export async function triggerJob(request: Request, env: Env): Promise<Response> 
   const auth = request.headers.get('Authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   const payload = token ? await verifyJwt(token, env.SUPABASE_JWT_SECRET) : null;
-  if (!payload || payload.role !== 'authenticated') {
+  if (!payload || payload.role !== 'authenticated' || typeof payload.sub !== 'string' || !payload.sub) {
+    return json({ error: 'Neautorizované.' }, 401);
+  }
+  // `role: 'authenticated'` je len globálna Supabase auth rola (má ju hocikto
+  // s platným loginom) — appková autorizácia (owner/staff smie dispatchovať,
+  // client nie) žije v `memberships`, cez `sub` (user id). Zlyhanie dotazu
+  // = fail closed (žiadny dispatch), nie fail open.
+  if (!(await isOwnerOrStaff(env, payload.sub))) {
     return json({ error: 'Neautorizované.' }, 401);
   }
 
