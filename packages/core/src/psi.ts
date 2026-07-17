@@ -75,10 +75,11 @@ export function parsePsi(json: PsiJson): { ok: true; snap: PerfSnap } | { ok: fa
   };
 }
 
-// Reálne PSI behy (78 meraní, 5 workflow-runov) ukázali ~9 % náhodné zlyhania
-// (timeout/500/400) naprieč weismi aj stratégiami — aj najľahšia stránka v
-// mesteryhodinovom behu raz dostala 500. Nie je to vlastnosť konkrétnej
-// stránky, ale flakiness Google PSI API → textbook prípad na jeden retry.
+// Reálne PSI behy (78 meraní z 5 workflow behov) ukázali ~9 % náhodných zlyhaní
+// (timeout / 500 / 400) rozhádzaných naprieč webmi aj stratégiami. Žiadny web
+// nepadá stabilne a raz dostala 500 aj tá najľahšia stránka (lopatka.sk, odozva
+// 0,33 s) — čiže to nie je vlastnosť konkrétnej stránky, ale nestabilita Google
+// PSI API. Náhodné zlyhania externého API sú učebnicový prípad na jeden retry.
 // 3 s odstupu je rovnaký interval ako `LocalPinger.RETRY_DELAY_MS`
 // (packages/core/src/localPinger.ts) — dosť na to, aby prešiel prechodný
 // hiccup, no denný job sa kvôli tomu výrazne nepredĺži.
