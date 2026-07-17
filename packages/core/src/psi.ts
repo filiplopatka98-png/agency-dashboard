@@ -75,30 +75,58 @@ export function parsePsi(json: PsiJson): { ok: true; snap: PerfSnap } | { ok: fa
   };
 }
 
+// Reálne PSI behy (78 meraní, 5 workflow-runov) ukázali ~9 % náhodné zlyhania
+// (timeout/500/400) naprieč weismi aj stratégiami — aj najľahšia stránka v
+// mesteryhodinovom behu raz dostala 500. Nie je to vlastnosť konkrétnej
+// stránky, ale flakiness Google PSI API → textbook prípad na jeden retry.
+// 3 s odstupu je rovnaký interval ako `LocalPinger.RETRY_DELAY_MS`
+// (packages/core/src/localPinger.ts) — dosť na to, aby prešiel prechodný
+// hiccup, no denný job sa kvôli tomu výrazne nepredĺži.
+const RETRY_DELAY_MS = 3_000;
+
 export async function fetchPsi(
   url: string,
   apiKey: string,
   strategy: 'mobile' | 'desktop',
   fetchImpl: typeof fetch = globalThis.fetch,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
 ): Promise<{ ok: true; snap: PerfSnap } | { ok: false; error: string }> {
-  const params = new URLSearchParams({ url, key: apiKey, strategy });
-  for (const c of ['performance', 'accessibility', 'best-practices', 'seo']) params.append('category', c);
-  const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`;
-  try {
-    // 120 s, nie 60. Lighthouse na `mobile` škrtí sieť na pomalé 4G, takže ťažká
-    // stránka sa cez 60 s nestihne zmerať a spadne na timeout — hoci desktop
-    // (bez škrtenia) prejde. Reálny prípad: soccercoacheshub.com má 8 MB a LCP
-    // 16 s na mobile; desktop zmeria, mobile hranične nestíhal. Google pri
-    // takýchto stránkach bežne potrebuje 60–90 s a denný job má času dosť.
-    // Nie je to maskovanie chyby: meranie buď prejde s pravdivými číslami,
-    // alebo poctivo padne a psi-probe zapíše error + vynuluje skóre.
-    const res = await fetchImpl(endpoint, { signal: AbortSignal.timeout(120_000) });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      return { ok: false, error: `psi ${res.status}: ${body.slice(0, 160)}` };
+  const attempt = async (): Promise<{ ok: true; snap: PerfSnap } | { ok: false; error: string }> => {
+    const params = new URLSearchParams({ url, key: apiKey, strategy });
+    for (const c of ['performance', 'accessibility', 'best-practices', 'seo']) params.append('category', c);
+    const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}`;
+    try {
+      // 120 s, nie 60. Lighthouse na `mobile` škrtí sieť na pomalé 4G, takže ťažká
+      // stránka sa cez 60 s nestihne zmerať a spadne na timeout — hoci desktop
+      // (bez škrtenia) prejde. Reálny prípad: soccercoacheshub.com má 8 MB a LCP
+      // 16 s na mobile; desktop zmeria, mobile hranične nestíhal. Google pri
+      // takýchto stránkach bežne potrebuje 60–90 s a denný job má času dosť.
+      // Nie je to maskovanie chyby: meranie buď prejde s pravdivými číslami,
+      // alebo poctivo padne a psi-probe zapíše error + vynuluje skóre.
+      const res = await fetchImpl(endpoint, { signal: AbortSignal.timeout(120_000) });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        return { ok: false, error: `psi ${res.status}: ${body.slice(0, 160)}` };
+      }
+      return parsePsi((await res.json()) as PsiJson);
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
-    return parsePsi((await res.json()) as PsiJson);
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
+  };
+
+  const first = await attempt();
+  if (first.ok) return first;
+
+  // Retry na ĽUBOVOĽNÉ zlyhanie (aj `400 FAILED_DOCUMENT`) — majiteľ sa
+  // rozhodol nerozlišovať typ chyby, lebo namerané dáta ukázali, že aj tento
+  // kód sa na iných behoch zotavil. Log tu drží presne rovnaký `{ev, url,
+  // strategy, error}` tvar ako `psi.ok`/`psi.fail` v tools/psi-probe, aby sa
+  // dal jednoducho grepovať a diagnostikovať ďalší flaky beh.
+  console.log(JSON.stringify({ ev: 'psi.retry', url, strategy, error: first.error }));
+  await sleep(RETRY_DELAY_MS);
+  const second = await attempt();
+  // Ak zlyhajú OBA pokusy, správame sa presne ako doteraz: vrátime chybu a
+  // volajúci (psi-probe) zapíše error riadok s vynuleným skóre — žiadne
+  // tiché prehltnutie výpadku (zero-fabricated-data pravidlo).
+  return second;
 }

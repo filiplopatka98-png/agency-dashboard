@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parsePsi } from './psi';
+import { describe, expect, it, vi } from 'vitest';
+import { fetchPsi, parsePsi } from './psi';
 
 const OK = {
   lighthouseResult: {
@@ -47,5 +47,51 @@ describe('parsePsi', () => {
   it('prázdny lighthouseResult (PSI error 200) → ok:false, nefabrikuje', () => {
     expect(parsePsi({ lighthouseResult: {} }).ok).toBe(false);
     expect(parsePsi({}).ok).toBe(false);
+  });
+});
+
+/** fetch mock, ktorý vracia responses z fronty (jedna na volanie). */
+function queuedFetch(responses: Response[]) {
+  const fn = vi.fn(async () => {
+    const r = responses.shift();
+    if (!r) throw new Error('no more queued responses');
+    return r;
+  });
+  return fn as unknown as typeof fetch & { mock: typeof fn.mock };
+}
+
+const jsonRes = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+const noSleep = () => Promise.resolve();
+
+describe('fetchPsi — retry na tranzientné zlyhanie', () => {
+  it('úspech na prvý pokus → presne 1 volanie fetch', async () => {
+    const fetchImpl = queuedFetch([jsonRes(OK)]);
+    const r = await fetchPsi('https://example.sk', 'key', 'mobile', fetchImpl, noSleep);
+    expect(r.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('1. pokus zlyhá (500), 2. uspeje → vráti úspech (2 volania)', async () => {
+    const fetchImpl = queuedFetch([
+      new Response('server error', { status: 500 }),
+      jsonRes(OK),
+    ]);
+    const r = await fetchPsi('https://example.sk', 'key', 'mobile', fetchImpl, noSleep);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.snap.performanceScore).toBe(87);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('oba pokusy zlyhajú (500) → vráti ok:false s chybou, nehádže výnimku', async () => {
+    const fetchImpl = queuedFetch([
+      new Response('server error 1', { status: 500 }),
+      new Response('server error 2', { status: 500 }),
+    ]);
+    const r = await fetchPsi('https://example.sk', 'key', 'mobile', fetchImpl, noSleep);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toContain('500');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
