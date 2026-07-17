@@ -159,6 +159,7 @@ export interface PerfSnapVM {
   lcpMs: number | null;
   inpMs: number | null;
   cls: number | null;
+  tbtMs: number | null;
   ttfbMs: number | null;
   pageWeightKb: number | null;
   requests: number | null;
@@ -278,6 +279,7 @@ export async function loadDashboard(): Promise<{
       lcpMs: p.lcp_ms,
       inpMs: p.inp_ms,
       cls: p.cls === null ? null : Number(p.cls),
+      tbtMs: p.tbt_ms,
       ttfbMs: p.ttfb_ms,
       pageWeightKb: p.page_weight_kb,
       requests: p.requests,

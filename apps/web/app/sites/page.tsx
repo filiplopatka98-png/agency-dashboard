@@ -546,7 +546,7 @@ function TabPerformance({ site }: { site: SiteVM }) {
           <div style={{ ...card, padding: 20 }}>
             <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Popis stránky</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: 13 }}>
-              {([['Veľkosť', snap.pageWeightKb === null ? '—' : `${snap.pageWeightKb} KB`], ['Requesty', snap.requests === null ? '—' : String(snap.requests)], ['TTFB', snap.ttfbMs === null ? '—' : `${snap.ttfbMs} ms`], ['TBT', '—']] as const).map(([k, v]) => (
+              {([['Veľkosť', snap.pageWeightKb === null ? '—' : `${snap.pageWeightKb} KB`], ['Requesty', snap.requests === null ? '—' : String(snap.requests)], ['TTFB', snap.ttfbMs === null ? '—' : `${snap.ttfbMs} ms`], ['TBT', snap.tbtMs === null ? '—' : `${snap.tbtMs} ms`]] as const).map(([k, v]) => (
                 <div key={k} style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 14 }}>
                   <div style={{ ...label, fontSize: 11.5, marginBottom: 6 }}>{k}</div>
                   <div style={{ fontWeight: 700, ...mono, fontSize: 16 }}>{v}</div>
