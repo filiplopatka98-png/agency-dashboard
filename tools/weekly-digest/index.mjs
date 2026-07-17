@@ -51,7 +51,7 @@ async function main() {
   const weekAgo = new Date(now - 7 * 86400000).toISOString();
   const [daily, seo, wp, dom, tls, sec, aeo, perf, gsc, infra, incidents, settings, changes] = await Promise.all([
     get('uptime_daily?select=site_id,day,uptime_pct'),
-    get('seo_snapshots?select=site_id,issues,measured_at'),
+    get('seo_snapshots?select=site_id,issues,error,pages_crawled,measured_at'),
     get('wp_snapshots?select=site_id,vulns,measured_at'),
     get('domains?select=site_id,expires_at'),
     get('tls_certs?select=site_id,valid_to'),
@@ -97,7 +97,14 @@ async function main() {
 
     const digestSites = orgSites.map((s) => {
       const status = s.maintenance ? 'maintenance' : (s.consecutive_failures >= 2 || openInc.has(s.id)) ? 'down' : 'up';
-      const issues = (seoM.get(s.id)?.issues ?? []);
+      // Chýbajúci riadok / chybný beh / 0 skrawlovaných stránok = nevieme, koľko
+      // SEO issues web má TERAZ (seo-crawl pri chybe `issues` nemení, len bumpne
+      // `measured_at` — zamrznutý počet by sa inak tváril ako aktuálny stav
+      // tohto týždňa). `openIssues: null` necháva renderer (digest.ts) mlčať
+      // namiesto vypísania zamrznutého čísla.
+      const seoRow = seoM.get(s.id);
+      const seoUnknown = !seoRow || Boolean(seoRow.error) || !seoRow.pages_crawled;
+      const openIssues = seoUnknown ? null : (Array.isArray(seoRow.issues) ? seoRow.issues.length : 0);
       const vulnsArr = wpM.get(s.id)?.vulns ?? null;
       const vulns = Array.isArray(vulnsArr) ? vulnsArr.length : 0;
       const criticalVulns = Array.isArray(vulnsArr) ? vulnsArr.filter((v) => v.severity === 'critical' || v.severity === 'high').length : 0;
@@ -113,7 +120,7 @@ async function main() {
         s.cms === 'wordpress' && staleFor('wp', wpM.get(s.id)?.measured_at, now),
       ].filter(Boolean).length;
       if (staleCount) attention.push(`${staleCount} neaktuálnych meraní`);
-      return { domain: s.domain, status, uptime30: uptime30(s.id), openIssues: Array.isArray(issues) ? issues.length : 0, vulns, criticalVulns, attention };
+      return { domain: s.domain, status, uptime30: uptime30(s.id), openIssues, vulns, criticalVulns, attention };
     });
 
     const { subject, html, text } = renderDigest({ weekLabel, orgName: org.name ?? 'Org', sites: digestSites, changes: changesByOrg.get(org.id) ?? [] });

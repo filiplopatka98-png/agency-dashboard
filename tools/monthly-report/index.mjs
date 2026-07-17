@@ -54,7 +54,7 @@ async function main() {
   const [daily, incidents, seo, wp, settings, changeLog, workLog, resolvedIncidents] = await Promise.all([
     get(`uptime_daily?select=site_id,day,uptime_pct,checks,downtime_seconds&day=gte.${startDay}&day=lt.${endDay}`),
     get(`incidents?select=site_id,started_at&started_at=gte.${start.toISOString()}&started_at=lt.${end.toISOString()}`),
-    get('seo_snapshots?select=site_id,issues'),
+    get('seo_snapshots?select=site_id,issues,error,pages_crawled'),
     get('wp_snapshots?select=site_id,vulns,plugins'),
     get('notification_settings?select=org_id,monthly_report,recipients'),
     get(`change_log?select=site_id,kind,severity,message,payload,created_at&created_at=gte.${start.toISOString()}&created_at=lt.${end.toISOString()}&order=created_at.asc`),
@@ -95,7 +95,14 @@ async function main() {
 
   const buildSite = (s) => {
     const a = upAcc.get(s.id);
-    const issues = seoM.get(s.id)?.issues ?? [];
+    // Rovnaký gate ako weekly-digest (audit 2.4): chýbajúci riadok / chybný
+    // beh / 0 skrawlovaných stránok = nevieme aktuálny počet SEO issues —
+    // seo-crawl pri zlyhaní `issues` nemení, len bumpne `measured_at`, takže
+    // zamrznuté číslo by sa vydávalo za stav TOHTO mesiaca. `null` necháva
+    // renderer (report.ts) mlčať namiesto zamrznutého čísla.
+    const seoRow = seoM.get(s.id);
+    const seoUnknown = !seoRow || Boolean(seoRow.error) || !seoRow.pages_crawled;
+    const openIssues = seoUnknown ? null : (Array.isArray(seoRow.issues) ? seoRow.issues.length : 0);
     const vulnsArr = wpM.get(s.id)?.vulns ?? null;
     // Admin vidí VŠETKY change_log riadky za mesiac vrátane legacy `kind:'status'`
     // (výpadok/obnova z runUptime.ts) — na rozdiel od klientskeho `.filter((e) =>
@@ -109,7 +116,7 @@ async function main() {
       domain: s.domain,
       uptime: a && a.n ? a.sum / a.n : null,
       incidents: incCount.get(s.id) ?? 0,
-      openIssues: Array.isArray(issues) ? issues.length : 0,
+      openIssues,
       vulns: Array.isArray(vulnsArr) ? vulnsArr.length : 0,
       criticalVulns: Array.isArray(vulnsArr) ? vulnsArr.filter((v) => v.severity === 'critical' || v.severity === 'high').length : 0,
       changes,

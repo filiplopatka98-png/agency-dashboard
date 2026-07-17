@@ -5,7 +5,7 @@ export interface DigestSite {
   domain: string;
   status: 'up' | 'down' | 'maintenance';
   uptime30: number | null; // %
-  openIssues: number; // SEO issues
+  openIssues: number | null; // SEO issues; null = posledný seo-crawl beh zlyhal/0 stránok — nevieme, mlčíme (nie 0)
   vulns: number; // spolu CVE
   criticalVulns: number; // critical+high CVE
   attention: string[]; // expiry / neaktuálne / poklesy
@@ -33,7 +33,7 @@ function priority(s: DigestSite): number {
   if (s.status === 'down') p += 1000;
   p += s.criticalVulns * 100;
   p += s.vulns * 10;
-  p += s.openIssues;
+  p += s.openIssues ?? 0; // neznáme SEO issues nezvyšujú prioritu — nefabrikujeme naliehavosť
   p += s.attention.length * 5;
   return p;
 }
@@ -43,7 +43,10 @@ export function renderDigest(data: DigestData): { subject: string; html: string;
   const down = sites.filter((s) => s.status === 'down').length;
   const totalVulns = sites.reduce((n, s) => n + s.vulns, 0);
   const totalCritical = sites.reduce((n, s) => n + s.criticalVulns, 0);
-  const totalIssues = sites.reduce((n, s) => n + s.openIssues, 0);
+  // Súčet len zo známych hodnôt — web s neznámym SEO stavom (null) do súhrnu
+  // NEPRIDÁVA 0 (to by bolo tiché tvrdenie „žiadne issues", ktoré nevieme
+  // doložiť), jednoducho sa v súčte nezapočíta.
+  const totalIssues = sites.reduce((n, s) => n + (s.openIssues ?? 0), 0);
   const needAttention = sites.filter((s) => priority(s) > 0).length;
 
   const alarmParts = [];
