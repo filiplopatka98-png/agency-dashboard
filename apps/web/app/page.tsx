@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Shell } from './components/Shell';
 import { loadDashboard, type SiteVM } from './lib/data';
-import { supabase, type Client } from './lib/supabase';
+import { supabase, type Client, type Alert } from './lib/supabase';
 import { relativeTime } from './lib/format';
 
 const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
@@ -25,13 +25,15 @@ export default function OverviewPage() {
   const [addErr, setAddErr] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [changes, setChanges] = useState<{ id: number; kind: string; severity: string; message: string; created_at: string; site_id: string | null }[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   const [toast, setToast] = useState<string | null>(null);
 
   const reload = async () => {
-    const { sites, clients } = await loadDashboard();
+    const { sites, clients, alerts } = await loadDashboard();
     setSites(sites);
     setClients(clients);
+    setAlerts(alerts);
   };
 
   useEffect(() => {
@@ -46,6 +48,7 @@ export default function OverviewPage() {
         if (!active) return;
         setSites(dash.sites);
         setClients(dash.clients);
+        setAlerts(dash.alerts);
         setOrgId(mem.data?.org_id ?? null);
         setChanges(chg.data ?? []);
       } finally {
@@ -87,9 +90,12 @@ export default function OverviewPage() {
   const sitesEmpty = !loading && sites.length === 0;
   const sitesPopulated = !loading && sites.length > 0;
 
-  // region banner — ponechané, ale skryté
-  const hasRegionOutage = false;
-  const outageMessage = '3 z 25 webov nedostupné — možný regionálny výpadok';
+  // Region banner — reálny alert `region_outage`, ktorý vkladá scheduler
+  // (runUptime.ts) keď padne nadpolovičná väčšina sledovaných webov naraz.
+  // Žiadny vymyslený text — telo alertu už obsahuje skutočné počty (down/total).
+  const regionOutageAlert = alerts.find((a) => a.type === 'region_outage' && !a.resolved_at) ?? null;
+  const hasRegionOutage = regionOutageAlert !== null;
+  const outageMessage = regionOutageAlert?.body ?? regionOutageAlert?.title ?? '';
 
   // — akcie —
   const showToast = (msg: string) => {
