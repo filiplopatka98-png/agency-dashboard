@@ -2,23 +2,40 @@
 /**
  * Plugin Name: Monitorix Agent
  * Description: Posiela stav webu (WP/PHP/MySQL verzie, pluginy + updaty, téma, záloha) do Monitorix dashboardu. Stačí nainštalovať a aktivovať — žiadna konfigurácia.
- * Version: 2.0.0
+ * Version: 2.1.0
  * Author: Lopatka
  *
  * Inštalácia (nič iné netreba):
  *   A) wp-admin: zabaľ tento súbor do ZIP → Pluginy → Pridať nový → Nahrať → Aktivuj.
  *   B) FTP/mu-plugin: nahraj do wp-content/mu-plugins/monitorix-agent.php (aktivuje sa sám).
  *
- * Plugin sám (cez WP-cron) raz denne pošle stav do Monitorixu. Prvýkrát do ~1 minúty
- * po aktivácii. Ingest URL + token sú zapečené nižšie — netreba nič nastavovať.
+ * Plugin sám (cez WP-cron) raz denne pošle stav do Monitorixu. Ingest URL + token
+ * sú zapečené nižšie — netreba nič nastavovať.
+ *
+ * POZOR (2026-07): WP-cron NIE JE skutočný cron — spustí sa len keď niekto
+ * načíta stránku. Na málo navštevovanom webe sa tak pôvodný "kick 30s po
+ * aktivácii" (nižšie, `init` + transient) nemusel spustiť VÔBEC, lebo aj on
+ * čaká na návštevníka. Preto activation hook nižšie pushne stav OKAMŽITE pri
+ * aktivácii (bežíme v admin requeste, žiadny visitor netreba) — funguje ale
+ * len pri regulárnej aktivácii pluginu cez wp-admin (register_activation_hook
+ * sa pri mu-plugine nikdy nespustí, mu-plugin sa "aktivuje" len tým, že leží
+ * v mu-plugins/). Preto ide o DOPLNOK k naplánovanému behu nižšie, nie náhradu
+ * — mu-plugin nasadenie sa aj naďalej spolieha na `init` kick + denný cron
+ * (a od tejto verzie navyše na `wp-cron.php` kick zo strany Monitorix Workera,
+ * pozri apps/scheduler/src/runWpCronKick.ts).
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
+define('MONITORIX_AGENT_VERSION', '2.1.0');
 define('MONITORIX_INGEST_URL', 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev/wp-ingest');
 define('MONITORIX_INGEST_TOKEN', '__MONITORIX_INGEST_TOKEN__');
+
+// Okamžitý push pri (re)aktivácii — len regulárny plugin (mu-plugin tento hook
+// nikdy nespustí, viď komentár vyššie). Doplnok k plánovanému behu, nie náhrada.
+register_activation_hook(__FILE__, 'monitorix_agent_do_push');
 
 // Naplánuj denný push + jednorazový hneď po prvom načítaní (funguje aj ako mu-plugin).
 add_action('init', function () {
@@ -91,7 +108,7 @@ function monitorix_agent_do_push()
         'theme'         => $theme ? $theme->get('Name') . ' ' . $theme->get('Version') : null,
         'plugins'       => $plugins,
         'backup_at'     => $backupAt,
-        'agent_version' => '2.0.0',
+        'agent_version' => MONITORIX_AGENT_VERSION,
     ];
 
     wp_remote_post(MONITORIX_INGEST_URL, [

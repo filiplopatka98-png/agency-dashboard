@@ -3,6 +3,7 @@ import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
 import { runDomains } from './runDomains';
 import { runJobHealth } from './runJobHealth';
+import { runWpCronKick } from './runWpCronKick';
 import { defaultDomainResolver } from './domainResolver';
 import { serviceClient } from './supabase';
 import { wpIngest } from './wpIngest';
@@ -17,7 +18,7 @@ const CORS = {
 
 /**
  * Cloudflare Worker — jeden cron trigger, každých 5 minút. Vetvenie podľa času vnútri.
- * Uptime beží vždy. Doména/TLS (round-robin) a expiry/region alerty pridajú kroky 7–8.
+ * Uptime beží vždy. Doména/TLS (round-robin), WP-cron kick a expiry/region alerty pridajú kroky 7–9.
  */
 export default {
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
@@ -28,6 +29,7 @@ export default {
         try {
           await runUptime(env); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
           await runDomains(env, defaultDomainResolver, { limit: 3 }); // round-robin doména (>20 h)
+          await runWpCronKick(env, { limit: 3 }); // kopni wp-cron.php na zaspatých WP weboch (>25h bez push)
           await runJobHealth(env); // dead-man's switch — insertne job_overdue alert, ak nejaký job zaspal (audit 3.3)
           await runAlerts(env); // odoslanie nevyslaných alertov (dedupe už v DB)
           await recordSchedulerRun(env, 'ok', null);
