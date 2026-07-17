@@ -1,0 +1,16 @@
+-- Audit 2026-07-17, 1.1 (Critical): `public_status_slugs()` bol grantnutý pre
+-- `anon` (0020, znovu-grantnuté v 0021). Anon kľúč je v nasadenom JS bundli,
+-- takže hocikto mohol zavolať `POST /rest/v1/rpc/public_status_slugs` bez
+-- prihlásenia a dostať slugy VŠETKÝCH klientov so zapnutou status page —
+-- celý zoznam klientely na jeden dotaz.
+--
+-- RPC existuje len preto, aby Next.js build vedel vylistovať slugy pre
+-- `generateStaticParams` (apps/web/app/status/[slug]/page.tsx). Build teraz
+-- volá tú istú funkciu cez service_role kľúč (mimo browsera, len v Node pri
+-- builde) — anon prístup už nie je potrebný.
+--
+-- `public_client_status(p_slug)` (samotná verejná status page pre klientov)
+-- ostáva grantnutá pre anon — to je zámerne verejné a nemení sa.
+revoke execute on function public_status_slugs() from anon;
+-- `authenticated` grant (z 0021) necháme — prihlásený owner/staff v appke ho
+-- môže potrebovať a nič citlivé nevracia (len slugy).

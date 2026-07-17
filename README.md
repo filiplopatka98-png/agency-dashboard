@@ -91,10 +91,22 @@ wrangler tail                            # over CPU < 8 ms na invokáciu
 
 **3. Web** (Cloudflare Pages):
 ```bash
+NEXT_PUBLIC_SUPABASE_URL=<prod URL> \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon> \
+SUPABASE_SERVICE_ROLE_KEY=<service_role> \
 pnpm --filter web build
 wrangler pages deploy apps/web/out
-# Env v Pages: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY (NIČ iné).
+# Env v Pages: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+# SUPABASE_SERVICE_ROLE_KEY (BEZ `NEXT_PUBLIC_` prefixu!).
 ```
+`SUPABASE_SERVICE_ROLE_KEY` treba **len pri builde** — `generateStaticParams`
+(`apps/web/app/status/[slug]/page.tsx`) ním vylistuje slugy klientov pre
+statické `/status/<slug>` stránky, lebo `public_status_slugs()` už nie je
+grantnuté pre `anon` (audit 2026-07-17, 1.1 — pozri migráciu 0025). Bez tejto
+premennej build prejde, ale **nevygeneruje ŽIADNU** status stránku (zaloguje
+warning). Keďže nemá `NEXT_PUBLIC_` prefix, Next ho neinlineuje do
+klientského bundlu — over `grep -rl "$SUPABASE_SERVICE_ROLE_KEY" apps/web/out/`
+(musí byť prázdne).
 
 **4. GitHub Action** (TLS probe): pridaj repo secrets `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`. Beží automaticky (pondelok 03:00 UTC) + `workflow_dispatch`.

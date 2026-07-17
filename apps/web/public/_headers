@@ -1,6 +1,14 @@
 # Celý Monitorix je privátny/verejný-ale-neindexovaný → noindex na všetkom.
 # Verejné status pages (/status/<slug>) sú zámerne mimo Google.
+#
+# Audit 2026-07-17, sekcia 6: chýbal X-Frame-Options/CSP frame-ancestors —
+# prihlásený dashboard sa dal rámcovať do cudzej stránky (clickjacking).
+# Zámerne LEN frame-ancestors, žiadna plná CSP — apps/web/app/layout.tsx má
+# inline theme skript bez nonce (dangerouslySetInnerHTML), ktorý by plná CSP
+# (script-src) rozbila. frame-ancestors sa script-src netýka.
 /*
   X-Robots-Tag: noindex, nofollow
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'

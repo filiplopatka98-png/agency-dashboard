@@ -69,11 +69,27 @@ Cron `*/5 * * * *` je vo `wrangler.jsonc` — po `deploy` sa registruje automati
 
 ## 5. Web — Cloudflare Pages  **[JA nasadím]**
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=<prod URL> NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon> pnpm --filter web build
+NEXT_PUBLIC_SUPABASE_URL=<prod URL> \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon> \
+SUPABASE_SERVICE_ROLE_KEY=<service_role> \
+pnpm --filter web build
 wrangler pages deploy apps/web/out --project-name agency-dashboard
 ```
-V *Pages → Settings → Environment variables* nastav (build aj runtime):
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — **nič iné** (service_role sem NIKDY).
+`SUPABASE_SERVICE_ROLE_KEY` je od auditu 2026-07-17 (1.1) potrebný **len pri
+builde**: `generateStaticParams` (`apps/web/app/status/[slug]/page.tsx`) ním
+cez service_role vylistuje slugy klientov pre statické `/status/<slug>`
+stránky — `public_status_slugs()` už nie je grantnutá pre `anon` (migrácia
+`0025_status_slugs_revoke_anon.sql`), lebo anon prístup k nej znamenal, že
+hocikto s kľúčom z bundlu si vylistoval celú klientelu. Bez tejto premennej
+build **prejde**, ale nevygeneruje ŽIADNU status stránku (zaloguje warning do
+build logu) — nastav ju, inak status stránky ticho zmiznú.
+
+V *Pages → Settings → Environment variables* nastav (build):
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`. Posledná premenná **nesmie** mať `NEXT_PUBLIC_`
+prefix — presne to ju drží mimo klientského bundlu (Next inlineuje do
+browsera len `NEXT_PUBLIC_*` premenné). Over po builde:
+`grep -rl "$SUPABASE_SERVICE_ROLE_KEY" apps/web/out/` musí byť prázdne.
 
 ## 6. Resend — doména  **[TY]**
 1. *Domains → Add domain* → pridaj `tvoja-domena.sk`.
@@ -95,7 +111,7 @@ V *Pages → Settings → Environment variables* nastav (build aj runtime):
 | Secret | GitHub Actions | CF Worker | CF Pages |
 |---|:--:|:--:|:--:|
 | `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` | ✅ | ✅ | ✅ (public) |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | ✅ | ❌ nikdy |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | ✅ | ✅ len build (bez `NEXT_PUBLIC_`, do bundlu sa nedostane — over `grep`om) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ❌ | ❌ | ✅ |
 | `PSI_API_KEY`, `SB_API_KEY` | ✅ | ❌ | ❌ |
 | `GSC_SA_JSON` | ✅ | ❌ | ❌ |
