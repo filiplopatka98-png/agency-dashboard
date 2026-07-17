@@ -184,6 +184,55 @@ function fmtDuration(sec: number | null): string {
   return `${(sec / 3600).toFixed(1)} h`;
 }
 
+interface UptimeDailyRow {
+  site_id: string;
+  day: string;
+  uptime_pct: number;
+  p95_ms: number | null;
+}
+
+const UPTIME_PAGE_SIZE = 1000; // PostgREST max_rows — potvrdené na živom projekte.
+// Poistka proti nekonečnej slučke, keby stránkovanie z nejakého dôvodu nikdy
+// nevrátilo kratšiu stranu (napr. zlá odpoveď). 200 strán = 200k riadkov, ďaleko
+// nad current 8 weby × 90 dní (720 riadkov). Radšej nahlas zlyhať, než ticho
+// vydávať čiastočné dáta za kompletné.
+const UPTIME_MAX_PAGES = 200;
+
+/**
+ * `uptime_daily` za 90 dní bez `.order()`/`.range()` narazí na PostgREST
+ * `max_rows = 1000` (1 riadok/web/deň × 90 dní → strop ~11 webov) a PostgREST
+ * ticho vráti len prvých 1000 riadkov bez chyby — a bez `.order()` je
+ * nedeterministické, ktorým webom história z UI zmizne. Fix: deterministický
+ * `.order()` (site_id, day) + `.range()` stránkovanie, kým strana nevráti
+ * menej riadkov než `UPTIME_PAGE_SIZE` (jediný spoľahlivý signál konca dát cez
+ * PostgREST range API — presný počet celkových riadkov by vyžadoval druhý
+ * `count: 'exact'` dopyt navyše). Krátke čítanie = koniec; inak sa nikdy
+ * nesmie potichu prijať čiastočný výsledok ako kompletný (fabrikačné pravidlo).
+ */
+async function fetchUptimeDaily(sinceDay: string): Promise<UptimeDailyRow[]> {
+  const out: UptimeDailyRow[] = [];
+  let from = 0;
+  for (let page = 0; page < UPTIME_MAX_PAGES; page++) {
+    const to = from + UPTIME_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('uptime_daily')
+      .select('site_id, day, uptime_pct, p95_ms')
+      .gte('day', sinceDay)
+      .order('site_id', { ascending: true })
+      .order('day', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(`uptime_daily (strana ${page}, from=${from}): ${error.message}`);
+    const rows = (data ?? []) as UptimeDailyRow[];
+    out.push(...rows);
+    if (rows.length < UPTIME_PAGE_SIZE) return out; // krátke čítanie → koniec dát
+    from += UPTIME_PAGE_SIZE;
+  }
+  // Nikdy nezahodiť chybu ticho — inak by neúplné dáta vyzerali kompletne.
+  throw new Error(
+    `uptime_daily: stránkovanie neskončilo po ${UPTIME_MAX_PAGES} stranách (${UPTIME_MAX_PAGES * UPTIME_PAGE_SIZE} riadkov) — pravdepodobne chyba, nie legitímny objem dát.`,
+  );
+}
+
 /** Načíta všetko pre dashboard — výhradne reálne dáta z DB (žiadne fabrikované). */
 export async function loadDashboard(): Promise<{
   sites: SiteVM[];
@@ -191,9 +240,9 @@ export async function loadDashboard(): Promise<{
   alerts: Alert[];
 }> {
   const since90 = isoDay(90);
-  const [sitesRes, dailyRes, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes, infraRes] = await Promise.all([
+  const [sitesRes, dailyRows, domRes, tlsRes, incRes, cliRes, alRes, aeoRes, seoRes, perfRes, secRes, gscRes, wpRes, infraRes] = await Promise.all([
     supabase.from('sites').select('*').eq('is_active', true).order('name'),
-    supabase.from('uptime_daily').select('site_id, day, uptime_pct, p95_ms').gte('day', since90),
+    fetchUptimeDaily(since90),
     supabase.from('domains').select('site_id, expires_at, registrar'),
     supabase.from('tls_certs').select('site_id, valid_to, issuer'),
     supabase.from('incidents').select('*').order('started_at', { ascending: false }).limit(200),
@@ -248,7 +297,7 @@ export async function loadDashboard(): Promise<{
   // uptime_daily → map[siteId][day] = pct  a  map[siteId][day] = p95_ms
   const dailyBySite = new Map<string, Map<string, number>>();
   const p95BySite = new Map<string, Map<string, number>>();
-  for (const d of dailyRes.data ?? []) {
+  for (const d of dailyRows) {
     const m = dailyBySite.get(d.site_id) ?? new Map<string, number>();
     m.set(d.day as string, Number(d.uptime_pct));
     dailyBySite.set(d.site_id, m);
