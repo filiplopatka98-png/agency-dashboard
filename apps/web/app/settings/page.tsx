@@ -83,22 +83,40 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [trig, setTrig] = useState<Record<string, 'run' | 'ok' | 'err'>>({});
+  const [trigErr, setTrigErr] = useState<Record<string, string>>({});
 
   const runNow = async (jobKey: string) => {
     setTrig((t) => ({ ...t, [jobKey]: 'run' }));
+    setTrigErr((e) => { const n = { ...e }; delete n[jobKey]; return n; });
+    // Dôvod zlyhania MUSÍ byť vidno. Predtým tu bolo len 'err' pre všetko —
+    // 401, 503 aj sieťový výpadok vyzerali rovnako a nedalo sa hádať, čo je zle.
     try {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
+      if (!token) {
+        setTrig((t) => ({ ...t, [jobKey]: 'err' }));
+        setTrigErr((e) => ({ ...e, [jobKey]: 'Nie si prihlásený (chýba token) — obnov stránku.' }));
+        return;
+      }
       const res = await fetch(`${WORKER_URL}/trigger`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ job: jobKey }),
       });
-      setTrig((t) => ({ ...t, [jobKey]: res.ok ? 'ok' : 'err' }));
-    } catch {
+      if (res.ok) {
+        setTrig((t) => ({ ...t, [jobKey]: 'ok' }));
+      } else {
+        const body = await res.json().catch(() => ({}));
+        const why = (body as { error?: string }).error ?? res.statusText;
+        setTrig((t) => ({ ...t, [jobKey]: 'err' }));
+        setTrigErr((e) => ({ ...e, [jobKey]: `${res.status}: ${why}` }));
+      }
+    } catch (err) {
       setTrig((t) => ({ ...t, [jobKey]: 'err' }));
+      setTrigErr((e) => ({ ...e, [jobKey]: `Sieť/CORS: ${err instanceof Error ? err.message : String(err)}` }));
     }
-    setTimeout(() => setTrig((t) => { const n = { ...t }; delete n[jobKey]; return n; }), 4000);
+    // Chybu nechaj visieť dlhšie než úspech — je čo čítať.
+    setTimeout(() => setTrig((t) => { const n = { ...t }; delete n[jobKey]; return n; }), 8000);
   };
 
   useEffect(() => {
@@ -238,6 +256,12 @@ export default function SettingsPage() {
                             </button>
                           )}
                         </div>
+                        {/* Dôvod zlyhania spustenia — bez neho je „chyba" nediagnostikovateľná. */}
+                        {trigErr[j.key] && (
+                          <div title={trigErr[j.key]} style={{ fontSize: '11px', color: 'var(--critical-color)', maxWidth: '360px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {trigErr[j.key]}
+                          </div>
+                        )}
                         {errText && (
                           <div title={run?.error ?? undefined} style={{ fontSize: '11px', color: 'var(--critical-color)', maxWidth: '360px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {errText}
