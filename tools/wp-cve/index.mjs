@@ -9,7 +9,7 @@
 // CVE id (nvd.nist.gov, zdarma). Ak ani jedno → severity 'unknown' (nefabrikujeme).
 //
 // Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, (voliteľne) NVD_API_KEY
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 import { severityFromScore } from '../../packages/core/dist/cve.js';
 import { diffVulns } from '../../packages/core/dist/events.js';
 
@@ -152,6 +152,10 @@ async function collectVulns(wp, token, cache, budget) {
 }
 
 async function main() {
+  await runJob('cve', run);
+}
+
+async function run() {
   const token = process.env.WPSCAN_TOKEN;
   if (!token) throw new Error('WPSCAN_TOKEN je povinný');
   const url = process.env.SUPABASE_URL;
@@ -223,7 +227,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'cve.done', ok, failed, wpscan_left: budget.left }));
-  await recordJobRun(url, srv, 'cve', ok, failed);
+  return { ok, failed };
 }
 
 main().catch((e) => {

@@ -9,7 +9,7 @@ import { scoreSecurityHeaders, fetchSafeBrowsing } from '../../packages/core/dis
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -23,17 +23,24 @@ export async function probeSecurity(url, sbKey) {
 }
 
 async function main() {
-  const sbKey = process.env.SB_API_KEY;
-  if (!sbKey) throw new Error('SB_API_KEY je povinný');
   const args = process.argv.slice(2);
 
   if (args[0] === '--probe') {
+    // Manuálny test jedného URL — nie je to scheduled beh, nezapisuje sa do job_runs.
+    const sbKey = process.env.SB_API_KEY;
+    if (!sbKey) throw new Error('SB_API_KEY je povinný');
     const url = args[1];
     if (!url) throw new Error('usage: --probe <url>');
     console.log(JSON.stringify(await probeSecurity(url, sbKey), null, 2));
     return;
   }
 
+  await runJob('security', run);
+}
+
+async function run() {
+  const sbKey = process.env.SB_API_KEY;
+  if (!sbKey) throw new Error('SB_API_KEY je povinný');
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -60,7 +67,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'sec.upsert_fail', url: s.url, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'sec.done', ok, failed }));
-  await recordJobRun(url, srv, 'security', ok, failed);
+  return { ok, failed };
 }
 
 main().catch((e) => {

@@ -4,7 +4,7 @@
 // notification_settings (fallback ALERT_EMAIL_TO). Rešpektuje monthly_report.
 //
 // Env: RESEND_API_KEY, ALERT_EMAIL_FROM, ALERT_EMAIL_TO, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 import { renderMonthlyReport } from '../../packages/core/dist/report.js';
 import { buildClientLines } from '../../packages/core/dist/reportText.js';
 import { renderClientReport } from '../../packages/core/dist/clientReport.js';
@@ -28,6 +28,10 @@ async function sendEmail(apiKey, from, to, subject, html, text) {
 }
 
 async function main() {
+  await runJob('report', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -199,7 +203,7 @@ async function main() {
   }
 
   console.log(JSON.stringify({ ev: 'report.done', month: monthLabel, sent, failed, skipped }));
-  await recordJobRun(url, srv, 'report', sent, failed);
+  return { ok: sent, failed };
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

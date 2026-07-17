@@ -94,7 +94,7 @@ export async function probeAeo(domain) {
   return { ...scoreAeo({ html: htmls, robotsTxt, hasLlmsTxt }), pagesChecked: htmls.length };
 }
 
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -103,6 +103,7 @@ function restHeaders(key) {
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--probe') {
+    // Manuálny test jednej domény — nie je to scheduled beh, nezapisuje sa do job_runs.
     const domain = args[1];
     if (!domain) throw new Error('usage: --probe <domena>');
     const r = await probeAeo(domain);
@@ -110,6 +111,10 @@ async function main() {
     return;
   }
 
+  await runJob('aeo', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -141,7 +146,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'aeo.upsert_fail', domain: s.domain, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'aeo.done', ok, failed, total: sites.length }));
-  await recordJobRun(url, key, 'aeo', ok, failed);
+  return { ok, failed };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

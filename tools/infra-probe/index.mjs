@@ -9,7 +9,7 @@
 // Env (DB režim): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import dns from 'node:dns/promises';
 import tls from 'node:tls';
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 const T = 12_000;
@@ -118,12 +118,17 @@ export async function probeInfra(domain) {
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--probe') {
+    // Manuálny test jednej domény — nie je to scheduled beh, nezapisuje sa do job_runs.
     const d = args[1];
     if (!d) throw new Error('usage: --probe <domena>');
     console.log(JSON.stringify(await probeInfra(d), null, 2));
     return;
   }
 
+  await runJob('infra', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -165,7 +170,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'infra.upsert_fail', domain: s.domain, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'infra.done', ok, failed }));
-  await recordJobRun(url, srv, 'infra', ok, failed);
+  return { ok, failed };
 }
 
 main().catch((e) => {

@@ -5,7 +5,7 @@
 //   node index.mjs   → prejde weby, zapíše históriu + zmeny
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -36,6 +36,10 @@ function isoWeek(d) {
 }
 
 async function main() {
+  await runJob('history', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -142,9 +146,9 @@ async function main() {
     const r = await fetch(`${url}/rest/v1/change_log`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal' }, body: JSON.stringify(changeRows) });
     // Log-and-continue (nie throw) — rovnako ako u ostatných collectorov
     // (wpIngest.ts, wp-cve, seo-crawl), diff/log zápis nesmie zablokovať
-    // zvyšok main() (alertRows nižšie ani recordJobRun na konci) — inak by
-    // zlyhanie change_log insertu spôsobilo, že proaktívne degradačné e-maily
-    // sa nikdy nezapíšu a job bude vyzerať ako nikdy nespustený.
+    // zvyšok run() (alertRows nižšie ani návrat { ok, failed } pre runJob) —
+    // inak by zlyhanie change_log insertu spôsobilo, že proaktívne degradačné
+    // e-maily sa nikdy nezapíšu a job bude vyzerať ako nikdy nespustený.
     if (!r.ok) console.log(JSON.stringify({ ev: 'history.changelog_fail', status: r.status, body: await r.text() }));
   }
   // Proaktívne alerty — ignoruj konflikt (dedupe_key unique), pošle ich runAlerts.
@@ -153,7 +157,7 @@ async function main() {
     if (!r.ok) console.log(JSON.stringify({ ev: 'history.alerts_fail', status: r.status, body: await r.text() }));
   }
   console.log(JSON.stringify({ ev: 'history.done', sites: sites.length, history: historyRows.length, changes: changeRows.length, alerts: alertRows.length }));
-  await recordJobRun(url, srv, 'history', sites.length, 0);
+  return { ok: sites.length, failed: 0 };
 }
 
 main().catch((e) => {

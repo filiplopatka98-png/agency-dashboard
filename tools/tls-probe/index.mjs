@@ -32,7 +32,7 @@ export function probeTls(host) {
   });
 }
 
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return {
@@ -63,12 +63,17 @@ async function upsertCert(url, key, row) {
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--probe') {
+    // Manuálny test jedného hostu — nie je to scheduled beh, nezapisuje sa do job_runs.
     const host = args[1];
     if (!host) throw new Error('usage: --probe <host>');
     console.log(JSON.stringify(await probeTls(host), null, 2));
     return;
   }
 
+  await runJob('tls', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -107,7 +112,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'tls.done', ok, failed, total: sites.length }));
-  await recordJobRun(url, key, 'tls', ok, failed);
+  return { ok, failed };
 }
 
 // Spusti main len keď je skript volaný priamo (nie pri importe v teste).

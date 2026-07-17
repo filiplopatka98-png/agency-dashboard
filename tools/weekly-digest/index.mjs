@@ -4,7 +4,7 @@
 // prepínač weekly_digest. Ak Resend nie je nakonfigurovaný, len zaloguje.
 //
 // Env: RESEND_API_KEY, ALERT_EMAIL_FROM, ALERT_EMAIL_TO, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 import { renderDigest } from '../../packages/core/dist/digest.js';
 
 const FRESH_MAX_MS = { aeo: 216, security: 216, seo: 216, perf: 216, infra: 216, wp: 216, gsc: 264 };
@@ -33,6 +33,10 @@ async function sendEmail(apiKey, from, to, subject, html, text) {
 }
 
 async function main() {
+  await runJob('digest', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -140,7 +144,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'digest.done', sent, failed, skipped }));
-  await recordJobRun(url, srv, 'digest', sent, failed);
+  return { ok: sent, failed };
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

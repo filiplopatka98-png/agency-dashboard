@@ -16,7 +16,7 @@ const TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const RANGE_DAYS = 28;
 const LAG_DAYS = 3; // GSC dáta majú ~2-3 dňové oneskorenie
 
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -86,17 +86,25 @@ export async function probeGsc(token, siteUrl) {
 }
 
 async function main() {
-  const sa = loadServiceAccount();
-  const token = await getAccessToken(sa);
   const args = process.argv.slice(2);
 
   if (args[0] === '--probe') {
+    // Manuálny test jedného URL — nie je to scheduled beh, nezapisuje sa do job_runs.
+    const sa = loadServiceAccount();
+    const token = await getAccessToken(sa);
     const url = args[1];
     if (!url) throw new Error('usage: --probe <url>');
     const r = await probeGsc(token, url);
     console.log(JSON.stringify(r ?? { error: 'žiadna dostupná GSC property (pridaj service account ako používateľa)' }, null, 2));
     return;
   }
+
+  await runJob('gsc', run);
+}
+
+async function run() {
+  const sa = loadServiceAccount();
+  const token = await getAccessToken(sa);
 
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -147,7 +155,7 @@ async function main() {
     if (!up.ok) console.log(JSON.stringify({ ev: 'gsc.upsert_fail', url: s.url, status: up.status, body: await up.text() }));
   }
   console.log(JSON.stringify({ ev: 'gsc.done', ok, missing, failed }));
-  await recordJobRun(url, srv, 'gsc', ok, failed);
+  return { ok, failed };
 }
 
 main().catch((e) => {

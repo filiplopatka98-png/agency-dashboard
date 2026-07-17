@@ -103,7 +103,7 @@ export async function crawlSite(domain) {
   return { pages_crawled: pages.length, sitemap_ok: sitemapOk, robots_ok: robotsOk, canonical_ok: canonicalOk, issues, failed_pages: failedPages };
 }
 
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -112,12 +112,17 @@ function restHeaders(key) {
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === '--crawl') {
+    // Manuálny test jednej domény — nie je to scheduled beh, nezapisuje sa do job_runs.
     const domain = args[1];
     if (!domain) throw new Error('usage: --crawl <domena>');
     const r = await crawlSite(domain);
     console.log(JSON.stringify({ ...r, issues: r.issues.map((i) => `${i.severity} · ${i.type} (${i.count})`) }, null, 2));
     return;
   }
+  await runJob('seo', run);
+}
+
+async function run() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -192,7 +197,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'seo.done', ok, failed, total: sites.length }));
-  await recordJobRun(url, key, 'seo', ok, failed);
+  return { ok, failed };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

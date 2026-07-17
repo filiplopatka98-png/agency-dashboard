@@ -9,18 +9,19 @@ import { fetchPsi } from '../../packages/core/dist/psi.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-import { recordJobRun } from '../_shared/jobRun.mjs';
+import { runJob } from '../_shared/runJob.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
 
 async function main() {
-  const KEY = process.env.PSI_API_KEY;
-  if (!KEY) throw new Error('PSI_API_KEY je povinný');
   const args = process.argv.slice(2);
 
   if (args[0] === '--probe') {
+    // Manuálny test jedného URL — nie je to scheduled beh, nezapisuje sa do job_runs.
+    const KEY = process.env.PSI_API_KEY;
+    if (!KEY) throw new Error('PSI_API_KEY je povinný');
     const url = args[1];
     if (!url) throw new Error('usage: --probe <url>');
     for (const strategy of ['mobile', 'desktop']) {
@@ -31,6 +32,12 @@ async function main() {
     return;
   }
 
+  await runJob('psi', run);
+}
+
+async function run() {
+  const KEY = process.env.PSI_API_KEY;
+  if (!KEY) throw new Error('PSI_API_KEY je povinný');
   const url = process.env.SUPABASE_URL;
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
@@ -76,7 +83,7 @@ async function main() {
     }
   }
   console.log(JSON.stringify({ ev: 'psi.done', ok, failed }));
-  await recordJobRun(url, srv, 'psi', ok, failed);
+  return { ok, failed };
 }
 
 main().catch((e) => {
