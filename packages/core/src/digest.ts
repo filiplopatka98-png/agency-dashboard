@@ -1,6 +1,8 @@
 // Týždenný digest — z reálnych dát poskladá jeden prehľadný e-mail per org.
 // Čisté renderovanie (bez I/O) → testovateľné. Odosielanie rieši collector.
 
+import { esc } from './reportText.js';
+
 export interface DigestSite {
   domain: string;
   status: 'up' | 'down' | 'maintenance';
@@ -23,9 +25,6 @@ export interface DigestData {
   sites: DigestSite[];
   changes?: DigestChange[]; // veľké zmeny za týždeň (change_log)
 }
-
-const esc = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // Zoradenie: najprv weby vyžadujúce pozornosť (down > CVE > issues > attention).
 function priority(s: DigestSite): number {

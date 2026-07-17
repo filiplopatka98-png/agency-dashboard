@@ -1,6 +1,8 @@
 // Mesačný report — súhrn za kalendárny mesiac per org. Čisté renderovanie,
 // dáta z reálnych meraní (uptime, incidenty, aktuálne CVE/SEO issues).
 
+import { esc } from './reportText.js';
+
 // Admin riadok zmeny — vždy `message` z change_log (terse technický jazyk,
 // napr. „WooCommerce 5.1 → 5.4", „CVE-2024-1234 new (WooCommerce)"). Na
 // rozdiel od klientskeho reportu (renderClient + isClientVisible) admin vidí
@@ -25,9 +27,6 @@ export interface ReportData {
   orgName: string;
   sites: ReportSite[];
 }
-
-const esc = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const fmtUptime = (u: number | null) => (u == null ? '—' : `${u.toFixed(2)} %`);
 const uptimeColor = (u: number | null) => (u == null ? '#6b7280' : u >= 99.9 ? '#16a34a' : u >= 99 ? '#d97706' : '#dc2626');

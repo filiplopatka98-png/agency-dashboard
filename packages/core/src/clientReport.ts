@@ -2,7 +2,7 @@
 // zaisťuje buildClientLines). Tichý web nerámujeme ako prázdno, ale ako dôkaz
 // dohľadu. Tvrdíme len to, čo vieme: knownVulns/pluginsCurrent === null → mlčíme.
 
-import { renderVigilance, type Vigilance } from './reportText.js';
+import { renderVigilance, esc, type Vigilance } from './reportText.js';
 
 export interface ClientReportSite {
   domain: string;
@@ -18,9 +18,6 @@ export interface ClientReportData {
   clientName: string;
   sites: ClientReportSite[];
 }
-
-const esc = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // Veta pre web, na ktorom sa nič nedialo — bez tvrdení, ktoré nevieme doložiť.
 // Kontroly + dostupnosť už povedal vigilance riadok (renderVigilance) hneď

@@ -68,6 +68,14 @@ const minutes = (n: number) => (n === 1 ? 'minútu' : n < 5 ? 'minúty' : 'minú
 export const fmtNum = (n: number): string => n.toLocaleString('sk-SK').replace(/\s/g, ' ');
 export const fmtPct = (p: number): string => p.toFixed(2).replace('.', ',').replace(',00', '');
 
+// HTML escape pre e-mailové rendery (report.ts, digest.ts, clientReport.ts).
+// Boli tri byte-identické kópie — jedno miesto, aby sa pri budúcom rozšírení
+// (napr. o ' → &#39;) nerozišli. Reťazce, ktoré sa cez toto renderujú, môžu
+// pochádzať z DB (mená webov, pluginy z WP agenta), takže musí byť konzistentné
+// všade, kde ide do HTML e-mailu.
+export const esc = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 // Renderuje pravdivo v OBOCH smeroch (fixed/new, up/down) — nerozhoduje, čo klient
 // smie vidieť. Filtrovanie podľa publika je zodpovednosť volajúceho cez
 // isClientVisible (napr. buildClientLines) — tu sa to zámerne nemení.
