@@ -51,7 +51,22 @@ async function main() {
         ok++;
         console.log(JSON.stringify({ ev: 'psi.ok', url: s.url, strategy, perf: p.performanceScore }));
       } else {
-        row = { site_id: s.id, org_id: s.org_id, strategy, measured_at: now, error: r.error };
+        // Nuluj VŠETKY Lighthouse/CWV polia (skóre aj lab/field metriky) — sú to
+        // hodnoty z jedného PSI behu, ktorý zlyhal, takže o nich teraz nevieme
+        // nič nové. Bez tohto by `merge-duplicates` upsert ponechal staré
+        // hodnoty (zo staršieho úspešného behu) a len im dal čerstvý
+        // `measured_at` → dashboard by ukazoval mesiace staré skóre pod
+        // odznakom „aktualizované dnes" (data.ts gatuje freshness len na
+        // performance_score === null). Rovnaký vzor ako security-probe/
+        // aeo-probe/gsc-probe (nulujú score na chybe).
+        row = {
+          site_id: s.id, org_id: s.org_id, strategy,
+          performance_score: null, accessibility: null, best_practices: null, seo: null,
+          lcp_ms: null, inp_ms: null, cls: null, tbt_ms: null, ttfb_ms: null,
+          page_weight_kb: null, requests: null,
+          field_lcp_ms: null, field_inp_ms: null, field_cls: null,
+          measured_at: now, error: r.error,
+        };
         failed++;
         console.log(JSON.stringify({ ev: 'psi.fail', url: s.url, strategy, error: r.error }));
       }

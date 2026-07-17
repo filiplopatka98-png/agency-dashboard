@@ -141,7 +141,19 @@ async function main() {
       ok++;
       console.log(JSON.stringify({ ev: 'infra.ok', domain: s.domain, hosting: r.hosting, server: r.server, tls: r.tls_version }));
     } catch (e) {
-      row = { site_id: s.id, org_id: s.org_id, measured_at: now, error: String(e?.message ?? e) };
+      // Nuluj VŠETKY merané polia — na rozdiel od tls-probe (kde chránený
+      // `valid_to` je absolútny dátum expirácie, nie bodové meranie) sú
+      // ip/hosting/cdn/server/tls_version/https_redirect/security_txt vždy
+      // hodnoty z TOHTO behu. Bez explicitného nulovania by `merge-duplicates`
+      // upsert ponechal staré hodnoty s čerstvým `measured_at` a null-guard v
+      // data.ts (`inf.error && inf.ip === null && inf.server === null`) by
+      // ostal mŕtvy kód po prvom úspešnom behu.
+      row = {
+        site_id: s.id, org_id: s.org_id,
+        ip: null, hosting: null, cdn: null, server: null, powered_by: null,
+        tls_version: null, https_redirect: null, security_txt: null,
+        measured_at: now, error: String(e?.message ?? e),
+      };
       failed++;
       console.log(JSON.stringify({ ev: 'infra.fail', domain: s.domain, error: String(e?.message ?? e) }));
     }
