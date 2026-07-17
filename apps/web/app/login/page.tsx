@@ -68,7 +68,8 @@ export default function LoginPage() {
 
         {sent ? (
           <div style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: 18, fontSize: 13.5, color: 'var(--text-secondary)', boxShadow: 'var(--shadow-sm)' }}>
-            Poslali sme prihlasovací odkaz na <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>. Lokálne ho nájdeš v Mailpite (127.0.0.1:54324).
+            Poslali sme prihlasovací odkaz na <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>.
+            {process.env.NODE_ENV !== 'production' && ' Lokálne ho nájdeš v Mailpite (127.0.0.1:54324).'}
           </div>
         ) : (
           <form onSubmit={loginPassword} style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: 22, boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', gap: 16 }}>
