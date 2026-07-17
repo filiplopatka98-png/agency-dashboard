@@ -189,6 +189,8 @@ interface UptimeDailyRow {
   site_id: string;
   day: string;
   uptime_pct: number;
+  checks: number;
+  up: number;
   p95_ms: number | null;
 }
 
@@ -217,7 +219,7 @@ async function fetchUptimeDaily(sinceDay: string): Promise<UptimeDailyRow[]> {
     const to = from + UPTIME_PAGE_SIZE - 1;
     const { data, error } = await supabase
       .from('uptime_daily')
-      .select('site_id, day, uptime_pct, p95_ms')
+      .select('site_id, day, uptime_pct, checks, up, p95_ms')
       .gte('day', sinceDay)
       .order('site_id', { ascending: true })
       .order('day', { ascending: true })
@@ -296,13 +298,19 @@ export async function loadDashboard(): Promise<{
   const clients = (cliRes.data ?? []) as Client[];
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
-  // uptime_daily → map[siteId][day] = pct  a  map[siteId][day] = p95_ms
+  // uptime_daily → map[siteId][day] = pct (zobrazenie per-deň segmentov) a
+  // map[siteId][day] = {checks, up} (vážený agregát cez viac dní, viď agg()
+  // nižšie) a map[siteId][day] = p95_ms.
   const dailyBySite = new Map<string, Map<string, number>>();
+  const dailyCountsBySite = new Map<string, Map<string, { checks: number; up: number }>>();
   const p95BySite = new Map<string, Map<string, number>>();
   for (const d of dailyRows) {
     const m = dailyBySite.get(d.site_id) ?? new Map<string, number>();
     m.set(d.day as string, Number(d.uptime_pct));
     dailyBySite.set(d.site_id, m);
+    const c = dailyCountsBySite.get(d.site_id) ?? new Map<string, { checks: number; up: number }>();
+    c.set(d.day as string, { checks: Number(d.checks), up: Number(d.up) });
+    dailyCountsBySite.set(d.site_id, c);
     if (d.p95_ms != null) {
       const p = p95BySite.get(d.site_id) ?? new Map<string, number>();
       p.set(d.day as string, Number(d.p95_ms));
@@ -353,19 +361,23 @@ export async function loadDashboard(): Promise<{
     incStats.set(i.site_id, st);
   }
 
+  // Vážený priemer — SUM(up) / SUM(checks), nie priemer denných percent.
+  // Deň s 3 kontrolami by inak vážil rovnako ako deň s 288 (audit 2.6) — na
+  // riedkom dni jeden výpadok urobí obrovský výkyv v %, na hustom dni ho
+  // zriedi. `uptime_daily` už `checks`/`up` ukladá práve na toto.
   const agg = (siteId: string, days: number): number | null => {
-    const m = dailyBySite.get(siteId);
+    const m = dailyCountsBySite.get(siteId);
     if (!m) return null;
-    let sum = 0;
-    let n = 0;
+    let checksSum = 0;
+    let upSum = 0;
     for (let i = 0; i < days; i++) {
-      const pct = m.get(isoDay(i));
-      if (pct !== undefined) {
-        sum += pct;
-        n++;
+      const c = m.get(isoDay(i));
+      if (c !== undefined) {
+        checksSum += c.checks;
+        upSum += c.up;
       }
     }
-    return n === 0 ? null : Math.round((sum / n) * 100) / 100;
+    return checksSum === 0 ? null : Math.round((upSum / checksSum) * 10000) / 100;
   };
   const buildSegs = (siteId: string, days: number): UptimeSeg[] => {
     const m = dailyBySite.get(siteId);
