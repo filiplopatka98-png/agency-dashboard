@@ -14,7 +14,7 @@ export interface ReportSite {
   domain: string;
   uptime: number | null; // % za mesiac
   incidents: number; // počet incidentov začatých v mesiaci
-  openIssues: number; // aktuálne SEO issues
+  openIssues: number | null; // aktuálne SEO issues; null = posledný seo-crawl beh zlyhal/0 stránok — nevieme, mlčíme (nie 0)
   vulns: number;
   criticalVulns: number;
   changes?: ReportChange[]; // zmeny za mesiac (change_log) — voliteľné, chýbajúce/prázdne = žiadne
@@ -50,14 +50,20 @@ const changeWord = (n: number) => (n === 1 ? 'zmena' : n >= 2 && n <= 4 ? 'zmeny
 
 export function renderMonthlyReport(data: ReportData): { subject: string; html: string; text: string } {
   const sites = [...data.sites].sort((a, b) => (a.uptime ?? 101) - (b.uptime ?? 101)); // najhorší uptime hore
-  const avgUptime =
-    sites.filter((s) => s.uptime != null).reduce((n, s) => n + (s.uptime ?? 0), 0) /
-    (sites.filter((s) => s.uptime != null).length || 1);
+  const measuredSites = sites.filter((s) => s.uptime != null);
+  // Ak NIJEDEN web nemá zmerané uptime (nová org / výpadok zberu naprieč
+  // celým portfóliom), menovateľ NESMIE spadnúť na `1` — to by dalo
+  // `0 / 1 = 0` a súhrn by tvrdil „priemerný uptime 0,00 %" (totálny výpadok),
+  // kým pravda je „nemeralo sa". `avgUptime` preto ostáva `null` a summary
+  // vetu formulujeme rovnako pravdivo ako renderVigilance v reportText.ts
+  // (`Za toto obdobie nemáme merania dostupnosti.`) pre nulové kontroly.
+  const avgUptime = measuredSites.length ? measuredSites.reduce((n, s) => n + (s.uptime ?? 0), 0) / measuredSites.length : null;
   const totalIncidents = sites.reduce((n, s) => n + s.incidents, 0);
   const totalCritical = sites.reduce((n, s) => n + s.criticalVulns, 0);
 
   const subject = `Monitorix mesačný report — ${data.monthLabel}`;
-  const summary = `${sites.length} webov · priemerný uptime ${fmtUptime(avgUptime)} · ${totalIncidents} incidentov · ${totalCritical} kritických CVE`;
+  const uptimeSummary = avgUptime === null ? 'nemáme merania dostupnosti' : `priemerný uptime ${fmtUptime(avgUptime)}`;
+  const summary = `${sites.length} webov · ${uptimeSummary} · ${totalIncidents} incidentov · ${totalCritical} kritických CVE`;
 
   const rows = sites
     .map((s) => {

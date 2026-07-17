@@ -97,6 +97,17 @@ describe('renderMonthlyReport', () => {
     expect(r.html).toContain('CVE-2024-9999 new (Plugin)');
   });
 
+  it('žiadny web nemá zmerané uptime → súhrn nesmie tvrdiť „0,00 %" (audit 2.3)', () => {
+    const r = renderMonthlyReport({
+      monthLabel: 'M', orgName: 'O',
+      sites: [site({ domain: 'a.sk', uptime: null }), site({ domain: 'b.sk', uptime: null })],
+    });
+    expect(r.text).not.toMatch(/0[.,]00\s*%/);
+    expect(r.html).not.toMatch(/0[.,]00\s*%/);
+    expect(r.text).toContain('nemáme merania dostupnosti');
+    expect(r.html).toContain('nemáme merania dostupnosti');
+  });
+
   it('web bez zmien vyrenderuje presne ako predtým (chýbajúce aj prázdne pole)', () => {
     const withoutField = renderMonthlyReport({ monthLabel: 'M', orgName: 'O', sites: [site({})] });
     const withEmptyArray = renderMonthlyReport({ monthLabel: 'M', orgName: 'O', sites: [site({ changes: [] })] });
