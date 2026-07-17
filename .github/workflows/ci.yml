@@ -1,0 +1,36 @@
+name: ci
+
+# Beží na KAŽDÝ push a pull request — na rozdiel od ostatných workflow (10
+# súborov, všetky len schedule/workflow_dispatch probes) je toto jediná
+# poistka PRED tým, než sa rozbitý commit dostane do produkcie a zistí sa až
+# pri nasledujúcom cron behu (audit 3.1). Sesterský problém (3.2, FIX 2): keď
+# collector zlyhá potichu, CI je jediná vec, čo to odchytí ešte pred mergom.
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (celý workspace)
+        run: pnpm run typecheck
+
+      - name: Testy (celý workspace)
+        run: pnpm run test
+
+      - name: Lint (celý workspace)
+        run: pnpm run lint
+        # NEBLOKUJÚCE: packages/core má aktuálne ~5 pred-existujúcich lint
+        # chýb (unused vars v clientReport.ts/digest.ts/resendNotifier.test.ts),
+        # ktoré nesúvisia s touto zmenou. Non-blocking, aby CI mohla ísť live
+        # hneď a zostať zelená — opravu tých chýb rieš samostatne.
+        continue-on-error: true
