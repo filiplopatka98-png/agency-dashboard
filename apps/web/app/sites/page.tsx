@@ -13,7 +13,6 @@ import {
   gaugeOffset,
   BOT_DEFS,
   botMeta,
-  nextBot,
   type BotDecision,
 } from '../lib/design';
 import { relativeTime } from '../lib/format';
@@ -694,12 +693,14 @@ function TabSeo({ site }: { site: SiteVM }) {
 
 function TabAeo({ site }: { site: SiteVM }) {
   const aeo = site.aeo;
-  const initBots: Record<string, BotDecision> = {};
+  // Len na zobrazenie — appka do robots.txt klienta nič nezapisuje (a nikde
+  // v repo taký mechanizmus neexistuje). Stav je reálny (parsovaný z
+  // robots.txt cez packages/core/src/aeo.ts), ale nemení sa odtiaľto.
+  const bots: Record<string, BotDecision> = {};
   BOT_DEFS.forEach((b) => {
     const raw = aeo?.aiBots[b.name];
-    initBots[b.key] = raw === 'block' ? 'block' : raw === 'allow' ? 'allow' : 'decide';
+    bots[b.key] = raw === 'block' ? 'block' : raw === 'allow' ? 'allow' : 'decide';
   });
-  const [dec, setDec] = useState<Record<string, BotDecision>>(initBots);
 
   if (!aeo) {
     return (
@@ -734,20 +735,17 @@ function TabAeo({ site }: { site: SiteVM }) {
 
       <div style={{ ...card, padding: 20 }}>
         <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text-primary)' }}>Prístup AI botov</h3>
-        <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 16 }}>Z robots.txt webu. Skóruje sa vedomé rozhodnutie — klikni na štítok pre allow / block / rozhodnúť.</p>
+        <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 16 }}>Aktuálny stav z robots.txt webu — len na prehľad, appka ho odtiaľto nemení.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
           {BOT_DEFS.map((b) => {
-            const m = botMeta(dec[b.key]!);
+            const m = botMeta(bots[b.key]!);
             return (
               <div key={b.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: m.rowBg, borderRadius: 10, border: `1px solid ${m.border}` }}>
                 <div><div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{b.name}</div><div style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>{b.sub}</div></div>
-                <button onClick={() => setDec((d) => ({ ...d, [b.key]: nextBot(d[b.key]!) }))} style={{ padding: '5px 12px', background: m.bg, color: m.color, border: 'none', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>{m.label}</button>
+                <span style={{ padding: '5px 12px', background: m.bg, color: m.color, borderRadius: 8, fontSize: 11.5, fontWeight: 700 }}>{m.label}</span>
               </div>
             );
           })}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border-primary)' }}>
-          Pravidlá sa zapisujú do <span style={{ ...mono, color: 'var(--text-primary)' }}>robots.txt</span>. <a href="#" style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>Vysvetlenie kompromisu citácia vs. tréning →</a>
         </div>
       </div>
 

@@ -86,7 +86,12 @@ export function cwvMeta(
   };
 }
 
-/** AI-bot matica — allow / block / rozhodnúť (cyklus). */
+/**
+ * AI-bot stav — LEN na zobrazenie (parsované z robots.txt klienta cez
+ * packages/core/src/aeo.ts). Appka do robots.txt nezapisuje nič — 'decide'
+ * teda znamená "bot v robots.txt vôbec nie je spomenutý", nie "čaká sa na
+ * rozhodnutie od používateľa appky" (žiadny takýto krok neexistuje).
+ */
 export type BotDecision = 'allow' | 'block' | 'decide';
 export const BOT_DEFS = [
   { key: 'gpt', name: 'GPTBot', sub: 'OpenAI · ChatGPT' },
@@ -99,13 +104,9 @@ export function botMeta(dec: BotDecision) {
   const meta = {
     allow: { label: '✓ ALLOW', color: 'var(--ok-color)', bg: 'var(--ok-bg)', rowBg: 'var(--surface-secondary)', border: 'transparent' },
     block: { label: '✕ BLOCK', color: 'var(--critical-color)', bg: 'var(--critical-bg)', rowBg: 'var(--surface-secondary)', border: 'transparent' },
-    decide: { label: '? ROZHODNÚŤ', color: 'white', bg: 'var(--warning-color)', rowBg: 'var(--warning-bg)', border: 'var(--warning-border)' },
+    decide: { label: 'NEUVEDENÉ', color: 'var(--text-secondary)', bg: 'var(--surface-secondary)', rowBg: 'var(--surface-secondary)', border: 'transparent' },
   } as const;
   return meta[dec];
-}
-export function nextBot(dec: BotDecision): BotDecision {
-  const order: BotDecision[] = ['allow', 'block', 'decide'];
-  return order[(order.indexOf(dec) + 1) % order.length]!;
 }
 
 /** Uptime segment → farba. null (chýbajúci deň) → sivá „nezistené", nefabrikuje sa. */
