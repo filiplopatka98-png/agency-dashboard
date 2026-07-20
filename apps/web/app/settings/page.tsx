@@ -19,7 +19,7 @@ const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] =
   { key: 'gsc', label: 'Search Console', desc: 'pondelok 03:30 UTC' },
   { key: 'seo', label: 'SEO crawl', desc: 'pondelok 04:00 UTC' },
   { key: 'infra', label: 'Infra (hosting/server/TLS)', desc: 'pondelok 04:00 UTC' },
-  { key: 'cve', label: 'WPScan CVE matica', desc: 'pondelok 06:00 UTC' },
+  { key: 'cve', label: 'WPScan CVE matica', desc: 'denne 06:00 UTC' },
   { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC' },
   { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC' },
   { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC' },

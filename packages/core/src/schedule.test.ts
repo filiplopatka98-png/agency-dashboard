@@ -41,4 +41,16 @@ describe('NIGHT_DEFERRED_TYPES', () => {
     expect(NIGHT_DEFERRED_TYPES.has('region_outage')).toBe(true);
     expect(NIGHT_DEFERRED_TYPES.has('site_down')).toBe(false);
   });
+
+  it('nekritické warning typy (metric_drop, gsc_collapse, eol) sa v noci odkladajú', () => {
+    expect(NIGHT_DEFERRED_TYPES.has('metric_drop')).toBe(true);
+    expect(NIGHT_DEFERRED_TYPES.has('gsc_collapse')).toBe(true);
+    expect(NIGHT_DEFERRED_TYPES.has('eol')).toBe(true);
+  });
+
+  it('kritické typy sa NEODKLADAJÚ (idú hneď, aj v noci)', () => {
+    expect(NIGHT_DEFERRED_TYPES.has('cve_critical')).toBe(false);
+    expect(NIGHT_DEFERRED_TYPES.has('tls_invalid')).toBe(false);
+    expect(NIGHT_DEFERRED_TYPES.has('site_down')).toBe(false);
+  });
 });

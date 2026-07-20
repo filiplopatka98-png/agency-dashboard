@@ -33,6 +33,36 @@ export function probeTls(host) {
 }
 
 import { runJob } from '../_shared/runJob.mjs';
+import { raiseAlerts } from '../_shared/raiseAlert.mjs';
+
+// Kódy chýb (Node TLS + OpenSSL X509_V_ERR_* verify kódy), ktoré sú SKUTOČNÝM
+// faktom o certifikáte — teda cert je naozaj zlý. LEN tieto smú vyrobiť
+// tls_invalid alert. Zdroj: openssl verify error kódy + Node ERR_TLS_*.
+const CERT_INVALID_CODES = new Set([
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'CERT_REVOKED',
+  'CERT_UNTRUSTED',
+  'CERT_REJECTED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'ERR_TLS_CERT_ALTNAME_INVALID', // nezhoda hostname (SAN)
+  'HOSTNAME_MISMATCH',
+]);
+
+// True LEN keď chyba JEDNOZNAČNE hovorí, že certifikát je neplatný. Všetko
+// ostatné — timeout (15 s), DNS (ENOTFOUND/EAI_AGAIN), odmietnuté/resetnuté
+// spojenie (ECONNREFUSED/ECONNRESET/EHOSTUNREACH), „no certificate", neznáme —
+// je problém DOSTUPNOSTI, nie neplatnosti certu → NEALERTUJEME (zero-fabrication:
+// netvrdíme neplatnosť, ktorú sme nepozorovali). Nedostupný web pokrýva uptime;
+// reálne expirovaný/rozbitý cert sa navyše ohlási cez valid_to (expiry pg_cron).
+// Pri nejednoznačnej chybe volíme fail-safe: NEalertovať.
+function isCertInvalidError(err) {
+  return typeof err?.code === 'string' && CERT_INVALID_CODES.has(err.code);
+}
 
 function restHeaders(key) {
   return {
@@ -80,12 +110,18 @@ async function run() {
 
   const sites = await loadSites(url, key);
   const now = new Date().toISOString();
+  const today = now.slice(0, 10); // YYYY-MM-DD pre dedupe (1× per web per deň)
   let ok = 0;
   let failed = 0;
+  const alertRows = []; // neplatné certifikáty → e-mailová fronta (runAlerts)
 
   for (const s of sites) {
     try {
       const cert = await probeTls(s.domain);
+      // Úspešný handshake ešte neznamená platný cert — cert už mohol expirovať
+      // (napr. revoked reťazec prejde, ale valid_to je v minulosti). Ak je
+      // valid_to v minulosti, hlás to hneď (expiry pg_cron beží nezávisle).
+      const expired = Date.parse(cert.valid_to) < Date.now();
       await upsertCert(url, key, {
         site_id: s.id,
         org_id: s.org_id,
@@ -98,20 +134,52 @@ async function run() {
       });
       ok++;
       console.log(JSON.stringify({ ev: 'tls.ok', domain: s.domain, valid_to: cert.valid_to }));
+      if (expired) {
+        alertRows.push({
+          org_id: s.org_id,
+          site_id: s.id,
+          type: 'tls_invalid',
+          severity: 'critical',
+          title: `${s.domain}: TLS certifikát neplatný`,
+          body: `certifikát expiroval (valid_to ${cert.valid_to})`,
+          dedupe_key: `tls_invalid:${s.id}:${today}`,
+        });
+      }
     } catch (err) {
+      const reason = String(err?.message ?? err);
       // Neprepisuj dobrý valid_to chybou — valid_to v payloade vynechávame.
       await upsertCert(url, key, {
         site_id: s.id,
         org_id: s.org_id,
         source: 'probe',
         checked_at: now,
-        error: String(err?.message ?? err),
+        error: reason,
       }).catch(() => {});
       failed++;
-      console.log(JSON.stringify({ ev: 'tls.fail', domain: s.domain, error: String(err?.message ?? err) }));
+      console.log(JSON.stringify({ ev: 'tls.fail', domain: s.domain, error: reason }));
+      // tls_invalid LEN pri chybe, ktorá je faktom o certifikáte (expirovaný /
+      // revoked / rozbitý reťazec / self-signed / nezhoda hostname). Sieťový blip
+      // (timeout, DNS, refused) NESMIE vyrobiť kritický „cert neplatný" e-mail —
+      // to by bola fabrikácia (cert je v poriadku, len nedostupný). Bez tohto by
+      // expiry pg_cron (číta len valid_to) reálne zlý cert neohlásil.
+      if (isCertInvalidError(err)) {
+        alertRows.push({
+          org_id: s.org_id,
+          site_id: s.id,
+          type: 'tls_invalid',
+          severity: 'critical',
+          title: `${s.domain}: TLS certifikát neplatný`,
+          body: reason,
+          dedupe_key: `tls_invalid:${s.id}:${today}`,
+        });
+      } else {
+        console.log(JSON.stringify({ ev: 'tls.unreachable', domain: s.domain, code: err?.code ?? null }));
+      }
     }
   }
-  console.log(JSON.stringify({ ev: 'tls.done', ok, failed, total: sites.length }));
+  // Non-fatal insert, dedupe cez unique dedupe_key (1× per web per deň).
+  await raiseAlerts(url, key, alertRows, 'tls.alerts_fail');
+  console.log(JSON.stringify({ ev: 'tls.done', ok, failed, total: sites.length, alerts: alertRows.length }));
   return { ok, failed };
 }
 

@@ -98,3 +98,7 @@ export {
 } from './reportText';
 
 export { renderClientReport, type ClientReportData, type ClientReportSite } from './clientReport';
+
+export { checkEol, PHP_EOL, WP_MIN_SUPPORTED, type EolFinding } from './eol';
+
+export { isoWeek, isDrop } from './proactive';

@@ -10,6 +10,8 @@
 import dns from 'node:dns/promises';
 import tls from 'node:tls';
 import { runJob } from '../_shared/runJob.mjs';
+import { raiseAlerts } from '../_shared/raiseAlert.mjs';
+import { checkEol } from '../../packages/core/dist/eol.js';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 const T = 12_000;
@@ -134,9 +136,16 @@ async function run() {
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
 
   const sites = await (await fetch(`${url}/rest/v1/sites?select=id,org_id,domain&is_active=eq.true`, { headers: restHeaders(srv) })).json();
+
+  // WP/PHP verzie (poslal WP agent) → EOL kontrola. wp_snapshots je 1 riadok/web.
+  const wpRows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,wp_version,php_version`, { headers: restHeaders(srv) })).json();
+  const wpById = new Map((Array.isArray(wpRows) ? wpRows : []).map((r) => [r.site_id, r]));
+
   const now = new Date().toISOString();
+  const nowDate = new Date();
   let ok = 0;
   let failed = 0;
+  const alertRows = []; // EOL nálezy — ADMIN-ONLY (len alerts/owner e-mail, NIE klientsky report)
 
   for (const s of sites) {
     let row;
@@ -168,8 +177,31 @@ async function run() {
       body: JSON.stringify(row),
     });
     if (!up.ok) console.log(JSON.stringify({ ev: 'infra.upsert_fail', domain: s.domain, status: up.status, body: await up.text() }));
+
+    // EOL WordPressu/PHP → ADMIN-ONLY alert (owner rozhodnutie: NIKDY nie v
+    // klientskom reporte). Dedupe `eol:<site>:<component>:<branch>` = 1× per
+    // major.minor VETVU (nie patch): EOL fakt je per vetva, takže patch bump v tej
+    // istej mŕtvej vetve (8.1.27→8.1.28) NEposiela identický alert. Upgrade na INÚ
+    // stále-EOL vetvu (napr. 8.1→8.2 po jej EOL) sa znova ohlási. Telo si drží
+    // skutočnú detegovanú verziu. checkEol vracia [] pri neznámej/aktuálnej verzii.
+    const wp = wpById.get(s.id);
+    if (wp) {
+      for (const f of checkEol(wp.wp_version, wp.php_version, nowDate)) {
+        alertRows.push({
+          org_id: s.org_id,
+          site_id: s.id,
+          type: 'eol',
+          severity: 'warning',
+          title: `${s.domain}: ${f.kind} po konci podpory`,
+          body: f.text,
+          dedupe_key: `eol:${s.id}:${f.component}:${f.branch}`,
+        });
+      }
+    }
   }
-  console.log(JSON.stringify({ ev: 'infra.done', ok, failed }));
+  // Non-fatal insert, dedupe cez unique dedupe_key.
+  await raiseAlerts(url, srv, alertRows, 'infra.alerts_fail');
+  console.log(JSON.stringify({ ev: 'infra.done', ok, failed, eol_alerts: alertRows.length }));
   return { ok, failed };
 }
 

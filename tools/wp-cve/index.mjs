@@ -25,6 +25,7 @@
 //
 // Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, (voliteľne) NVD_API_KEY
 import { runJob } from '../_shared/runJob.mjs';
+import { raiseAlerts } from '../_shared/raiseAlert.mjs';
 import { severityFromScore } from '../../packages/core/dist/cve.js';
 import { diffVulns } from '../../packages/core/dist/events.js';
 import {
@@ -138,6 +139,7 @@ async function fillCache(sites, url, srv, token, nvdKey) {
   const nvdCache = new Map(); // CVE id -> score|null (dedup NVD naprieč slugmi)
   let fetched = 0;
   let left = DAILY_BUDGET;
+  let authError = null; // 401/403 = mŕtvy WPScan token → tvrdé zlyhanie (viď nižšie)
 
   for (const t of planned) {
     let r;
@@ -157,6 +159,18 @@ async function fillCache(sites, url, srv, token, nvdKey) {
     // Iná non-2xx chyba: NEcachuj (na rozdiel od 404). Nevieme, či slug vulns má
     // alebo nemá — uložiť `[]` by bola fabrikácia „žiadne zraniteľnosti".
     if (r.error != null) {
+      // ROZLÍŠENIE mŕtvy token vs. normálne napĺňanie cache:
+      //  • 401/403 = AUTH chyba = expirovaný/zrušený WPScan token → KAŽDÝ lookup
+      //    zlyhá rovnako. To je tvrdé zlyhanie jobu (nižšie throw v run() →
+      //    job_failed e-mail). Prerušíme fázu 1 — ďalšie requesty by boli tiež 401.
+      //  • Čokoľvek iné (5xx, sieťová chyba, „slug chýba v cache → preskoč web")
+      //    je NORMÁLNY prechodný stav počas ~8-dňového napĺňania cache a NESMIE
+      //    hlásiť zlyhanie (inak by prišiel job_failed e-mail každý deň fillu).
+      if (r.error === 401 || r.error === 403) {
+        authError = r.error;
+        console.log(JSON.stringify({ ev: 'cve.auth_error', target: targetKey(t), status: r.error }));
+        break;
+      }
       console.log(JSON.stringify({ ev: 'cve.api_error', target: targetKey(t), status: r.error }));
       continue;
     }
@@ -172,7 +186,7 @@ async function fillCache(sites, url, srv, token, nvdKey) {
     }
     fetched++;
   }
-  return { fetched, planned: planned.length, left };
+  return { fetched, planned: planned.length, left, authError };
 }
 
 // Načíta cache aj s vulns → Map(kľúč → pole vulns).
@@ -208,6 +222,10 @@ async function run() {
 
   const rows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,org_id,wp_version,plugins,vulns&wp_version=not.is.null`, { headers: restHeaders(srv) })).json();
 
+  // Domény (pre titulky kritických CVE alertov) — wp_snapshots doménu nemá.
+  const siteRows = await (await fetch(`${url}/rest/v1/sites?select=id,domain`, { headers: restHeaders(srv) })).json();
+  const domainById = new Map((Array.isArray(siteRows) ? siteRows : []).map((s) => [s.id, s.domain]));
+
   const scannable = [];
   for (const wp of rows) {
     // Prázdny/chýbajúci zoznam pluginov je takmer vždy zlyhanie zberu (WP agent
@@ -231,7 +249,7 @@ async function run() {
   }
 
   // ── FÁZA 1: doplň cache (jediná časť, čo chodí na WPScan) ──
-  const { fetched, planned, left } = await fillCache(scannable, url, srv, token, nvdKey);
+  const { fetched, planned, left, authError } = await fillCache(scannable, url, srv, token, nvdKey);
 
   // ── FÁZA 2: vyhodnoť weby z cache ──
   // Načítaj cache AŽ TERAZ (po fáze 1), aby boli dnešné fetche zahrnuté.
@@ -240,6 +258,7 @@ async function run() {
 
   let ok = 0;
   let failed = 0;
+  const alertRows = []; // nové KRITICKÉ CVE (CVSS ≥ 9) → e-mailová fronta (runAlerts)
 
   for (const { wp, targets } of scannable) {
     try {
@@ -281,6 +300,37 @@ async function run() {
         });
         if (!log.ok) console.log(JSON.stringify({ ev: 'cve.changelog_fail', site_id: wp.site_id, status: log.status }));
       }
+
+      // Nové KRITICKÉ zraniteľnosti (owner rozhodnutie: e-mail LEN pri severity
+      // 'critical' = CVSS ≥ 9; high/medium ostávajú len v change_log). Severity
+      // berieme z event payloadu (diffVulns ju kopíruje z obohateného cache
+      // záznamu). Pozn.: diffVulns ZÁMERNE nediffuje CVE-less záznamy (title nie
+      // je stabilná identita — viď events.ts), takže každý „new" event tu má
+      // neprázdne `cve` a klauzula o title-hash fallbacku je nedosiahnuteľná;
+      // ponechaný ako obrana, keby sa raz do payloadu dostal null cve.
+      const byCveTarget = new Map(vulns.map((v) => [`${v.cve}|${v.target}`, v]));
+      for (const e of events) {
+        const p = e.payload;
+        if (!p || p.direction !== 'new' || p.severity !== 'critical') continue;
+        const rec = byCveTarget.get(`${p.cve}|${p.target}`);
+        const cvss = rec && typeof rec.cvss === 'number' ? rec.cvss : null;
+        const cveId = p.cve ?? null;
+        const dom = domainById.get(wp.site_id) ?? 'web';
+        // dedupe: 1× per web per CVE navždy (kritická CVE už bola raz oznámená).
+        // Bez CVE id dedupe na stabilný title (nedosiahnuteľné cez diffVulns, viď vyššie).
+        const dedupeId = cveId ?? `t:${p.target}`;
+        const cvssPart = cvss != null ? `, CVSS ${cvss}` : '';
+        const cvePart = cveId ? ` (${cveId})` : '';
+        alertRows.push({
+          org_id: wp.org_id,
+          site_id: wp.site_id,
+          type: 'cve_critical',
+          severity: 'critical',
+          title: `${dom}: nová kritická zraniteľnosť`,
+          body: `${p.target}${cvePart}${cvssPart} — odporúčaná aktualizácia`,
+          dedupe_key: `cve_critical:${wp.site_id}:${dedupeId}`,
+        });
+      }
       ok++;
       console.log(JSON.stringify({ ev: 'cve.ok', site_id: wp.site_id, vulns: vulns.length, events: events.length }));
     } catch (e) {
@@ -288,7 +338,17 @@ async function run() {
       console.log(JSON.stringify({ ev: 'cve.fail', site_id: wp.site_id, error: String(e?.message ?? e) }));
     }
   }
-  console.log(JSON.stringify({ ev: 'cve.done', ok, failed, wpscan_left: left, cached: fetched, planned }));
+  // Kritické CVE alerty — non-fatal insert, dedupe cez unique dedupe_key.
+  await raiseAlerts(url, srv, alertRows, 'cve.alerts_fail');
+
+  console.log(JSON.stringify({ ev: 'cve.done', ok, failed, wpscan_left: left, cached: fetched, planned, alerts: alertRows.length }));
+
+  // Mŕtvy WPScan token (401/403) — throw AŽ TERAZ, po fáze 2: weby s už
+  // naplnenou cache sa stihli vyhodnotiť a kritické alerty odoslať. Throw →
+  // runJob zapíše status='error' → scheduler pošle job_failed e-mail (inak by
+  // expirovaný token ostal neviditeľný: 0 lookupov, status 'ok').
+  if (authError) throw new Error(`WPScan auth zlyhal (HTTP ${authError}) — pravdepodobne expirovaný/zrušený WPSCAN_TOKEN`);
+
   return { ok, failed };
 }
 

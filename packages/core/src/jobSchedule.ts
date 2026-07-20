@@ -27,7 +27,7 @@ export const JOB_SCHEDULES: Record<string, JobSchedule> = {
   gsc: { kind: 'weekly', dow: 1, hh: 3, mm: 30 },
   seo: { kind: 'weekly', dow: 1, hh: 4, mm: 0 },
   infra: { kind: 'weekly', dow: 1, hh: 4, mm: 0 },
-  cve: { kind: 'weekly', dow: 1, hh: 6, mm: 0 },
+  cve: { kind: 'daily', hh: 6, mm: 0 }, // wp-cve.yml beží DENNE (0 6 * * *) — FIX 3: bolo mylne weekly
   history: { kind: 'weekly', dow: 1, hh: 7, mm: 0 },
   digest: { kind: 'weekly', dow: 1, hh: 8, mm: 0 },
   report: { kind: 'monthly', dom: 1, hh: 7, mm: 0 },

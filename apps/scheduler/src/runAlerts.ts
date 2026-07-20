@@ -37,7 +37,13 @@ const toAlert = (r: AlertRow): Alert => ({
  * V noci (Europe/Bratislava 22:00–06:00) sa site_up a region_outage odkladajú;
  * critical (site_down) sa posiela vždy.
  */
-export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<void> {
+export interface RunAlertsResult {
+  sent: number;
+  deferred: number;
+  failed: number;
+}
+
+export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<RunAlertsResult> {
   const supabase = deps.supabase ?? serviceClient(env);
 
   // Resend ešte nenakonfigurovaný (placeholder / nie 're_…') → neposielaj, ale nezhoď
@@ -45,7 +51,7 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<voi
   if (!deps.notifier && (!env.RESEND_API_KEY || !env.RESEND_API_KEY.startsWith('re_'))) {
     const { count } = await supabase.from('alerts').select('id', { count: 'exact', head: true }).is('sent_at', null);
     console.log(JSON.stringify({ ev: 'alerts.skipped_no_resend', pending: count ?? 0 }));
-    return;
+    return { sent: 0, deferred: 0, failed: 0 };
   }
 
   const notifier =
@@ -67,16 +73,32 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<voi
   const rows = (data ?? []) as AlertRow[];
   let sent = 0;
   let deferred = 0;
+  let failed = 0;
 
+  // Per-alert try/catch (audit FIX 1): jeden „poison" riadok (napr. Resend 422
+  // na zlý príjemca, oversized body, transient 5xx) NESMIE zhodiť celý drain a
+  // tým natrvalo zablokovať VŠETKY e-maily — vrátane kritického site_down za
+  // ním. Rady sú `created_at ASC`, takže bez izolácie by sa poison vyberal prvý
+  // pri každom ticku a večne blokoval zvyšok. sent_at nastavíme LEN po reálne
+  // úspešnom odoslaní (žiadny tichý drop); poison sa nabudúce skúsi znova (to je
+  // OK — už neblokuje ostatné).
   for (const r of rows) {
     if (night && NIGHT_DEFERRED_TYPES.has(r.type)) {
       deferred++;
       continue;
     }
-    await notifier.send(toAlert(r));
-    await supabase.from('alerts').update({ sent_at: new Date().toISOString() }).eq('id', r.id);
-    sent++;
+    try {
+      await notifier.send(toAlert(r));
+      await supabase.from('alerts').update({ sent_at: new Date().toISOString() }).eq('id', r.id);
+      sent++;
+    } catch (err: unknown) {
+      failed++;
+      const error = err instanceof Error ? err.message : String(err);
+      console.log(JSON.stringify({ ev: 'alerts.send_fail', id: r.id, type: r.type, error }));
+      continue;
+    }
   }
 
-  console.log(JSON.stringify({ ev: 'alerts.run', pending: rows.length, sent, deferred }));
+  console.log(JSON.stringify({ ev: 'alerts.run', pending: rows.length, sent, deferred, failed }));
+  return { sent, deferred, failed };
 }

@@ -10,13 +10,19 @@
 // Env: GSC_SA_JSON, (DB) SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { createSign } from 'node:crypto';
 import { gscPropertyCandidates, parseGscResponse } from '../../packages/core/dist/gsc.js';
+import { isoWeek } from '../../packages/core/dist/proactive.js';
 
 const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 const TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const RANGE_DAYS = 28;
 const LAG_DAYS = 3; // GSC dáta majú ~2-3 dňové oneskorenie
+// Prepad návštevnosti na ~nulu (možný deindex/penalta): predošlé impresie musia
+// prekročiť FLOOR (ignoruj drobné/sezónne weby), aktuálne musia byť pod NEAR_ZERO.
+const GSC_COLLAPSE_FLOOR = 100;
+const GSC_COLLAPSE_NEAR_ZERO = 5;
 
 import { runJob } from '../_shared/runJob.mjs';
+import { raiseAlerts } from '../_shared/raiseAlert.mjs';
 
 function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
@@ -74,15 +80,25 @@ async function queryProperty(token, property, dims, startDate, endDate, rowLimit
 export async function probeGsc(token, siteUrl) {
   const { startDate, endDate } = dateRange();
   const candidates = gscPropertyCandidates(siteUrl);
+  let sawForbidden = false; // 403 = property v GSC existuje, ale prístup nám odobrali
   for (const property of candidates) {
     const totals = await queryProperty(token, property, [], startDate, endDate, 1);
-    if (totals.status === 403 || totals.status === 404) continue; // property/prístup neexistuje → skús ďalšiu
+    // ROZLÍŠENIE 403 vs 404: 403 = property JE nakonfigurovaná, len service
+    // accountu odobrali prístup (= zlyhanie zberu). 404 = property v GSC vôbec
+    // nie je (web ju nemá → legitímne preskočenie). Pri 403 skús ešte ďalších
+    // kandidátov (možno funguje sc-domain:), ale zapamätaj si to.
+    if (totals.status === 403) { sawForbidden = true; continue; }
+    if (totals.status === 404) continue;
     if (!totals.ok) throw new Error(`GSC ${totals.status}: ${JSON.stringify(totals.body)}`);
     const queries = await queryProperty(token, property, ['query'], startDate, endDate, 25);
     const sum = parseGscResponse(totals.body.rows ?? [], queries.body.rows ?? [], 10);
     return { property, range_days: RANGE_DAYS, ...sum };
   }
-  return null; // žiadna property nedostupná pre tento web
+  // Žiadny kandidát nevrátil dáta. Ak sme videli 403 → property existovala a
+  // prístup nám odobrali = tvrdé zlyhanie (throw → zaráta sa do failed →
+  // job_failed). Ak boli len 404 → web GSC property nemá → null (legit skip).
+  if (sawForbidden) throw new Error('GSC_REVOKED: prístup k property odobraný (403)');
+  return null;
 }
 
 async function main() {
@@ -110,12 +126,18 @@ async function run() {
   const srv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
 
-  const sitesRes = await fetch(`${url}/rest/v1/sites?select=id,org_id,url&is_active=eq.true`, { headers: restHeaders(srv) });
+  const sitesRes = await fetch(`${url}/rest/v1/sites?select=id,org_id,url,domain&is_active=eq.true`, { headers: restHeaders(srv) });
   const sites = await sitesRes.json();
+  // Predošlé impresie PRED prepisom (gsc_snapshots je 1 riadok/web,
+  // on_conflict=site_id) — potrebné na detekciu prepadu na ~nulu.
+  const prevRows = await (await fetch(`${url}/rest/v1/gsc_snapshots?select=site_id,impressions`, { headers: restHeaders(srv) })).json();
+  const prevImpr = new Map((Array.isArray(prevRows) ? prevRows : []).map((r) => [r.site_id, r.impressions]));
   const now = new Date().toISOString();
+  const wk = isoWeek(new Date());
   let ok = 0;
   let missing = 0;
   let failed = 0;
+  const alertRows = []; // prepad návštevnosti → e-mailová fronta (runAlerts)
 
   for (const s of sites) {
     let row;
@@ -137,15 +159,43 @@ async function run() {
         };
         ok++;
         console.log(JSON.stringify({ ev: 'gsc.ok', url: s.url, property: r.property, clicks: r.clicks, impressions: r.impressions }));
+
+        // Prepad na ~nulu (možný deindex/penalta): LEN keď predošlý snapshot
+        // prekročil FLOOR (permanentne maličký/sezónny web tak nikdy nealertuje)
+        // a aktuálne impresie sú pod NEAR_ZERO. Dedupe: 1× per web per ISO týždeň.
+        const prev = prevImpr.get(s.id);
+        if (typeof prev === 'number' && prev >= GSC_COLLAPSE_FLOOR && r.impressions < GSC_COLLAPSE_NEAR_ZERO) {
+          const dom = s.domain ?? s.url ?? 'web';
+          alertRows.push({
+            org_id: s.org_id,
+            site_id: s.id,
+            type: 'gsc_collapse',
+            severity: 'warning',
+            title: `${dom}: prepad návštevnosti z Google`,
+            body: `impresie ${prev} → ${r.impressions} — možný deindex / penalta, over v Search Console`,
+            dedupe_key: `gsc_collapse:${s.id}:${wk}`,
+          });
+        }
       } else {
         row = { site_id: s.id, org_id: s.org_id, clicks: null, range_days: RANGE_DAYS, measured_at: now, error: 'no accessible GSC property' };
         missing++;
         console.log(JSON.stringify({ ev: 'gsc.missing', url: s.url }));
       }
     } catch (e) {
-      row = { site_id: s.id, org_id: s.org_id, clicks: null, range_days: RANGE_DAYS, measured_at: now, error: String(e?.message ?? e) };
+      const reason = String(e?.message ?? e);
+      if (reason.startsWith('GSC_REVOKED')) {
+        // Odobraný prístup k EXISTUJÚCEJ property = zlyhanie zberu (nie „web nemá
+        // GSC"). Ráta sa do failed (→ status partial/error → job_failed e-mail) a
+        // ZÁMERNE NEUPSERTUJEME: čerstvý measured_at s clicks=null by cez
+        // computeFreshness vyzeral „dnes zmerané", hoci sme nič nezmerali — nechaj
+        // staré dáta prirodzene zostarnúť (stale), nemaskuj ich.
+        failed++;
+        console.log(JSON.stringify({ ev: 'gsc.revoked', url: s.url }));
+        continue; // preskoč upsert
+      }
+      row = { site_id: s.id, org_id: s.org_id, clicks: null, range_days: RANGE_DAYS, measured_at: now, error: reason };
       failed++;
-      console.log(JSON.stringify({ ev: 'gsc.fail', url: s.url, error: String(e?.message ?? e) }));
+      console.log(JSON.stringify({ ev: 'gsc.fail', url: s.url, error: reason }));
     }
     const up = await fetch(`${url}/rest/v1/gsc_snapshots?on_conflict=site_id`, {
       method: 'POST',
@@ -154,7 +204,9 @@ async function run() {
     });
     if (!up.ok) console.log(JSON.stringify({ ev: 'gsc.upsert_fail', url: s.url, status: up.status, body: await up.text() }));
   }
-  console.log(JSON.stringify({ ev: 'gsc.done', ok, missing, failed }));
+  // Non-fatal insert, dedupe cez unique dedupe_key.
+  await raiseAlerts(url, srv, alertRows, 'gsc.alerts_fail');
+  console.log(JSON.stringify({ ev: 'gsc.done', ok, missing, failed, alerts: alertRows.length }));
   return { ok, failed };
 }
 

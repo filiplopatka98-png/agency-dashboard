@@ -58,4 +58,8 @@ describe('JOB_SCHEDULES', () => {
       expect(JOB_SCHEDULES).toHaveProperty(key);
     }
   });
+
+  it('cve je DENNÝ (wp-cve.yml beží 0 6 * * *), nie týždenný (FIX 3)', () => {
+    expect(JOB_SCHEDULES.cve!.kind).toBe('daily');
+  });
 });

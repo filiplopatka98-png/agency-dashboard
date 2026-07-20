@@ -38,12 +38,18 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   // spoločný limit by mohol vypadnúť skôr, než sa dostane k riedkemu
   // týždennému/mesačnému jobu, a ten by sa nesprávne javil ako „nikdy
   // nevidený" → falošné negatívum (žiadny alert namiesto potrebného).
-  const latest = new Map<string, string | null>();
+  interface LatestRun {
+    finished_at: string | null;
+    status: string | null;
+    error: string | null;
+    failed: number | null;
+  }
+  const latest = new Map<string, LatestRun>();
   await Promise.all(
     jobs.map(async (job) => {
       const { data, error } = await supabase
         .from('job_runs')
-        .select('finished_at')
+        .select('finished_at, status, error, failed')
         .eq('job', job)
         .order('finished_at', { ascending: false })
         .limit(1)
@@ -55,12 +61,40 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
         console.log(JSON.stringify({ ev: 'job_health.check_fail', job, error: error.message }));
         return;
       }
-      latest.set(job, data?.finished_at ?? null);
+      if (data) {
+        latest.set(job, {
+          finished_at: data.finished_at ?? null,
+          status: data.status ?? null,
+          error: data.error ?? null,
+          failed: data.failed ?? null,
+        });
+      }
     }),
   );
 
-  const overdueJobs = jobs.filter((job) => isOverdue(latest.get(job) ?? null, JOB_SCHEDULES[job]!, now.getTime()));
-  if (overdueJobs.length === 0) {
+  // Dead-man's switch: job „mešká" (žiadny čerstvý zaznamenaný beh).
+  const overdueJobs = jobs.filter((job) => isOverdue(latest.get(job)?.finished_at ?? null, JOB_SCHEDULES[job]!, now.getTime()));
+
+  // FIX 2: collector, čo BEŽÍ, ale posledný beh skončil status='error'/'partial'
+  // (napr. expirovaný GSC/WPScan token → hodí alebo vynuluje všetko). finished_at
+  // je čerstvý → NIKDY nie je overdue → bez tejto vetvy by NIKDY nealertoval
+  // (zelený dashboard, nič namerané). job_overdue a job_failed sú DVA nezávislé
+  // signály; oba naraz je OK (rôzne dedupe_key).
+  //
+  // FIX A: `scheduler` (meta-runner) je z job_failed VYLÚČENÝ. Jeho status='error'
+  // vzniká pri KAŽDOM jednom transientnom zlyhaní kroku ticku (napr. runWpCronKick
+  // raz hodí na krátko nedostupnom WP webe — viď runTick v index.ts), takže by
+  // generoval falošné „scheduler: zber zlyhal" e-maily; navyše text o „finished_at
+  // je čerstvý / dead-man's switch" pre meta-runner nedáva zmysel. Audit rozhodnutie
+  // (zlyhanie zberača → e-mail) cieli len na COLLECTORY. Vlastné zdravie schedulera
+  // rieši zápis statusu + (akceptovaná) medzera vlastnej smrti, nie job_failed.
+  const failedJobs = jobs.filter((job) => {
+    if (job === 'scheduler') return false;
+    const st = latest.get(job)?.status;
+    return st === 'error' || st === 'partial';
+  });
+
+  if (overdueJobs.length === 0 && failedJobs.length === 0) {
     console.log(JSON.stringify({ ev: 'job_health.ok', checked: jobs.length }));
     return;
   }
@@ -70,7 +104,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   if (!orgs?.length) return;
 
   const day = now.toISOString().slice(0, 10); // dedupe: max 1× per job per deň
-  const alertRows = orgs.flatMap((org: { id: string }) =>
+  const overdueRows = orgs.flatMap((org: { id: string }) =>
     overdueJobs.map((job) => ({
       org_id: org.id,
       site_id: null,
@@ -82,10 +116,30 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
     })),
   );
 
+  const failedRows = orgs.flatMap((org: { id: string }) =>
+    failedJobs.map((job) => {
+      const run = latest.get(job)!;
+      const detail =
+        run.status === 'partial'
+          ? `${run.failed ?? 'niekoľko'} webov zlyhalo pri poslednom behu.`
+          : (run.error?.trim() || 'Bez detailu chyby.');
+      return {
+        org_id: org.id,
+        site_id: null,
+        type: 'job_failed',
+        severity: 'warning' as const,
+        title: `${job}: zber zlyhal`,
+        body: `Posledný beh jobu „${job}" skončil status='${run.status}', hoci prebehol (finished_at je čerstvý, takže dead-man's switch to nezachytí). Detail: ${detail}`,
+        dedupe_key: `job_failed:${job}:${day}`,
+      };
+    }),
+  );
+
+  const alertRows = [...overdueRows, ...failedRows];
   const { error: aErr } = await supabase
     .from('alerts')
     .upsert(alertRows, { onConflict: 'dedupe_key', ignoreDuplicates: true });
-  if (aErr) throw new Error(`job_overdue alert: ${aErr.message}`);
+  if (aErr) throw new Error(`job_health alert: ${aErr.message}`);
 
-  console.log(JSON.stringify({ ev: 'job_health.overdue', jobs: overdueJobs }));
+  console.log(JSON.stringify({ ev: 'job_health.alert', overdue: overdueJobs, failed: failedJobs }));
 }

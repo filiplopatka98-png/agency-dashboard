@@ -1,10 +1,8 @@
 import type { Env } from './env';
 import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
-import { runDomains } from './runDomains';
 import { runJobHealth } from './runJobHealth';
 import { runWpCronKick } from './runWpCronKick';
-import { defaultDomainResolver } from './domainResolver';
 import { serviceClient } from './supabase';
 import { wpIngest } from './wpIngest';
 import { triggerJob } from './trigger';
@@ -24,23 +22,7 @@ export default {
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const now = new Date(event.scheduledTime);
     console.log(JSON.stringify({ ev: 'scheduled.tick', at: now.toISOString() }));
-    ctx.waitUntil(
-      (async () => {
-        try {
-          await runUptime(env); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
-          await runDomains(env, defaultDomainResolver, { limit: 3 }); // round-robin doména (>20 h)
-          await runWpCronKick(env, { limit: 3 }); // kopni wp-cron.php na zaspatých WP weboch (>25h bez push)
-          await runJobHealth(env); // dead-man's switch — insertne job_overdue alert, ak nejaký job zaspal (audit 3.3)
-          await runAlerts(env); // odoslanie nevyslaných alertov (dedupe už v DB)
-          await recordSchedulerRun(env, 'ok', null);
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.log(JSON.stringify({ ev: 'scheduled.error', message }));
-          await recordSchedulerRun(env, 'error', message);
-          throw err;
-        }
-      })(),
-    );
+    ctx.waitUntil(runTick(env));
     // TODO(krok 8): region_outage alert (insert) + expiry alerty (GitHub Action alebo tu)
   },
 
@@ -58,6 +40,63 @@ export default {
     return new Response('Monitorix scheduler', { status: 200 });
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * Injektovateľné kroky ticku — pre testovanie odolnosti (FIX 1). V produkcii
+ * zostávajú default implementácie.
+ */
+export interface TickSteps {
+  runUptime?: (env: Env) => Promise<unknown>;
+  runDomains?: (env: Env) => Promise<unknown>;
+  runWpCronKick?: (env: Env) => Promise<unknown>;
+  runJobHealth?: (env: Env) => Promise<unknown>;
+  runAlerts?: (env: Env) => Promise<unknown>;
+  recordSchedulerRun?: (env: Env, status: 'ok' | 'error', error: string | null) => Promise<void>;
+}
+
+/**
+ * Jeden tick, ODOLNE (FIX 1): každý krok je zabalený tak, aby jeho zlyhanie
+ * nezabránilo bežať ostatným — hlavne `runAlerts` (drain e-mailov) beží NAKONIEC
+ * VŽDY, aj keď skorší krok (uptime/domains/wp-cron/job-health) hodil. Predtým
+ * bola sekvencia v jednom try a throw v skoršom kroku prerušil drain → kritický
+ * site_down sa neodoslal. Chyby sa zozbierajú a zapíšu ako status 'error' (aby
+ * to dead-man's switch aj UI videli), ale tick sa už NEprerušuje.
+ */
+export async function runTick(env: Env, steps: TickSteps = {}): Promise<void> {
+  const uptime = steps.runUptime ?? ((e: Env) => runUptime(e));
+  // runDomains → domainResolver → whois používa `cloudflare:sockets` (Workers-only
+  // runtime import). Lazy `import()` v defaultnom kroku drží modul-graf ticku
+  // čistý, aby ho bolo možné importovať v jednotkovom teste bez Workers runtime.
+  const domains =
+    steps.runDomains ??
+    (async (e: Env) => {
+      const [{ runDomains }, { defaultDomainResolver }] = await Promise.all([import('./runDomains'), import('./domainResolver')]);
+      return runDomains(e, defaultDomainResolver, { limit: 3 });
+    });
+  const wpCron = steps.runWpCronKick ?? ((e: Env) => runWpCronKick(e, { limit: 3 }));
+  const jobHealth = steps.runJobHealth ?? ((e: Env) => runJobHealth(e));
+  const alerts = steps.runAlerts ?? ((e: Env) => runAlerts(e));
+  const record = steps.recordSchedulerRun ?? recordSchedulerRun;
+
+  const errors: string[] = [];
+  const step = async (name: string, fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await fn();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(JSON.stringify({ ev: 'scheduled.step_error', step: name, message }));
+      errors.push(`${name}: ${message}`);
+    }
+  };
+
+  await step('uptime', () => uptime(env)); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
+  await step('domains', () => domains(env)); // round-robin doména (>20 h)
+  await step('wp_cron_kick', () => wpCron(env)); // kopni wp-cron.php na zaspatých WP weboch (>25h bez push)
+  await step('job_health', () => jobHealth(env)); // dead-man's switch — insertne job_overdue/job_failed alert
+  await step('alerts', () => alerts(env)); // odoslanie nevyslaných alertov (dedupe už v DB) — VŽDY, aj po zlyhaní vyššie
+
+  await record(env, errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);
+}
 
 /** Zapíše beh scheduler ticku do job_runs (best-effort — nezhodí tick). */
 async function recordSchedulerRun(env: Env, status: 'ok' | 'error', error: string | null): Promise<void> {
