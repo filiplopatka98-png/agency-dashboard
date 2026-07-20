@@ -100,7 +100,11 @@ export async function crawlSite(domain) {
   const canonicalOk = pages.length > 0 && pages.every((p) => p.hasCanonical);
   // `failed_pages` je len signál pre volajúceho (main) — NESMIE sa dostať do
   // seo_snapshots (viď row v main(), kde sa spreadá cielene bez tohto poľa).
-  return { pages_crawled: pages.length, sitemap_ok: sitemapOk, robots_ok: robotsOk, canonical_ok: canonicalOk, issues, failed_pages: failedPages };
+  // 503 na roote = web v úmyselnej údržbe (pred-launch). Surfaceni to hore,
+  // nech `main()` web preskočí bez `failed++` (inak by seo hlásilo job_failed
+  // každý deň, kým je web v údržbe). Reálny výpadok rieši uptime zvlášť.
+  const maintenance = status.get(origin + '/') === 503;
+  return { pages_crawled: pages.length, sitemap_ok: sitemapOk, robots_ok: robotsOk, canonical_ok: canonicalOk, issues, failed_pages: failedPages, maintenance };
 }
 
 import { runJob } from '../_shared/runJob.mjs';
@@ -152,10 +156,16 @@ async function run() {
     let events = [];
     try {
       const r = await crawlSite(s.domain);
+      // Web v úmyselnej údržbe (503 na roote) — preskoč: žiadny zápis (nechaj
+      // starý riadok zostarnúť), NErátaj ako failed, nech job ostane 'ok'.
+      if (r.maintenance) {
+        console.log(JSON.stringify({ ev: 'seo.skip_maintenance', domain: s.domain }));
+        continue;
+      }
       if (r.pages_crawled === 0) throw new Error('žiadna stránka sa nenačítala');
-      // `failed_pages` je len interný signál (partial crawl) — vyber ho zo `r`
-      // predtým, než ho spreadneme do `row`, nech sa nedostane do seo_snapshots.
-      const { failed_pages, ...snapshot } = r;
+      // `failed_pages`/`maintenance` sú len interné signály — vyber ich zo `r`
+      // predtým, než ho spreadneme do `row`, nech sa nedostanú do seo_snapshots.
+      const { failed_pages, maintenance, ...snapshot } = r;
       row = { site_id: s.id, org_id: s.org_id, ...snapshot, measured_at: now, error: null };
       const partial = failed_pages > 0;
       if (partial) {

@@ -74,6 +74,15 @@ async function discoverPages(origin, robotsTxt, homepageHtml) {
 export async function probeAeo(domain) {
   const origin = `https://${domain}`;
   const res = await tryFetch(origin);
+  // 503 = web v úmyselnej údržbe (pred-launch maintenance stránka). Obsah sa
+  // nedá hodnotiť, ale NIE je to chyba zberu — označ to rozlíšiteľne, nech to
+  // `run()` preskočí bez `failed++` (inak by seo/aeo hlásili job_failed každý
+  // deň, kým je web v údržbe). Reálny výpadok rieši uptime/site_down zvlášť.
+  if (res && res.status === 503) {
+    const e = new Error(`${domain}: údržba (503)`);
+    e.maintenance = true;
+    throw e;
+  }
   if (!res || !res.ok) throw new Error(`fetch ${domain}: ${res ? res.status : 'network'}`);
   const homepageHtml = (await res.text()).slice(0, 500_000);
 
@@ -134,6 +143,12 @@ async function run() {
       ok++;
       console.log(JSON.stringify({ ev: 'aeo.ok', domain: s.domain, score: r.score, pages: r.pagesChecked }));
     } catch (e) {
+      // Web v úmyselnej údržbe (503) — preskoč: žiadny zápis (nechaj starý
+      // riadok zostarnúť), NErátaj ako failed, nech job ostane 'ok'.
+      if (e?.maintenance) {
+        console.log(JSON.stringify({ ev: 'aeo.skip_maintenance', domain: s.domain }));
+        continue;
+      }
       row = { site_id: s.id, org_id: s.org_id, score: null, measured_at: now, error: String(e?.message ?? e) };
       failed++;
       console.log(JSON.stringify({ ev: 'aeo.fail', domain: s.domain, error: String(e?.message ?? e) }));

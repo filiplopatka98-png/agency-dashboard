@@ -123,6 +123,12 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
         run.status === 'partial'
           ? `${run.failed ?? 'niekoľko'} webov zlyhalo pri poslednom behu.`
           : (run.error?.trim() || 'Bez detailu chyby.');
+      // Dedupe kľúčuje na dátum ZLYHANÉHO BEHU, nie na dnešok. TÝŽDENNÝ job
+      // (aeo/seo/security/tls/infra) má ten istý partial beh najnovší celých 7
+      // dní — s `day` (dnešok) by re-alertoval každý deň (nový deň = nový kľúč).
+      // S dátumom behu upozorní jeden zlyhaný beh práve raz; ďalší (nový) beh
+      // má nový finished_at → nový alert, keď zlyhá znova.
+      const runDay = (run.finished_at ?? '').slice(0, 10) || day;
       return {
         org_id: org.id,
         site_id: null,
@@ -130,7 +136,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
         severity: 'warning' as const,
         title: `${job}: zber zlyhal`,
         body: `Posledný beh jobu „${job}" skončil status='${run.status}', hoci prebehol (finished_at je čerstvý, takže dead-man's switch to nezachytí). Detail: ${detail}`,
-        dedupe_key: `job_failed:${job}:${day}`,
+        dedupe_key: `job_failed:${job}:${runDay}`,
       };
     }),
   );

@@ -57,6 +57,19 @@ describe('runJobHealth — job_failed pri zlyhanom zbere (FIX 2)', () => {
     expect(jobFailed(store)).toHaveLength(0);
   });
 
+  it('týždenný job: ten istý partial beh v dva rôzne dni → len JEDEN alert (dedupe na dátum behu)', async () => {
+    // aeo/seo bežia týždenne — partial beh ostane najnovší 7 dní. Dedupe na
+    // dátum BEHU (nie na dnešok) → jeden zlyhaný beh upozorní práve raz, nie
+    // každý deň až do budúceho pondelka.
+    const store = baseStore();
+    store.job_runs.push({ job: 'aeo', status: 'partial', failed: 1, finished_at: '2026-07-20T06:34:00Z' });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: new Date('2026-07-20T12:00:00Z') });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: new Date('2026-07-21T12:00:00Z') });
+    const rows = jobFailed(store);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.dedupe_key).toBe('job_failed:aeo:2026-07-20');
+  });
+
   it('meta-job „scheduler" so status=error NEgeneruje job_failed; collector áno (FIX A)', async () => {
     const store = baseStore();
     // scheduler=error je bežný dôsledok jedného transientného zlyhania kroku
