@@ -25,6 +25,21 @@ describe('renderAlertHtml', () => {
     const html = renderAlertHtml(alert({ body: null }));
     expect(html).not.toContain('<p></p>');
   });
+
+  it('escapuje HTML v title aj body (injekcia cez WP-agent dáta)', () => {
+    const html = renderAlertHtml(
+      alert({
+        title: 'Plugin <img src=x onerror=alert(1)>',
+        body: 'Odkaz <a href="http://evil">klikni</a>',
+      }),
+    );
+    // surové značky sa nesmú dostať do HTML
+    expect(html).not.toContain('<img src=x');
+    expect(html).not.toContain('<a href="http://evil"');
+    // musia byť escapované
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).toContain('&lt;a href=&quot;http://evil&quot;&gt;klikni&lt;/a&gt;');
+  });
 });
 
 describe('ResendNotifier', () => {
