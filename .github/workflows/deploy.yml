@@ -38,7 +38,8 @@ jobs:
       #    NEXT_PUBLIC_* sa inlinujú do klienta, service key NIE (žiadny prefix).
       - name: Build web
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          # Reuse existujúceho SUPABASE_URL (rovnaká hodnota ako NEXT_PUBLIC_SUPABASE_URL).
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: pnpm --filter web build
