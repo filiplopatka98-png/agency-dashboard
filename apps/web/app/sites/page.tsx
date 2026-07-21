@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Shell } from '../components/Shell';
+import { Modal } from '../components/Modal';
 import { loadDashboard, type SiteVM } from '../lib/data';
 import { supabase, type Client } from '../lib/supabase';
 import {
@@ -17,6 +18,7 @@ import {
 } from '../lib/design';
 import { relativeTime } from '../lib/format';
 import type { FreshKey } from '../lib/data';
+import { maxFixedIn, maxSev, sevMeta, type Vuln } from '../lib/vulns';
 import { TabDiary } from './TabDiary';
 
 const card = {
@@ -99,12 +101,13 @@ function SitesList() {
             </thead>
             <tbody>
               {filtered.map((site) => (
-                <tr key={site.id} className="mx-row" onClick={() => { window.location.href = `/sites?id=${site.id}`; }} style={{ borderTop: '1px solid var(--border-primary)', cursor: 'pointer', transition: 'background 0.15s' }}>
+                <tr key={site.id} className="mx-row" style={{ borderTop: '1px solid var(--border-primary)', transition: 'background 0.15s' }}>
                   <td style={{ padding: '14px 18px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                       <div className={site.pulseClass} style={{ width: 9, height: 9, borderRadius: '50%', background: site.dotColor, flexShrink: 0 }} />
                       <div>
-                        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{site.name}</div>
+                        {/* Skutočný odkaz = klávesnicovo dosiahnuteľný a otvoriteľný v novom tabe (WCAG 2.1.1). */}
+                        <Link href={`/sites?id=${site.id}`} style={{ color: 'var(--text-primary)', fontWeight: 600, textDecoration: 'none' }}>{site.name}</Link>
                         <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{site.domain}</div>
                       </div>
                     </div>
@@ -229,27 +232,26 @@ function SiteDetail({ id }: { id: string }) {
         </div>
 
         {edit && (
-          <div onClick={() => !busy && setEdit(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: 'min(480px,100%)' }}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>Upraviť web</div>
+          <Modal onClose={() => !busy && setEdit(null)} labelledBy="edit-site-title" maxWidth={480}>
+              <h2 id="edit-site-title" style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-primary)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>Upraviť web</h2>
               <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {([['Názov', 'name'], ['Doména', 'domain']] as const).map(([lab, k]) => (
                   <div key={k}>
-                    <label style={{ ...label, display: 'block', marginBottom: 6 }}>{lab}</label>
-                    <input value={edit[k]} onInput={(e) => setEdit({ ...edit, [k]: (e.target as HTMLInputElement).value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', ...(k === 'domain' ? mono : {}) }} />
+                    <label htmlFor={`edit-${k}`} style={{ ...label, display: 'block', marginBottom: 6 }}>{lab}</label>
+                    <input id={`edit-${k}`} value={edit[k]} onInput={(e) => setEdit({ ...edit, [k]: (e.target as HTMLInputElement).value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none', ...(k === 'domain' ? mono : {}) }} />
                   </div>
                 ))}
                 <div>
-                  <label style={{ ...label, display: 'block', marginBottom: 6 }}>Typ webu (CMS)</label>
-                  <select value={edit.cms} onChange={(e) => setEdit({ ...edit, cms: e.target.value as 'wordpress' | 'static' | 'other' })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
+                  <label htmlFor="edit-cms" style={{ ...label, display: 'block', marginBottom: 6 }}>Typ webu (CMS)</label>
+                  <select id="edit-cms" value={edit.cms} onChange={(e) => setEdit({ ...edit, cms: e.target.value as 'wordpress' | 'static' | 'other' })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
                     <option value="wordpress">WordPress</option>
                     <option value="static">Statický</option>
                     <option value="other">Iné</option>
                   </select>
                 </div>
                 <div>
-                  <label style={{ ...label, display: 'block', marginBottom: 6 }}>Klient</label>
-                  <select value={edit.client_id} onChange={(e) => setEdit({ ...edit, client_id: e.target.value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
+                  <label htmlFor="edit-client" style={{ ...label, display: 'block', marginBottom: 6 }}>Klient</label>
+                  <select id="edit-client" value={edit.client_id} onChange={(e) => setEdit({ ...edit, client_id: e.target.value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
                     <option value="">Bez klienta</option>
                     {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
@@ -260,8 +262,7 @@ function SiteDetail({ id }: { id: string }) {
                 <button onClick={() => setEdit(null)} disabled={busy} style={{ padding: '9px 16px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: 'var(--text-secondary)' }}>Zrušiť</button>
                 <button onClick={saveEdit} disabled={busy} style={{ padding: '9px 18px', background: 'var(--accent-primary)', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 13.5, fontWeight: 600, opacity: busy ? 0.6 : 1 }}>{busy ? 'Ukladám…' : 'Uložiť'}</button>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Quick stats */}
@@ -273,20 +274,22 @@ function SiteDetail({ id }: { id: string }) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 24, overflowX: 'auto', background: 'var(--surface-secondary)', padding: 5, borderRadius: 12, width: 'fit-content', maxWidth: '100%' }}>
+        <div role="tablist" aria-label="Sekcie webu" style={{ display: 'flex', gap: 4, marginBottom: 24, overflowX: 'auto', background: 'var(--surface-secondary)', padding: 5, borderRadius: 12, width: 'fit-content', maxWidth: '100%' }}>
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: '8px 16px', fontSize: 13.5, fontWeight: 600, color: tab === t.id ? 'var(--accent-primary)' : 'var(--text-secondary)', background: tab === t.id ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.18s' }}>{t.label}</button>
+            <button key={t.id} role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id} aria-controls={`tabpanel-${t.id}`} onClick={() => setTab(t.id)} style={{ padding: '8px 16px', fontSize: 13.5, fontWeight: 600, color: tab === t.id ? 'var(--accent-primary)' : 'var(--text-secondary)', background: tab === t.id ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.18s' }}>{t.label}</button>
           ))}
         </div>
 
-        {tab === 'overview' && <TabOverview site={site} />}
-        {tab === 'uptime' && <TabUptime site={site} />}
-        {tab === 'performance' && <TabPerformance site={site} />}
-        {tab === 'seo' && <TabSeo site={site} />}
-        {tab === 'aeo' && <TabAeo site={site} />}
-        {tab === 'infra' && <TabInfra site={site} />}
-        {tab === 'diary' && <TabDiary siteId={site.id} orgId={site.orgId ?? null} />}
-        {tab === 'client' && <TabClient site={site} />}
+        <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
+          {tab === 'overview' && <TabOverview site={site} />}
+          {tab === 'uptime' && <TabUptime site={site} />}
+          {tab === 'performance' && <TabPerformance site={site} />}
+          {tab === 'seo' && <TabSeo site={site} />}
+          {tab === 'aeo' && <TabAeo site={site} />}
+          {tab === 'infra' && <TabInfra site={site} />}
+          {tab === 'diary' && <TabDiary siteId={site.id} orgId={site.orgId ?? null} />}
+          {tab === 'client' && <TabClient site={site} />}
+        </div>
       </div>
     </div>
   );
@@ -763,40 +766,6 @@ function TabAeo({ site }: { site: SiteVM }) {
       </div>
     </div>
   );
-}
-
-type Vuln = { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null; cvss: number | null; severity: string };
-
-// Zobrazenie CVSS závažnosti (label/farby/rank). 'unknown' = skóre zatiaľ nemáme.
-const SEV_META: Record<string, { label: string; color: string; bg: string; rank: number }> = {
-  critical: { label: 'Kritická', color: 'var(--critical-color)', bg: 'var(--critical-bg)', rank: 5 },
-  high: { label: 'Vysoká', color: 'var(--critical-color)', bg: 'var(--critical-bg)', rank: 4 },
-  medium: { label: 'Stredná', color: 'var(--warning-color)', bg: 'var(--warning-bg)', rank: 3 },
-  unknown: { label: 'Neznáma', color: 'var(--text-tertiary)', bg: 'var(--surface-secondary)', rank: 2 },
-  low: { label: 'Nízka', color: 'var(--text-secondary)', bg: 'var(--surface-secondary)', rank: 1 },
-  none: { label: 'Žiadna', color: 'var(--text-tertiary)', bg: 'var(--surface-secondary)', rank: 0 },
-};
-const sevMeta = (s: string | null | undefined) => SEV_META[s ?? 'unknown'] ?? SEV_META.unknown;
-const maxSev = (items: Vuln[]) => items.reduce((best, v) => (sevMeta(v.severity).rank > sevMeta(best).rank ? v.severity : best), 'none' as string);
-
-function cmpVer(a: string, b: string): number {
-  const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
-  const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d < 0 ? -1 : 1;
-  }
-  return 0;
-}
-// Najvyššia fixed_in (updatni sem → vyriešiš všetky CVE skupiny); null ak niektorá nemá opravu.
-function maxFixedIn(items: Vuln[]): string | null {
-  let hasUnfixed = false;
-  let max: string | null = null;
-  for (const v of items) {
-    if (!v.fixed_in) hasUnfixed = true;
-    else if (!max || cmpVer(v.fixed_in, max) > 0) max = v.fixed_in;
-  }
-  return hasUnfixed ? null : max;
 }
 
 function TabInfra({ site }: { site: SiteVM }) {

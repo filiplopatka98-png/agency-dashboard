@@ -19,6 +19,7 @@ export default function AlertsPage() {
   const [siteName, setSiteName] = useState<Map<string, string>>(new Map());
   const [alertFilter, setAlertFilter] = useState<Filter>('all');
   const [tick, setTick] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -27,6 +28,7 @@ export default function AlertsPage() {
       if (!active) return;
       setAlerts(alerts);
       setSiteName(new Map(sites.map((s) => [s.id, s.name])));
+      setLoading(false);
     })();
     return () => {
       active = false;
@@ -65,8 +67,10 @@ export default function AlertsPage() {
     color: alertFilter === k ? 'var(--accent-primary)' : 'var(--text-secondary)',
   });
 
-  const alertsPopulated = filteredAlerts.length > 0;
-  const alertsEmpty = filteredAlerts.length === 0;
+  // Kým beží prvé načítanie, NEUKAZUJ pozitívny „Žiadne alerty" (falošné
+  // „všetko OK" na bezpečnostne kritickej obrazovke) — rozlíš loading od empty.
+  const alertsPopulated = !loading && filteredAlerts.length > 0;
+  const alertsEmpty = !loading && filteredAlerts.length === 0;
 
   return (
     <Shell>
@@ -101,6 +105,13 @@ export default function AlertsPage() {
                   <button onClick={alert.onResolve} style={{ padding: '7px 13px', background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 9, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 600 }}>{alert.resolveLabel}</button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Loading — nesmie preblysnúť pozitívny empty stav */}
+          {loading && (
+            <div style={{ textAlign: 'center', padding: '72px 20px', color: 'var(--text-secondary)', fontSize: 14 }} aria-busy="true">
+              Načítavam alerty…
             </div>
           )}
 

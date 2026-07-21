@@ -34,10 +34,22 @@ export default function StatusPage() {
   const monitored = sites.filter((s) => s.statusKey !== 'unknown');
   const down = sites.filter((s) => s.statusKey === 'down').length;
   const degraded = sites.filter((s) => s.statusKey === 'degraded').length;
-  const overallOk = down === 0 && degraded === 0;
-  const bannerBg = down > 0 ? 'var(--critical-bg)' : degraded > 0 ? 'var(--warning-bg)' : 'var(--ok-bg)';
-  const bannerColor = down > 0 ? 'var(--critical-color)' : degraded > 0 ? 'var(--warning-color)' : 'var(--ok-color)';
-  const bannerText = down > 0 ? `${down} systémov nedostupných` : degraded > 0 ? `${degraded} systémov degradovaných` : 'Všetky systémy fungujú';
+  // „nezistené ≠ ok" (brief §3.3): keď ešte nič nebolo skontrolované, NEUKAZUJ
+  // zelené „Všetky systémy fungujú" — je to neznámy stav, nie zdravý.
+  const noneMeasured = monitored.length === 0;
+  const overallOk = down === 0 && degraded === 0 && !noneMeasured;
+  // Slovenský plurál 1 / 2–4 / 5+.
+  const sk = (n: number, one: string, few: string, many: string) => (n === 1 ? one : n < 5 ? few : many);
+  const bannerBg = down > 0 ? 'var(--critical-bg)' : degraded > 0 ? 'var(--warning-bg)' : noneMeasured ? 'var(--unknown-bg)' : 'var(--ok-bg)';
+  const bannerColor = down > 0 ? 'var(--critical-color)' : degraded > 0 ? 'var(--warning-color)' : noneMeasured ? 'var(--unknown-color)' : 'var(--ok-color)';
+  const bannerText =
+    down > 0
+      ? `${down} ${sk(down, 'web nedostupný', 'weby nedostupné', 'webov nedostupných')}`
+      : degraded > 0
+        ? `${degraded} ${sk(degraded, 'web degradovaný', 'weby degradované', 'webov degradovaných')}`
+        : noneMeasured
+          ? 'Stav sa zatiaľ zisťuje'
+          : 'Všetky systémy fungujú';
 
   const upVals = monitored.map((s) => s.uptime30d).filter((v): v is number => v !== null);
   const avgUptime = upVals.length ? Math.round((upVals.reduce((a, b) => a + b, 0) / upVals.length) * 10) / 10 : null;
@@ -61,7 +73,7 @@ export default function StatusPage() {
         <div style={{ maxWidth: 760, margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, justifyContent: 'center', marginBottom: 8 }}>
             <div style={{ width: 28, height: 28, borderRadius: 'var(--radius)', background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 15 }}>◈</div>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>Lopatka — status</div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>Lopatka — status</h1>
           </div>
           <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 32 }}>Verejná status stránka · {sites.length} webov</div>
 
@@ -70,7 +82,7 @@ export default function StatusPage() {
               <div style={{ width: 14, height: 14, borderRadius: '50%', background: bannerColor }} />
               <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{bannerText}</div>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{overallOk ? 'Posledná kontrola pred pár minútami' : 'Sledujeme situáciu'}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{noneMeasured ? 'Zatiaľ bez meraní' : overallOk ? 'Priebežne sledované' : 'Sledujeme situáciu'}</div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 24 }}>

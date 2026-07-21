@@ -86,23 +86,42 @@ function freshDateModified(objects: unknown[], html: string): boolean {
 
 function parseBots(robotsTxt: string): { bots: Record<string, BotDecision>; namedCount: number } {
   const lines = robotsTxt.split(/\r?\n/).map((l) => l.replace(/#.*/, '').trim());
+
+  // robots.txt zoskupuje po sebe idúce `User-agent:` riadky pod JEDEN blok
+  // pravidiel. Preto najprv rozdelíme súbor na skupiny {agenti[], pravidlá},
+  // nech zdieľaný `Disallow: /` platí pre všetkých agentov skupiny — starý kód
+  // čítal len po najbližší ďalší `User-agent:` a zoskupeného bota hlásil „allow".
+  type Group = { agents: string[]; blocked: boolean };
+  const groups: Group[] = [];
+  let cur: Group | null = null;
+  let collectingAgents = false;
+  for (const line of lines) {
+    const ua = line.match(/^user-agent:\s*(.+)$/i);
+    if (ua) {
+      if (!cur || !collectingAgents) {
+        cur = { agents: [], blocked: false };
+        groups.push(cur);
+        collectingAgents = true;
+      }
+      cur.agents.push(ua[1]!.trim().toLowerCase());
+      continue;
+    }
+    if (!cur) continue;
+    collectingAgents = false; // ďalšie riadky sú pravidlá tejto skupiny
+    const dis = line.match(/^disallow:\s*(.*)$/i);
+    if (dis && dis[1]!.trim() === '/') cur.blocked = true;
+  }
+
   const bots: Record<string, BotDecision> = {};
   let named = 0;
   for (const bot of AI_BOTS) {
-    let decision: BotDecision = 'unset';
-    for (let i = 0; i < lines.length; i++) {
-      const ua = lines[i]!.match(/^user-agent:\s*(.+)$/i);
-      if (ua && ua[1]!.trim().toLowerCase() === bot.toLowerCase()) {
-        named++;
-        decision = 'allow';
-        for (let j = i + 1; j < lines.length && !/^user-agent:/i.test(lines[j]!); j++) {
-          const dis = lines[j]!.match(/^disallow:\s*(.*)$/i);
-          if (dis && dis[1]!.trim() === '/') decision = 'block';
-        }
-        break;
-      }
+    const g = groups.find((grp) => grp.agents.includes(bot.toLowerCase()));
+    if (!g) {
+      bots[bot] = 'unset';
+    } else {
+      named++;
+      bots[bot] = g.blocked ? 'block' : 'allow';
     }
-    bots[bot] = decision;
   }
   return { bots, namedCount: named };
 }
@@ -156,17 +175,28 @@ export function scoreAeo(input: { html: string | string[]; robotsTxt: string; ha
 
   const typesEarned = hasOrg && hasWebSite ? 15 : hasOrg || hasWebSite ? 8 : 0;
 
+  // Per-page checky (headings, canonical) sa skórujú PROPORCIONÁLNE k podielu
+  // stránok, ktoré ich spĺňajú — jedna zlá stránka (napr. WP archív s 2× H1)
+  // nezhodí celý web na 0. `pass` = spĺňajú VŠETKY (zelený stav v UI).
+  const total = pages.length;
+  const frac = (n: number) => (total ? n / total : 0);
+  const h1OkCount = pages.filter((p) => p.h1 === 1).length;
+  const someH2 = pages.some((p) => p.h2 >= 1);
+  const headingsEarned = someH2 ? Math.round(10 * frac(h1OkCount)) : 0;
+  const canonCount = pages.filter((p) => p.hasCanonical).length;
+  const canonEarned = Math.round(5 * frac(canonCount));
+
   const checks: AeoCheck[] = [
     mk('jsonld', 'JSON-LD štruktúrované dáta', 20, objectsAll.length > 0),
     { id: 'types', label: 'Relevantné typy (Organization + WebSite)', weight: 15, earned: typesEarned, pass: typesEarned === 15 },
     mk('author', 'Author / E-E-A-T signály', 10, hasAuthorPerson(objectsAll)),
     mk('freshness', 'Freshness (dateModified ≤ 12 mes.)', 10, pages.some((p) => freshDateModified(p.objects, p.html))),
-    mk('headings', 'Nadpisová štruktúra (1× H1, H2)', 10, pages.every((p) => p.h1 === 1) && pages.some((p) => p.h2 >= 1)),
+    { id: 'headings', label: 'Nadpisová štruktúra (1× H1, H2)', weight: 10, earned: headingsEarned, pass: h1OkCount === total && someH2 },
     mk('direct', 'Priama odpoveď (≤ 320 znakov)', 5, pages.some((p) => p.directAnswer)),
     mk('faq', 'FAQ bloky (FAQPage schema)', 10, typesAll.includes('FAQPage')),
     mk('llms', 'llms.txt', 5, hasLlmsTxt),
     mk('aibots', 'AI boti explicitne v robots.txt', 10, namedCount > 0),
-    mk('canonical', 'Canonical', 5, pages.every((p) => p.hasCanonical)),
+    { id: 'canonical', label: 'Canonical', weight: 5, earned: canonEarned, pass: canonCount === total },
   ];
 
   const score = Math.min(100, checks.reduce((n, c) => n + c.earned, 0));

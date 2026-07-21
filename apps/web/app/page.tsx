@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Shell } from './components/Shell';
+import { Modal } from './components/Modal';
 import { loadDashboard, type SiteVM } from './lib/data';
 import { supabase, type Client, type Alert } from './lib/supabase';
 import { relativeTime } from './lib/format';
@@ -12,6 +14,7 @@ export default function OverviewPage() {
   const [sites, setSites] = useState<SiteVM[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [clientFilter, setClientFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -51,6 +54,11 @@ export default function OverviewPage() {
         setAlerts(dash.alerts);
         setOrgId(mem.data?.org_id ?? null);
         setChanges(chg.data ?? []);
+      } catch (e) {
+        // Bez tohto by zlyhanie loadu (výpadok Supabase/siete) spadlo do
+        // prázdneho stavu „Zatiaľ žiadne weby" — čiže by tvárilo výpadok ako
+        // „nič tu nie je". Rozlíš error od prázdna (brief §3.4).
+        if (active) setLoadError(e instanceof Error ? e.message : String(e));
       } finally {
         if (active) setLoading(false);
       }
@@ -60,35 +68,39 @@ export default function OverviewPage() {
     };
   }, []);
 
-  // — odvodené hodnoty —
-  const sorted = [...sites].sort((a, b) => RANK[a.statusKey] - RANK[b.statusKey]);
+  // — odvodené hodnoty — (memoizované: prepočet len pri zmene dát/filtrov, nie
+  // pri každom rendere, napr. písaní do add-site modálu)
+  const { countUp, countDegraded, countDown, countUnknown, filtered, attentionSites } = useMemo(() => {
+    const sorted = [...sites].sort((a, b) => RANK[a.statusKey] - RANK[b.statusKey]);
+    const fil = sorted.filter((s) => {
+      if (clientFilter && s.clientId !== clientFilter) return false;
+      if (statusFilter && s.statusKey !== statusFilter) return false;
+      return true;
+    });
+    return {
+      countUp: sites.filter((s) => s.statusKey === 'up').length,
+      countDegraded: sites.filter((s) => s.statusKey === 'degraded').length,
+      countDown: sites.filter((s) => s.statusKey === 'down').length,
+      countUnknown: sites.filter((s) => s.statusKey === 'unknown').length,
+      filtered: fil,
+      attentionSites: fil.filter(
+        (s) =>
+          s.statusKey === 'down' ||
+          s.statusKey === 'degraded' ||
+          (s.hasExpiry && s.expiryIssues.some((e) => e.color === 'var(--critical-color)')),
+      ),
+    };
+  }, [sites, clientFilter, statusFilter]);
 
-  const countUp = sites.filter((s) => s.statusKey === 'up').length;
-  const countDegraded = sites.filter((s) => s.statusKey === 'degraded').length;
-  const countDown = sites.filter((s) => s.statusKey === 'down').length;
-  const countUnknown = sites.filter((s) => s.statusKey === 'unknown').length;
   const countDownColor = countDown > 0 ? 'var(--critical-color)' : 'var(--text-primary)';
-
-  const filtered = sorted.filter((s) => {
-    if (clientFilter && s.clientId !== clientFilter) return false;
-    if (statusFilter && s.statusKey !== statusFilter) return false;
-    return true;
-  });
-
-  const attentionSites = filtered.filter(
-    (s) =>
-      s.statusKey === 'down' ||
-      s.statusKey === 'degraded' ||
-      (s.hasExpiry && s.expiryIssues.some((e) => e.color === 'var(--critical-color)')),
-  );
   const hasAttention = attentionSites.length > 0;
   const attentionCount = attentionSites.length;
 
   const summaryText = `${sites.length} webov · ${countUp} dostupných · ${countDown} nedostupných`;
 
   const isLoading = loading;
-  const sitesEmpty = !loading && sites.length === 0;
-  const sitesPopulated = !loading && sites.length > 0;
+  const sitesEmpty = !loading && !loadError && sites.length === 0;
+  const sitesPopulated = !loading && !loadError && sites.length > 0;
 
   // Region banner — reálny alert `region_outage`, ktorý vkladá scheduler
   // (runUptime.ts) keď padne nadpolovičná väčšina sledovaných webov naraz.
@@ -148,6 +160,8 @@ export default function OverviewPage() {
       {/* Toast */}
       {toast && (
         <div
+          role="status"
+          aria-live="polite"
           style={{
             position: 'fixed',
             bottom: '24px',
@@ -174,36 +188,11 @@ export default function OverviewPage() {
 
       {/* Add site modal */}
       {showAddSite && (
-        <div
-          onClick={closeAddSite}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1300,
-            background: 'rgba(10,14,20,0.55)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-            animation: 'slideIn 0.2s ease',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--surface-primary)',
-              border: '1px solid var(--border-primary)',
-              borderRadius: '18px',
-              boxShadow: 'var(--shadow-lg)',
-              width: '100%',
-              maxWidth: '440px',
-              overflow: 'hidden',
-            }}
-          >
+        <Modal onClose={closeAddSite} labelledBy="add-site-title" maxWidth={440}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-primary)' }}>
-              <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+              <h2 id="add-site-title" style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>
                 Pridať web
-              </div>
+              </h2>
               <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
                 Nový web sa začne monitorovať pri prvej kontrole.
               </div>
@@ -211,6 +200,7 @@ export default function OverviewPage() {
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
                 <label
+                  htmlFor="add-name"
                   style={{
                     display: 'block',
                     fontSize: '12px',
@@ -224,6 +214,7 @@ export default function OverviewPage() {
                   Názov webu
                 </label>
                 <input
+                  id="add-name"
                   type="text"
                   value={addName}
                   onInput={(e) => setAddName((e.target as HTMLInputElement).value)}
@@ -242,6 +233,7 @@ export default function OverviewPage() {
               </div>
               <div>
                 <label
+                  htmlFor="add-domain"
                   style={{
                     display: 'block',
                     fontSize: '12px',
@@ -255,6 +247,7 @@ export default function OverviewPage() {
                   Doména
                 </label>
                 <input
+                  id="add-domain"
                   type="text"
                   value={addDomain}
                   onInput={(e) => setAddDomain((e.target as HTMLInputElement).value)}
@@ -274,6 +267,7 @@ export default function OverviewPage() {
               </div>
               <div>
                 <label
+                  htmlFor="add-client"
                   style={{
                     display: 'block',
                     fontSize: '12px',
@@ -287,6 +281,7 @@ export default function OverviewPage() {
                   Klient
                 </label>
                 <select
+                  id="add-client"
                   value={addClient}
                   onChange={(e) => setAddClient(e.target.value)}
                   style={{
@@ -309,8 +304,8 @@ export default function OverviewPage() {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '7px' }}>Typ webu (CMS)</label>
-                <select value={addCms} onChange={(e) => setAddCms(e.target.value as 'wordpress' | 'static' | 'other')} style={{ width: '100%', padding: '11px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: '10px', color: 'var(--text-primary)', fontSize: '14px', cursor: 'pointer' }}>
+                <label htmlFor="add-cms" style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '7px' }}>Typ webu (CMS)</label>
+                <select id="add-cms" value={addCms} onChange={(e) => setAddCms(e.target.value as 'wordpress' | 'static' | 'other')} style={{ width: '100%', padding: '11px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: '10px', color: 'var(--text-primary)', fontSize: '14px', cursor: 'pointer' }}>
                   <option value="wordpress">WordPress</option>
                   <option value="static">Statický</option>
                   <option value="other">Iné</option>
@@ -361,8 +356,7 @@ export default function OverviewPage() {
                 {addBusy ? 'Pridávam…' : 'Pridať web'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Screen 1: Overview */}
@@ -644,11 +638,14 @@ export default function OverviewPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
                 {attentionSites.map((site) => (
-                  <div
+                  <Link
                     key={site.id}
+                    href={`/sites?id=${site.id}`}
                     className="mx-card-soft"
-                    onClick={() => { window.location.href = `/sites?id=${site.id}`; }}
+                    aria-label={`${site.name} — ${site.statusLabel}`}
                     style={{
+                      textDecoration: 'none',
+                      color: 'inherit',
                       background: site.tintBg,
                       border: '1px solid var(--border-primary)',
                       borderLeft: `4px solid ${site.dotColor}`,
@@ -700,7 +697,7 @@ export default function OverviewPage() {
                         ))}
                       </div>
                     )}
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -725,6 +722,33 @@ export default function OverviewPage() {
           )}
 
           {/* Empty state */}
+          {!loading && loadError && (
+            <div
+              role="alert"
+              style={{
+                textAlign: 'center',
+                padding: '48px 20px',
+                background: 'var(--critical-bg)',
+                border: '1px solid var(--critical-color)',
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <div style={{ fontSize: '34px', marginBottom: '12px' }}>⚠️</div>
+              <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '8px', color: 'var(--text-primary)' }}>
+                Dáta sa nepodarilo načítať
+              </div>
+              <div style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginBottom: '18px' }}>
+                Toto nie je „žiadne weby“ — načítanie zlyhalo. Skús obnoviť stránku.
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{ padding: '9px 18px', borderRadius: '9px', border: '1px solid var(--border-strong)', background: 'var(--surface-primary)', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Obnoviť
+              </button>
+            </div>
+          )}
+
           {sitesEmpty && (
             <div
               style={{
@@ -795,11 +819,15 @@ export default function OverviewPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
                 {filtered.map((site) => (
-                  <div
+                  <Link
                     key={site.id}
+                    href={`/sites?id=${site.id}`}
                     className="mx-card"
-                    onClick={() => { window.location.href = `/sites?id=${site.id}`; }}
+                    aria-label={`${site.name} — ${site.statusLabel}`}
                     style={{
+                      display: 'block',
+                      textDecoration: 'none',
+                      color: 'inherit',
                       background: 'var(--surface-primary)',
                       border: '1px solid var(--border-primary)',
                       borderRadius: 'var(--radius)',
@@ -933,7 +961,7 @@ export default function OverviewPage() {
                         ) : null;
                       })()}
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </>

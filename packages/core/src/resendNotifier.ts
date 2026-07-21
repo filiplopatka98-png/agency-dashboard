@@ -1,5 +1,6 @@
 import type { Alert } from '@agency/shared';
 import type { Notifier } from './types';
+import { esc } from './reportText';
 
 export interface ResendConfig {
   apiKey: string;
@@ -16,8 +17,11 @@ const SEVERITY_LABEL: Record<Alert['severity'], string> = {
 /** Plain HTML, žiadne šablóny (fáza 1). */
 export function renderAlertHtml(a: Alert): string {
   const label = SEVERITY_LABEL[a.severity];
-  const body = a.body ? `<p>${a.body}</p>` : '';
-  return `<div><p><strong>${label}</strong></p><h2>${a.title}</h2>${body}</div>`;
+  // esc(): title/body môžu pochádzať z WP-agent dát (napr. názov pluginu v
+  // cve_critical), ktoré vie ovplyvniť útočník po prelomení klientskeho WP.
+  // Bez escapovania by vložil HTML (img beacon, phishing odkaz) do owner inboxu.
+  const body = a.body ? `<p>${esc(a.body)}</p>` : '';
+  return `<div><p><strong>${label}</strong></p><h2>${esc(a.title)}</h2>${body}</div>`;
 }
 
 /** POST https://api.resend.com/emails. fetch je injektovateľný kvôli testom. */

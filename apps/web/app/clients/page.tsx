@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Shell } from '../components/Shell';
+import { Modal } from '../components/Modal';
 import { loadDashboard, type SiteVM } from '../lib/data';
 import { supabase, type Client } from '../lib/supabase';
 
@@ -226,7 +227,7 @@ function ClientsView() {
                       <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>{c.company || c.name}</div>
                       <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>
                         {c.contract_type ? `${c.contract_type} · ` : ''}
-                        {c.monthly_fee_eur != null ? `${c.monthly_fee_eur} €/mes` : '—'}
+                        {c.monthly_fee_eur != null ? `${Number(c.monthly_fee_eur).toLocaleString('sk-SK')} €/mes` : '—'}
                       </div>
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 600, color: meta.color, background: meta.bg, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap' }}>{meta.text}</span>
@@ -239,6 +240,9 @@ function ClientsView() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '9px 11px', background: 'var(--surface-secondary)', borderRadius: 9 }}>
                       <button
                         onClick={() => toggleStatusPage(c)}
+                        role="switch"
+                        aria-checked={c.status_enabled}
+                        aria-label={`Verejná status page pre ${c.name}`}
                         title={c.status_enabled ? 'Verejná status page je zapnutá — klikni pre vypnutie' : 'Verejná status page je vypnutá — klikni pre zapnutie'}
                         style={{ fontSize: 11, fontWeight: 700, color: c.status_enabled ? 'var(--ok-color)' : 'var(--text-tertiary)', background: c.status_enabled ? 'var(--ok-bg)' : 'var(--surface-primary)', border: c.status_enabled ? 'none' : '1px solid var(--border-primary)', borderRadius: 20, padding: '3px 9px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                       >
@@ -277,10 +281,9 @@ function ClientsView() {
       </div>
 
       {editing !== null && (
-        <div onClick={() => !saving && setEditing(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ ...card, padding: 0, width: 'min(520px, 100%)', maxHeight: '90vh', overflow: 'auto' }}>
+        <Modal onClose={() => !saving && setEditing(null)} labelledBy="client-modal-title" maxWidth={520}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-primary)' }}>
-              <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>{editing === 'new' ? 'Nový klient' : 'Upraviť klienta'}</div>
+              <h2 id="client-modal-title" style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0 }}>{editing === 'new' ? 'Nový klient' : 'Upraviť klienta'}</h2>
             </div>
             <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               {([
@@ -295,8 +298,8 @@ function ClientsView() {
                 ['notion_page_id', 'Notion page ID', 'voliteľné'],
               ] as const).map(([k, label, ph]) => (
                 <div key={k} style={{ gridColumn: k === 'name' || k === 'company' || k === 'notion_page_id' || k === 'report_email' ? '1 / -1' : 'auto' }}>
-                  <label style={lbl}>{label}</label>
-                  <input style={input} value={form[k]} placeholder={ph} inputMode={k === 'monthly_fee_eur' ? 'decimal' : undefined} onInput={(e) => set(k, (e.target as HTMLInputElement).value)} />
+                  <label htmlFor={`client-${k}`} style={lbl}>{label}</label>
+                  <input id={`client-${k}`} style={input} value={form[k]} placeholder={ph} inputMode={k === 'monthly_fee_eur' ? 'decimal' : undefined} onInput={(e) => set(k, (e.target as HTMLInputElement).value)} />
                 </div>
               ))}
               {err && <div style={{ gridColumn: '1 / -1', fontSize: 13, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: 10 }}>{err}</div>}
@@ -305,8 +308,7 @@ function ClientsView() {
               <button onClick={() => setEditing(null)} disabled={saving} style={btn(false)}>Zrušiť</button>
               <button onClick={save} disabled={saving} style={{ ...btn(true), opacity: saving ? 0.6 : 1 }}>{saving ? 'Ukladám…' : editing === 'new' ? 'Pridať klienta' : 'Uložiť'}</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

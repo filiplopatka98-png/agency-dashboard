@@ -88,7 +88,7 @@ export default function ReportPage() {
       <div style={{ minHeight: '100vh', padding: '32px 24px 64px', background: 'var(--bg-base)' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', marginBottom: 4 }}>Náhľad klientskeho reportu</div>
+            <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)', marginBottom: 4 }}>Náhľad klientskeho reportu</h1>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               Presne to, čo klientovi odíde mailom 1. dňa v mesiaci — rovnaký renderer (
               <span style={mono}>@agency/core</span>), rovnaké dáta. Žiadne vzorové čísla.
