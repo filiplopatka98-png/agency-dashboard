@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '0 4 * * 1' # každý pondelok 04:00 UTC
   workflow_dispatch: {}
+  # Manuálne dofsetovanie mimo cronu — spusti pushom tagu `collect-*`
+  # (napr. po nasadení opráv, aby sa dáta obnovili hneď, nie až v pondelok).
+  push:
+    tags:
+      - 'collect-*'
 
 jobs:
   crawl:
