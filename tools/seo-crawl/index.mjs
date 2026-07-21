@@ -57,18 +57,44 @@ export async function crawlSite(domain) {
       /* ignore */
     }
   }
-  // Seed: same-origin URL zo sitemap (stabilné), fallback homepage → BFS.
-  const sitemapSeeds = parseSitemapUrls(sitemapText).filter((u) => {
-    try {
-      return new URL(u).origin === origin;
-    } catch {
-      return false;
+  // Seed stránky zo sitemap. Ak je to sitemap-INDEX (loc odkazujú na ďalšie
+  // .xml), rozbaľ prvých pár sub-sitemap na SKUTOČNÉ stránkové URL — inak by
+  // sa crawl seedoval .xml súbormi (XML, nie HTML) → 0 stránok → web by
+  // vyzeral „zlyhaný" (Yoast/WP majú /sitemap_index.xml). Homepage pridávame
+  // VŽDY, nech pages_crawled nikdy nie je 0 len kvôli prázdnej/stale sitemap.
+  let sitemapLocs = parseSitemapUrls(sitemapText);
+  const isIndex = sitemapLocs.length > 0 && sitemapLocs.every((u) => /\.xml($|\?)/i.test(u));
+  if (isIndex) {
+    const subs = sitemapLocs.slice(0, 5);
+    sitemapLocs = [];
+    for (const sm of subs) {
+      const r = await get(sm, 'GET');
+      if (r && r.ok) {
+        try {
+          sitemapLocs.push(...parseSitemapUrls((await r.text()).slice(0, 500_000)));
+        } catch {
+          /* ignore */
+        }
+      }
+      if (sitemapLocs.length >= MAX_PAGES * 3) break;
+      await sleep(DELAY_MS);
     }
-  });
+  }
+  const sitemapSeeds = sitemapLocs
+    .filter((u) => {
+      try {
+        return new URL(u).origin === origin && !/\.xml($|\?)/i.test(u);
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, MAX_PAGES * 3);
 
   const visited = new Set();
   const status = new Map();
-  const queue = sitemapSeeds.length ? [...sitemapSeeds] : [origin + '/'];
+  // Homepage VŽDY prvá + stabilné sitemap seedy (duplicitná homepage sa odfiltruje
+  // cez `visited`). Keď sitemap seedy sú, BFS expanziu nerobíme (množina stabilná).
+  const queue = [origin + '/', ...sitemapSeeds];
   const pages = [];
   // Počet stránok, ktoré sa nepodarilo úspešne načítať — sieťová chyba/timeout
   // (`get()` vrátil null) ALEBO HTTP chybový stav (5xx/429/403…, `res.ok` je
