@@ -9,8 +9,11 @@ name: deploy
 # odkomentuj `push:` blok nižšie.
 on:
   workflow_dispatch: {}
-  # push:
-  #   branches: [main]
+  # Deploy sa spustí aj pushnutím verzného tagu `v*` (napr. v2026.07.21) —
+  # vedomý krok, nie každý commit do main. Tag pushne ten, kto releasuje.
+  push:
+    tags:
+      - 'v*'
 
 concurrency:
   group: deploy-prod
