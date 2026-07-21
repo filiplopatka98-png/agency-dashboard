@@ -31,12 +31,16 @@ export function expiryColor(days: number | null, warnAt: number): string {
 export const domainExpiryColor = (d: number | null) => expiryColor(d, 30);
 export const tlsExpiryColor = (d: number | null) => expiryColor(d, 21);
 
-/** Badge farba pre pill (biele písmo na plnej farbe). */
+/**
+ * Badge farba pre pill (BIELE písmo na plnej farbe) — používa „strong" (tmavšie)
+ * odtiene, aby biely text spĺňal WCAG AA (≥4.5:1). Prahy sú rovnaké ako
+ * `expiryColor`, len farby sú tmavšie kvôli kontrastu na bielom texte.
+ */
 export function expiryBadgeColor(days: number | null, warnAt: number): string {
-  if (days === null) return 'var(--unknown-color)';
-  if (days <= 7) return 'var(--critical-color)';
-  if (days <= warnAt) return 'var(--warning-color)';
-  return 'var(--ok-color)';
+  if (days === null || days === undefined) return 'var(--unknown-color)';
+  if (days <= 7) return 'var(--critical-strong)';
+  if (days <= warnAt) return 'var(--warning-strong)';
+  return 'var(--ok-strong)';
 }
 
 /** Kruhový gauge — dashoffset pre dané skóre a obvod kruhu. */
@@ -98,6 +102,7 @@ export const BOT_DEFS = [
   { key: 'claude', name: 'ClaudeBot', sub: 'Anthropic · Claude' },
   { key: 'perplexity', name: 'PerplexityBot', sub: 'Perplexity AI' },
   { key: 'google', name: 'Google-Extended', sub: 'Gemini tréning' },
+  { key: 'ccbot', name: 'CCBot', sub: 'Common Crawl · AI tréning' },
 ] as const;
 
 export function botMeta(dec: BotDecision) {

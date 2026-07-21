@@ -7,7 +7,16 @@ import {
   expiryBadgeColor,
   type StatusKey,
 } from './design';
-import { relativeTime } from './format';
+import { relativeTime, daysUntil } from './format';
+import {
+  parseItems,
+  parseAeoCheck,
+  parseSeoIssue,
+  parseWpPlugin,
+  parseWpVuln,
+  parseGscTopQuery,
+  parseSecurityHeaders,
+} from './dbSchemas';
 import {
   isoDay,
   freshState,
@@ -167,13 +176,6 @@ export interface PerfSnapVM {
   fieldLcpMs: number | null;
   fieldInpMs: number | null;
   fieldCls: number | null;
-}
-
-function daysUntilDate(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const t = new Date(dateStr).getTime();
-  if (Number.isNaN(t)) return null;
-  return Math.ceil((t - Date.now()) / 86400000);
 }
 
 function fmtDuration(sec: number | null): string {
@@ -343,8 +345,8 @@ export async function loadDashboard(): Promise<{
     const clientName = client?.name ?? '—';
     const dom = domBySite.get(s.id);
     const tls = tlsBySite.get(s.id);
-    const domainDaysLeft = daysUntilDate(dom?.expires_at ?? null);
-    const tlsDaysLeft = daysUntilDate(tls?.valid_to ?? null);
+    const domainDaysLeft = daysUntil(dom?.expires_at ?? null);
+    const tlsDaysLeft = daysUntil(tls?.valid_to ?? null);
 
     const expiryIssues: ExpiryIssue[] = [];
     if (tlsDaysLeft !== null && tlsDaysLeft <= 45)
@@ -426,7 +428,7 @@ export async function loadDashboard(): Promise<{
         if (!a || a.score === null) return null;
         return {
           score: a.score,
-          checks: (a.checks as unknown as { id: string; label: string; weight: number; earned: number; pass: boolean }[]) ?? [],
+          checks: parseItems(parseAeoCheck, a.checks),
           aiBots: (a.ai_bots as Record<string, string>) ?? {},
           schemaTypes: (a.schema_types as string[]) ?? [],
         };
@@ -439,7 +441,7 @@ export async function loadDashboard(): Promise<{
           sitemapOk: Boolean(so.sitemap_ok),
           robotsOk: Boolean(so.robots_ok),
           canonicalOk: Boolean(so.canonical_ok),
-          issues: (so.issues as unknown as { type: string; severity: string; sample: string; count: number; urls: string[] }[]) ?? [],
+          issues: parseItems(parseSeoIssue, so.issues),
         };
       })(),
       perf: perfBySite.get(s.id) ?? null,
@@ -448,7 +450,7 @@ export async function loadDashboard(): Promise<{
         if (!se || se.score === null) return null;
         return {
           score: se.score,
-          headers: (se.headers as unknown as { hsts: boolean; csp: boolean; xframe: boolean; xcto: boolean; referrer: boolean; permissions: boolean }) ?? { hsts: false, csp: false, xframe: false, xcto: false, referrer: false, permissions: false },
+          headers: parseSecurityHeaders(se.headers),
           safeBrowsingOk: se.safe_browsing_ok,
         };
       })(),
@@ -461,13 +463,13 @@ export async function loadDashboard(): Promise<{
           ctr: Number(g.ctr ?? 0),
           position: Number(g.position ?? 0),
           rangeDays: g.range_days ?? 28,
-          topQueries: (g.top_queries as unknown as { query: string; clicks: number; impressions: number; ctr: number; position: number }[]) ?? [],
+          topQueries: parseItems(parseGscTopQuery, g.top_queries),
         };
       })(),
       wp: (() => {
         const w = wpBySite.get(s.id);
         if (!w || (w.error && w.wp_version === null)) return null;
-        const allPlugins = (w.plugins as unknown as { name: string; slug: string; version: string; active: boolean; update_version: string | null }[]) ?? [];
+        const allPlugins = parseItems(parseWpPlugin, w.plugins);
         return {
           wpVersion: w.wp_version,
           wpUpdate: w.wp_update,
@@ -477,7 +479,7 @@ export async function loadDashboard(): Promise<{
           // vlastného agenta neukazuj v zozname klientových pluginov
           plugins: allPlugins.filter((p) => p.slug !== 'monitorix-agent' && p.name !== 'Monitorix Agent'),
           // null = CVE ešte nekontrolované (WPScan nebežal); [] = skontrolované, nula
-          vulns: (w.vulns as unknown as { target: string; slug: string; version: string; title: string; cve: string | null; fixed_in: string | null; cvss: number | null; severity: string }[] | null) ?? null,
+          vulns: w.vulns == null ? null : parseItems(parseWpVuln, w.vulns),
           backupAt: w.backup_at,
         };
       })(),
