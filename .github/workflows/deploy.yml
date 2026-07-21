@@ -1,0 +1,69 @@
+name: deploy
+
+# Deploy beží V GITHUB ACTIONS pomocou secretov uložených v repe — kľúče nikdy
+# neopúšťajú GitHub (neprejdú cez lokál ani cez agenta). Spúšťanie:
+#   • ručne: GitHub → Actions → "deploy" → Run workflow (tlačidlo), alebo
+#   • `gh workflow run deploy.yml` / cez GitHub API (aj agent, ak má GitHub prístup).
+# Zámerne LEN workflow_dispatch (nie push:main) — prod deploy má byť vedomý krok,
+# nie vedľajší efekt každého commitu. Ak chceš auto-deploy po merge do main,
+# odkomentuj `push:` blok nižšie.
+on:
+  workflow_dispatch: {}
+  # push:
+  #   branches: [main]
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Brána — nenasadzuj rozbité.
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm lint
+
+      # 1) Web (Cloudflare Pages). Service key len pri BUILDE (generateStaticParams);
+      #    NEXT_PUBLIC_* sa inlinujú do klienta, service key NIE (žiadny prefix).
+      - name: Build web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm --filter web build
+
+      - name: Overiť, že service key neúnikol do bundlu
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if grep -rl "$SUPABASE_SERVICE_ROLE_KEY" apps/web/out/ >/dev/null 2>&1; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY sa našiel v apps/web/out/ — deploy zastavený."
+            exit 1
+          fi
+          echo "service key v bundli: čisté ✓"
+
+      - name: Deploy web (Pages)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter web exec wrangler pages deploy out --project-name agency-dashboard
+
+      # 2) Scheduler (Cloudflare Worker). Runtime secrety (RESEND_*, ALERT_*,
+      #    SUPABASE_*) sú už nastavené na Workeri cez `wrangler secret put` a
+      #    `wrangler deploy` ich ZACHOVÁ — netreba ich sem dávať.
+      - name: Deploy scheduler (Worker)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @agency/scheduler exec wrangler deploy
