@@ -57,23 +57,23 @@ jobs:
           fi
           echo "service key v bundli: čisté ✓"
 
-      # wrangler-action si sám nainštaluje wrangler (v apps/web nie je ako dep)
-      # a načíta apiToken/accountId — netreba `pnpm exec wrangler`.
+      # `pnpm dlx wrangler@4` — izolovaný beh wranglera; nerobí `npm install`
+      # v pracovnom adresári, takže nepadne na `workspace:*` závislostiach
+      # (na to padol wrangler-action aj `pnpm --filter web exec`). Web deploy
+      # beží z rootu (žiadny wrangler config → žiadna zámena s Worker configom),
+      # scheduler z apps/scheduler (načíta jeho wrangler.jsonc).
       - name: Deploy web (Pages)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/web
-          command: pages deploy out --project-name agency-dashboard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm dlx wrangler@4 pages deploy apps/web/out --project-name agency-dashboard
 
       # 2) Scheduler (Cloudflare Worker). Runtime secrety (RESEND_*, ALERT_*,
       #    SUPABASE_*) sú už nastavené na Workeri cez `wrangler secret put` a
       #    `wrangler deploy` ich ZACHOVÁ — netreba ich sem dávať.
       - name: Deploy scheduler (Worker)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: apps/scheduler
-          command: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: apps/scheduler
+        run: pnpm dlx wrangler@4 deploy
