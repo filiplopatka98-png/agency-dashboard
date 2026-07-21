@@ -6,7 +6,7 @@
 //   node index.mjs                     → prejde aktívne weby zo Supabase
 //
 // Env (DB režim): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-import { analyzePage, buildSeoIssues } from '../../packages/core/dist/seo.js';
+import { analyzePage, buildSeoIssues, parseSitemapUrls, isBrokenStatus } from '../../packages/core/dist/seo.js';
 import { diffSeoIssues } from '../../packages/core/dist/events.js';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
@@ -43,13 +43,32 @@ export async function crawlSite(domain) {
   }
   const declared = (robotsText.match(/^\s*sitemap:\s*(\S+)/im) || [])[1];
   const sitemapUrl = declared || `${origin}/sitemap.xml`;
-  let sitemapRes = await get(sitemapUrl, 'HEAD');
-  if (!sitemapRes || !sitemapRes.ok) sitemapRes = await get(sitemapUrl, 'GET');
+  // GET (nie HEAD) — potrebujeme telo, aby sme crawl SEEDOVALI zo sitemap:
+  // stabilná množina stránok naprieč behmi. BFS z homepage vyberá stránky
+  // podľa poradia odkazov, takže na weboch >MAX_PAGES sa množina mení beh-od-behu
+  // a diffSeoIssues by ohlásil „opravené" len preto, že sa stránka nenavštívila.
+  const sitemapRes = await get(sitemapUrl, 'GET');
   const sitemapOk = Boolean(sitemapRes && sitemapRes.ok);
+  let sitemapText = '';
+  if (sitemapOk) {
+    try {
+      sitemapText = await sitemapRes.text();
+    } catch {
+      /* ignore */
+    }
+  }
+  // Seed: same-origin URL zo sitemap (stabilné), fallback homepage → BFS.
+  const sitemapSeeds = parseSitemapUrls(sitemapText).filter((u) => {
+    try {
+      return new URL(u).origin === origin;
+    } catch {
+      return false;
+    }
+  });
 
   const visited = new Set();
   const status = new Map();
-  const queue = [origin + '/'];
+  const queue = sitemapSeeds.length ? [...sitemapSeeds] : [origin + '/'];
   const pages = [];
   // Počet stránok, ktoré sa nepodarilo úspešne načítať — sieťová chyba/timeout
   // (`get()` vrátil null) ALEBO HTTP chybový stav (5xx/429/403…, `res.ok` je
@@ -72,11 +91,15 @@ export async function crawlSite(domain) {
     status.set(url, res ? res.status : 0);
     if (res && res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
       const html = (await res.text()).slice(0, 800_000);
-      const page = analyzePage(html, url);
+      const page = analyzePage(html, url, res.headers.get('x-robots-tag') || undefined);
       pages.push(page);
-      for (const link of page.internalLinks) {
-        const ln = link.replace(/\/$/, '') || link;
-        if (!visited.has(ln) && queue.length + pages.length < MAX_PAGES * 3) queue.push(link);
+      // BFS expanziu robíme LEN v fallback režime (bez sitemap) — pri sitemap
+      // seedoch držíme množinu stránok stabilnú (žiadne discovery-závislé URL).
+      if (!sitemapSeeds.length) {
+        for (const link of page.internalLinks) {
+          const ln = link.replace(/\/$/, '') || link;
+          if (!visited.has(ln) && queue.length + pages.length < MAX_PAGES * 3) queue.push(link);
+        }
       }
     }
     await sleep(DELAY_MS);
@@ -89,12 +112,19 @@ export async function crawlSite(domain) {
   for (const l of toCheck) {
     let res = await get(l, 'HEAD');
     if (!res || res.status === 405) res = await get(l, 'GET');
-    const st = res ? res.status : 0;
-    if (st >= 400 || st === 0) broken.push({ url: l, status: st });
+    let st = res ? res.status : 0;
+    // Retry raz pri sieťovej chybe/timeoute (st===0) — jeden prechodný timeout
+    // nesmie klientovi ohlásiť falošný „nefunkčný odkaz".
+    if (st === 0) {
+      await sleep(DELAY_MS);
+      const retry = await get(l, 'GET');
+      st = retry ? retry.status : 0;
+    }
+    if (isBrokenStatus(st)) broken.push({ url: l, status: st });
     await sleep(DELAY_MS);
   }
   // aj z už navštívených, ktoré zlyhali
-  for (const [url, st] of status) if (st >= 400) broken.push({ url, status: st });
+  for (const [url, st] of status) if (isBrokenStatus(st)) broken.push({ url, status: st });
 
   const issues = buildSeoIssues(pages, broken);
   const canonicalOk = pages.length > 0 && pages.every((p) => p.hasCanonical);

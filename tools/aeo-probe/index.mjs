@@ -86,8 +86,14 @@ export async function probeAeo(domain) {
   if (!res || !res.ok) throw new Error(`fetch ${domain}: ${res ? res.status : 'network'}`);
   const homepageHtml = (await res.text()).slice(0, 500_000);
 
+  // robots.txt: rozlíš SIEŤOVÉ zlyhanie (null = timeout/DNS, prechodné) od HTTP
+  // odpovede. Pri sieťovom zlyhaní NEHODNOŤ — prázdny robotsTxt by dal všetkým
+  // botom „neuvedené" a strhol −10 bodov ULOŽENÝCH ako čerstvý fakt. Radšej to
+  // hoď ako zlyhanie zberu (score:null, failed++ → job_failed alert), nech
+  // sa nefabrikuje. 404/403 (HTTP odpoveď) = legitímne „bez robots.txt" → skóruj.
   const robotsRes = await tryFetch(`${origin}/robots.txt`);
-  const robotsTxt = robotsRes && robotsRes.ok ? await robotsRes.text() : '';
+  if (!robotsRes) throw new Error(`${domain}: robots.txt nedostupný (sieťová chyba) — AEO skóre nezapisujem`);
+  const robotsTxt = robotsRes.ok ? await robotsRes.text() : '';
   const llmsRes = await tryFetch(`${origin}/llms.txt`);
   const hasLlmsTxt = Boolean(llmsRes && llmsRes.ok);
 

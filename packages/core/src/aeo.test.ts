@@ -60,4 +60,33 @@ describe('scoreAeo', () => {
     const r2 = scoreAeo({ html: [home, '<html><body><h1>X</h1></body></html>'], robotsTxt: '', hasLlmsTxt: false });
     expect(r2.checks.find((c) => c.id === 'canonical')!.pass).toBe(false);
   });
+
+  it('zoskupené User-agent riadky zdieľajú Disallow (GPTBot aj CCBot blokované)', () => {
+    const robots = `User-agent: GPTBot
+User-agent: CCBot
+Disallow: /`;
+    const r = scoreAeo({ html: GOOD_HTML, robotsTxt: robots, hasLlmsTxt: false });
+    expect(r.aiBots['GPTBot']).toBe('block');
+    expect(r.aiBots['CCBot']).toBe('block');
+  });
+
+  it('canonical má proporcionálne skóre (1 z 2 stránok) — nie all-or-nothing', () => {
+    const withC = '<html><head><link rel="canonical" href="/"></head><body><h1>a</h1><h2>x</h2></body></html>';
+    const withoutC = '<html><body><h1>b</h1><h2>y</h2></body></html>';
+    const r = scoreAeo({ html: [withC, withoutC], robotsTxt: '', hasLlmsTxt: false });
+    const canon = r.checks.find((c) => c.id === 'canonical')!;
+    expect(canon.pass).toBe(false);
+    expect(canon.earned).toBeGreaterThan(0); // 1 z 2 stránok → čiastočný kredit
+    expect(canon.earned).toBeLessThan(canon.weight);
+  });
+
+  it('headings má proporcionálne skóre — jedna zlá stránka nezhodí celý web na 0', () => {
+    const ok = '<html><body><h1>a</h1><h2>x</h2></body></html>';
+    const bad = '<html><body><h1>a</h1><h1>b</h1><h2>y</h2></body></html>'; // 2× H1
+    const r = scoreAeo({ html: [ok, bad], robotsTxt: '', hasLlmsTxt: false });
+    const head = r.checks.find((c) => c.id === 'headings')!;
+    expect(head.pass).toBe(false);
+    expect(head.earned).toBeGreaterThan(0);
+    expect(head.earned).toBeLessThan(head.weight);
+  });
 });
