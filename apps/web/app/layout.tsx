@@ -7,8 +7,11 @@ export const metadata: Metadata = {
   description: 'Uptime, výkon, SEO, AEO a infra pre spravované weby.',
 };
 
-// Nastav tému pred prvým paintom (bez bliknutia).
-const noFlash = `(function(){try{var t=localStorage.getItem('mx-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
+// Nastav tému pred prvým paintom (bez bliknutia). Priorita: uložená voľba
+// používateľa → systémová preferencia OS (prefers-color-scheme) → svetlá.
+// Vďaka OS fallbacku dostane aj klient na verejnej status stránke dark, ak ho
+// má nastavený v systéme (bez toho, aby si tam niečo prepínal).
+const noFlash = `(function(){try{var t=localStorage.getItem('mx-theme');var d=t==='dark'||(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

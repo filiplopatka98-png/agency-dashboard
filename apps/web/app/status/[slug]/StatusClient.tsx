@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useTheme } from '../../lib/theme';
 
 type DaySeg = { d: string; u: number | null };
 type PublicIncident = { started_at: string; minutes: number };
@@ -45,6 +46,33 @@ const STATUS_META: Record<PublicSite['status'], { label: string; color: string; 
 
 export function StatusClient({ slug }: { slug: string }) {
   const [data, setData] = useState<PublicStatus | 'loading' | 'error'>('loading');
+  const { theme, toggle } = useTheme();
+
+  // Malý prepínač témy — verejná stránka nemá hlavičku appky, takže klient si
+  // vie prepnúť motív aj tu (nad rámec automatiky podľa OS preferencie).
+  const themeToggle = (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={theme === 'dark' ? 'Prepnúť na svetlý režim' : 'Prepnúť na tmavý režim'}
+      style={{
+        width: 34,
+        height: 34,
+        flexShrink: 0,
+        borderRadius: 9,
+        border: '1px solid var(--border-primary)',
+        background: 'var(--surface-secondary)',
+        color: 'var(--text-secondary)',
+        fontSize: 15,
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {theme === 'dark' ? '☀️' : '🌙'}
+    </button>
+  );
 
   useEffect(() => {
     let active = true;
@@ -102,6 +130,7 @@ export function StatusClient({ slug }: { slug: string }) {
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.4px', color: 'var(--text-tertiary)' }}>MONITORIX · STAV WEBOV</div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', margin: '4px 0 0', letterSpacing: '-0.02em' }}>{data.client}</h1>
           </div>
+          {themeToggle}
         </div>
 
         <div style={{ background: overall.bg, color: overall.color, fontWeight: 700, fontSize: 15, padding: '14px 16px', borderRadius: 12, marginBottom: 20 }}>
