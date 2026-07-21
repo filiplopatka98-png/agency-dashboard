@@ -8,7 +8,9 @@
   --surface-hover: #f7f8fa;
   --text-primary: #0d1117;
   --text-secondary: #5b6470;
-  --text-tertiary: #8b95a3;
+  /* stmavené na WCAG AA (≥4.5:1 aj na off-white --surface-secondary); pôvodné
+     #8b95a3 dávalo len ~3:1 na malom sekundárnom texte (domény, timestampy). */
+  --text-tertiary: #636c79;
   --border-primary: #e6e9ee;
   --border-strong: #d4d9e0;
   --accent-primary: #0d7d8f;
@@ -20,6 +22,12 @@
   --warning-border: #fed7aa;
   --critical-color: #dc2626;
   --critical-bg: #fef2f2;
+  --critical-border: #fecaca;
+  /* „strong" = dostatočne tmavé pozadie pod BIELY text (WCAG AA ≥4.5:1) —
+     len pre plné farebné badge (expiry pills), nie pre text na svetlom. */
+  --ok-strong: #15803d;
+  --warning-strong: #b45309;
+  --critical-strong: #b91c1c;
   --unknown-color: #94a3b8;
   --unknown-bg: #f1f5f9;
   --shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.04), 0 1px 3px rgba(13, 17, 23, 0.06);
@@ -35,7 +43,9 @@ html.dark {
   --surface-hover: #1c242e;
   --text-primary: #eef2f6;
   --text-secondary: #9aa5b4;
-  --text-tertiary: #6b7684;
+  /* zosvetlené na WCAG AA na tmavých povrchoch (#141a22/#1c242e); pôvodné
+     #6b7684 dávalo ~4:1 na malom texte. */
+  --text-tertiary: #8b96a5;
   --border-primary: #232c37;
   --border-strong: #2f3a47;
   --accent-primary: #2dd4bf;
@@ -47,6 +57,12 @@ html.dark {
   --warning-border: #4a3410;
   --critical-color: #f87171;
   --critical-bg: #2a1315;
+  --critical-border: #5a2327;
+  /* v dark režime je biely text na sýtej farbe v pohode, ale držíme rovnaké
+     tokeny nech badge kód nemusí vetviť tému. */
+  --ok-strong: #15803d;
+  --warning-strong: #b45309;
+  --critical-strong: #b91c1c;
   --unknown-color: #64748b;
   --unknown-bg: #1a222c;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -146,4 +162,39 @@ textarea:focus {
 /* nav pill hover */
 .mx-nav-btn:hover {
   color: var(--text-primary);
+}
+
+/* Navigácia: desktop = horné odkazy; mobil (≤640px) = spodný tab-bar. */
+.mx-bottom-nav {
+  display: none;
+}
+@media (max-width: 640px) {
+  .mx-topnav-links {
+    display: none !important;
+  }
+  .mx-bottom-nav {
+    display: flex !important;
+  }
+  /* miesto pre spodný bar, nech neprekrýva obsah */
+  body {
+    padding-bottom: 68px;
+  }
+}
+
+/* WCAG 2.3.3 / 2.2.2 — rešpektuj systémové „obmedziť pohyb": vypni nekonečný
+   pulz padnutej bodky, card-lift, slideIn aj spinner. Stav ostáva čitateľný
+   (bodka + text/ikona), len sa nehýbe. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .mx-card:hover,
+  .mx-card-soft:hover {
+    transform: none;
+  }
 }

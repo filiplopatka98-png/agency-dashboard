@@ -124,7 +124,14 @@ export default function SettingsPage() {
     const headCount = (table: 'perf_snapshots' | 'gsc_snapshots' | 'security_snapshots' | 'aeo_snapshots' | 'seo_snapshots') =>
       supabase.from(table).select('site_id', { count: 'exact', head: true });
     (async () => {
-      const [o, u, s, perf, gsc, sec, aeo, seo, jr, ns] = await Promise.all([
+      // job_runs: scheduler píše každých 5 min a pri dlhšom chybovom stave
+      // (status != 'ok', ktorý retencia 0031 NEmaže) by tisíce scheduler riadkov
+      // vytlačili posledné behy denných/týždenných jobov z jedného plochého
+      // `.limit()` okna → dead-man's-switch (audit 3.3) by ich hlásil ako „nikdy".
+      // Preto scheduler čítame ZVLÁŠŤ (najnovší 1) a non-scheduler joby druhým
+      // dotazom (nízkoobjemové, 0035 drží najnovší riadok per job navždy).
+      const jobCols = 'job, status, ok, failed, error, finished_at';
+      const [o, u, s, perf, gsc, sec, aeo, seo, jrSched, jrOther, ns] = await Promise.all([
         supabase.from('organizations').select('id, name').limit(1).maybeSingle(),
         supabase.auth.getUser(),
         supabase.from('sites').select('id', { count: 'exact', head: true }).eq('is_active', true),
@@ -133,7 +140,8 @@ export default function SettingsPage() {
         headCount('security_snapshots'),
         headCount('aeo_snapshots'),
         headCount('seo_snapshots'),
-        supabase.from('job_runs').select('job, status, ok, failed, error, finished_at').order('finished_at', { ascending: false }).limit(300),
+        supabase.from('job_runs').select(jobCols).eq('job', 'scheduler').order('finished_at', { ascending: false }).limit(1),
+        supabase.from('job_runs').select(jobCols).neq('job', 'scheduler').order('finished_at', { ascending: false }).limit(500),
         supabase.from('notification_settings').select('org_id, weekly_digest, monthly_report, recipients').limit(1).maybeSingle(),
       ]);
       if (!active) return;
@@ -155,7 +163,8 @@ export default function SettingsPage() {
         seo_snapshots: seo.count ?? 0,
       });
       const latest: Record<string, JobRun> = {};
-      for (const r of jr.data ?? []) if (!latest[r.job]) latest[r.job] = r as JobRun; // prvý = najnovší (order desc)
+      for (const r of [...(jrSched.data ?? []), ...(jrOther.data ?? [])])
+        if (!latest[r.job]) latest[r.job] = r as JobRun; // prvý výskyt = najnovší (order desc)
       setJobs(latest);
       setNow(new Date());
     })();
@@ -414,7 +423,7 @@ export default function SettingsPage() {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
                 <h3 style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>Notifikácie &amp; reporty</h3>
-                {saved && <span style={{ fontSize: '12px', fontWeight: 600, color: saved.startsWith('Chyba') ? 'var(--critical-color)' : 'var(--ok-color)' }}>{saved}</span>}
+                {saved && <span role="status" aria-live="polite" style={{ fontSize: '12px', fontWeight: 600, color: saved.startsWith('Chyba') ? 'var(--critical-color)' : 'var(--ok-color)' }}>{saved}</span>}
               </div>
               <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
                 Interný prehľad (všetky weby) — komu chodí týždenný digest a mesačný agregát. Prázdny zoznam = fallback na admin e-mail{' '}
@@ -442,6 +451,9 @@ export default function SettingsPage() {
                     <button
                       key={key}
                       type="button"
+                      role="switch"
+                      aria-checked={notif[key]}
+                      aria-label={title}
                       onClick={() => setNotif({ ...notif, [key]: !notif[key] })}
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: '10px', cursor: 'pointer', textAlign: 'left', width: '100%' }}
                     >

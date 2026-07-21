@@ -105,11 +105,13 @@ export function TabDiary({ siteId, orgId }: { siteId: string; orgId: string | nu
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input
             type="date"
+            aria-label="Dátum záznamu"
             value={date}
             onChange={(e) => setDate(e.target.value)}
             style={{ padding: '10px 12px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 13.5 }}
           />
           <input
+            aria-label="Text záznamu do denníka"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void add(); }}
