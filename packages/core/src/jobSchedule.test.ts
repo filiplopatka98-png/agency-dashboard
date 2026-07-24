@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expectedIntervalMs, isOverdue, JOB_SCHEDULES, type JobSchedule } from './jobSchedule';
+import { expectedIntervalMs, isOverdue, JOB_SCHEDULES, overdueFactor, type JobSchedule } from './jobSchedule';
 
 describe('expectedIntervalMs', () => {
   it('every5 = 5 minút', () => {
@@ -66,5 +66,25 @@ describe('JOB_SCHEDULES', () => {
   it('asset-check je hourly a expectedIntervalMs = 1 h', () => {
     expect(JOB_SCHEDULES['asset-check']!.kind).toBe('hourly');
     expect(expectedIntervalMs({ kind: 'hourly' })).toBe(3_600_000);
+  });
+});
+
+describe('overdueFactor', () => {
+  it('hourly dostáva väčšiu toleranciu (6×) — GitHub cron mešká/vynecháva hodinové behy', () => {
+    expect(overdueFactor({ kind: 'hourly' })).toBe(6);
+  });
+  it('ostatné kindy = 2×', () => {
+    expect(overdueFactor({ kind: 'every5' })).toBe(2);
+    expect(overdueFactor({ kind: 'daily', hh: 2, mm: 0 })).toBe(2);
+    expect(overdueFactor({ kind: 'weekly', dow: 1, hh: 3, mm: 0 })).toBe(2);
+    expect(overdueFactor({ kind: 'monthly', dom: 1, hh: 7, mm: 0 })).toBe(2);
+  });
+  it('hodinový job: beh spred 2,5 h NIE je overdue (GitHub jitter), spred 7 h ÁNO', () => {
+    const now = Date.parse('2026-07-20T12:00:00Z');
+    const h = 3_600_000;
+    const sched = { kind: 'hourly' } as const;
+    // s overdueFactor (6×) — prah je 6 h
+    expect(isOverdue(new Date(now - 2.5 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(false);
+    expect(isOverdue(new Date(now - 7 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(true);
   });
 });

@@ -74,3 +74,14 @@ export function isOverdue(
   if (Number.isNaN(t)) return false;
   return now - t > expectedIntervalMs(sched) * factor;
 }
+
+// Koľkonásobok očakávaného intervalu je „overdue". GitHub Actions cron je
+// best-effort: hodinový `0 * * * *` slot je najvyťaženejší a behy bežne mešká
+// 10–30 min alebo NIEKTORÉ VYNECHÁ (reálne pozorované medzery ~2,5 h medzi
+// hodinovými behmi). S 2× by jeden vynechaný GitHub beh spustil falošný
+// overdue → hodinové joby dostávajú 6× (~6 h bez behu = naozaj mŕtvy). Denné/
+// týždenné/mesačné majú aj pri 2× obrovskú rezervu (48 h / 2 týž. / 62 dní) a
+// Cloudflare `every5` je spoľahlivý, tým 2× stačí.
+export function overdueFactor(sched: JobSchedule): number {
+  return sched.kind === 'hourly' ? 6 : 2;
+}

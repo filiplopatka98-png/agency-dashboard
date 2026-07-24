@@ -1,4 +1,4 @@
-import { JOB_SCHEDULES, isOverdue } from '@agency/core';
+import { JOB_SCHEDULES, isOverdue, overdueFactor } from '@agency/core';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
@@ -73,7 +73,9 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   );
 
   // Dead-man's switch: job „mešká" (žiadny čerstvý zaznamenaný beh).
-  const overdueJobs = jobs.filter((job) => isOverdue(latest.get(job)?.finished_at ?? null, JOB_SCHEDULES[job]!, now.getTime()));
+  const overdueJobs = jobs.filter((job) =>
+    isOverdue(latest.get(job)?.finished_at ?? null, JOB_SCHEDULES[job]!, now.getTime(), overdueFactor(JOB_SCHEDULES[job]!)),
+  );
 
   // FIX 2: collector, čo BEŽÍ, ale posledný beh skončil status='error'/'partial'
   // (napr. expirovaný GSC/WPScan token → hodí alebo vynuluje všetko). finished_at

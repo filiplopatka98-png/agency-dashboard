@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 // JOB_SCHEDULES/isOverdue žijú v @agency/core (zdieľané s apps/scheduler —
 // Worker z nich počíta ten istý dead-man's switch, viď runJobHealth.ts).
 // Jediný zdroj pravdy pre očakávaný interval jobu — nehardcoduj druhú kópiu.
-import { JOB_SCHEDULES, isOverdue, type JobSchedule } from '@agency/core/jobSchedule';
+import { JOB_SCHEDULES, isOverdue, overdueFactor, type JobSchedule } from '@agency/core/jobSchedule';
 
 type JobRun = { status: string; ok: number | null; failed: number | null; error: string | null; finished_at: string };
 
@@ -234,7 +234,7 @@ export default function SettingsPage() {
                   // dvoma mesiacmi, nesmie svietiť zeleno len preto, že jeho
                   // POSLEDNÝ status bol 'ok' — ak od finished_at ubehlo > 2× jeho
                   // očakávaný interval, je to alarmujúce bez ohľadu na status.
-                  const overdue = Boolean(run && now && isOverdue(run.finished_at, j.sched, now.getTime()));
+                  const overdue = Boolean(run && now && isOverdue(run.finished_at, j.sched, now.getTime(), overdueFactor(j.sched)));
                   const [c, bg] = overdue
                     ? jobStatusColor.error
                     : run

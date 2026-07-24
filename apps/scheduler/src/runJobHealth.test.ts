@@ -12,6 +12,23 @@ function baseStore(): FakeStore {
 }
 
 const jobFailed = (store: FakeStore) => store.alerts.filter((a) => a.type === 'job_failed');
+const jobOverdue = (store: FakeStore) => store.alerts.filter((a) => a.type === 'job_overdue');
+
+describe('runJobHealth — hodinový job & GitHub cron jitter (overdueFactor)', () => {
+  const h = 3_600_000;
+  it('asset-check beh spred 2,5 h → NIE je overdue (GitHub vynechal beh, nie mŕtvy)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'asset-check', status: 'ok', finished_at: new Date(NOW.getTime() - 2.5 * h).toISOString() });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobOverdue(store)).toHaveLength(0);
+  });
+  it('asset-check beh spred 7 h → overdue (reálne mŕtvy)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'asset-check', status: 'ok', finished_at: new Date(NOW.getTime() - 7 * h).toISOString() });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobOverdue(store).map((a) => a.dedupe_key)).toContain('job_overdue:asset-check:2026-07-20');
+  });
+});
 
 describe('runJobHealth — job_failed pri zlyhanom zbere (FIX 2)', () => {
   it('posledný beh error → vloží job_failed alert', async () => {
