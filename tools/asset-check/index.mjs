@@ -36,9 +36,13 @@ async function fetchText(url) {
   }
 }
 
-// Stav CSS súboru: HEAD; ak HEAD nepodporený (405/501) → GET. `bytes` z
+// Stav CSS súboru. `forceGet=true` = rovno GET (potvrdzovací druhý pokus —
+// prehliadač načíta CSS GET-om, takže GET je zdroj pravdy). Inak najprv HEAD;
+// ak HEAD nie je 2xx (AKÝKOĽVEK non-2xx alebo sieťová chyba/null) → fallback na
+// GET, lebo WAF/servre nepriateľské voči HEAD bežne vrátia 403/400/405 na HEAD,
+// hoci ten istý súbor GET-om servírujú úplne v poriadku. `bytes` z
 // Content-Length (HEAD) alebo z tela (GET); null ak sa nedá zistiť.
-async function checkAsset(url) {
+async function checkAsset(url, forceGet = false) {
   const doReq = async (method) => {
     try {
       const res = await fetch(url, { method, redirect: 'follow', signal: AbortSignal.timeout(ASSET_TIMEOUT), headers: { 'User-Agent': UA } });
@@ -51,8 +55,9 @@ async function checkAsset(url) {
       return { status: null, bytes: null };
     }
   };
+  if (forceGet) return doReq('GET');
   let r = await doReq('HEAD');
-  if (r.status === 405 || r.status === 501) r = await doReq('GET');
+  if (r.status === null || r.status < 200 || r.status >= 300) r = await doReq('GET');
   return r;
 }
 
@@ -91,6 +96,18 @@ async function run() {
       const cssToPages = new Map(); // css url -> Set(page)
       const addCss = (pageUrl, html) => {
         for (const css of extractStylesheets(html, pageUrl)) {
+          // Stale-cache mechanizmus je z podstaty same-origin: zacachovaná HTML
+          // odkazuje na NÁŠ vlastný (Elementorom zmazaný) CSS. Cudzie CDN
+          // (fonts.googleapis, cdnjs…) nie sú chyba klienta a neopraví ich
+          // premazanie NAŠEJ cache (čo alert doslova radí) — preto ich vôbec
+          // nekontrolujeme ani nehlásime.
+          let cssOrigin;
+          try {
+            cssOrigin = new URL(css).origin;
+          } catch {
+            continue;
+          }
+          if (cssOrigin !== origin) continue;
           if (!cssToPages.has(css)) cssToPages.set(css, new Set());
           cssToPages.get(css).add(pageUrl);
         }
@@ -102,18 +119,22 @@ async function run() {
         await sleep(200);
       }
 
-      // Over každý unikátny CSS (+1 retry na `unknown` — naša chyba, nie fakt).
+      // Over každý unikátny CSS. Každý NON-OK verdikt (broken aj unknown) sa
+      // PRED nahlásením potvrdí druhým, VYNÚTENÝM GET-om (po krátkej pauze) —
+      // GET je to, čo robí prehliadač. Tým sa vyfiltruje jednorazový blip,
+      // rate-limit aj súbor v strede regenerácie, čo sa sám zahojí. Do alertu
+      // ide LEN CSS, kde aj potvrdzovací GET dá `broken` (zero-fabrication).
       const broken = [];
       for (const [css, pageSet] of cssToPages) {
         let res = await checkAsset(css);
         let verdict = classifyAsset(res);
-        if (verdict === 'unknown') {
-          // `unknown` = naša sieťová chyba/timeout, nie fakt o webe → 1 retry.
+        if (verdict !== 'ok') {
           await sleep(1_000);
-          res = await checkAsset(css);
+          res = await checkAsset(css, true); // vynútený GET = definitívne potvrdenie
           verdict = classifyAsset(res);
         }
         if (verdict === 'broken') broken.push({ css, status: res.status, page: [...pageSet][0] });
+        await sleep(150); // zdvorilé tempo medzi asset kontrolami — nech nespustíme WAF rate-limit
       }
 
       ok++;
