@@ -12,7 +12,7 @@ export function extractStylesheets(html: string, baseUrl: string): string[] {
     const m = tag.match(/\bhref\s*=\s*"([^"]+)"/i) ?? tag.match(/\bhref\s*=\s*'([^']+)'/i) ?? tag.match(/\bhref\s*=\s*([^\s>]+)/i);
     if (!m) continue;
     try {
-      out.push(new URL(m[1], baseUrl).href);
+      out.push(new URL(m[1]!, baseUrl).href);
     } catch {
       /* neplatné URL — vynechaj */
     }
@@ -36,7 +36,7 @@ function sameOrigin(url: string, origin: string): boolean {
 export function extractMenuLinks(html: string, origin: string, max = 4): string[] {
   const root = origin.replace(/\/$/, '');
   const pick = (fragment: string): string[] => {
-    const hrefs = [...fragment.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]);
+    const hrefs = [...fragment.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1]!);
     const out: string[] = [];
     for (const h of hrefs) {
       if (/^(#|mailto:|tel:|javascript:)/i.test(h)) continue;
@@ -47,7 +47,7 @@ export function extractMenuLinks(html: string, origin: string, max = 4): string[
         continue;
       }
       if (!sameOrigin(abs, origin)) continue;
-      const norm = abs.split('#')[0].replace(/\/$/, '');
+      const norm = abs.split('#')[0]!.replace(/\/$/, '');
       if (norm === root) continue; // homepage samotnú nepridávaj
       if (!out.includes(norm)) out.push(norm);
     }

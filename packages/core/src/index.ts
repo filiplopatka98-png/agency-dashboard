@@ -102,3 +102,5 @@ export { renderClientReport, type ClientReportData, type ClientReportSite } from
 export { checkEol, PHP_EOL, WP_MIN_SUPPORTED, type EolFinding } from './eol';
 
 export { isoWeek, isDrop } from './proactive';
+
+export { extractStylesheets, extractMenuLinks, classifyAsset, type AssetVerdict } from './assetCheck';
