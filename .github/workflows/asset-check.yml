@@ -1,0 +1,30 @@
+name: asset-check
+
+# Hodinová kontrola rozbitých CSS: na 5 stránkach každého webu overí, či
+# referencované stylesheety reálne existujú (200). 404 = rozbité → alert
+# css_broken. Ľahké HEAD kontroly, zadarmo.
+on:
+  schedule:
+    - cron: '0 * * * *' # každú hodinu
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'collect-*'
+
+jobs:
+  asset-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agency/core build
+      - name: Run asset-check
+        run: node tools/asset-check/index.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
