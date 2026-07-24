@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractStylesheets, extractMenuLinks } from './assetCheck';
+import { extractStylesheets, extractMenuLinks, classifyAsset } from './assetCheck';
 
 describe('extractStylesheets', () => {
   const base = 'https://x.sk/';
@@ -43,5 +43,26 @@ describe('extractMenuLinks', () => {
   it('reže na max', () => {
     const html = `<nav><a href="/a">A</a><a href="/b">B</a><a href="/c">C</a></nav>`;
     expect(extractMenuLinks(html, origin, 2)).toEqual(['https://x.sk/a', 'https://x.sk/b']);
+  });
+});
+
+describe('classifyAsset', () => {
+  it('404/410/5xx → broken', () => {
+    expect(classifyAsset({ status: 404, bytes: 0 })).toBe('broken');
+    expect(classifyAsset({ status: 410, bytes: 123 })).toBe('broken');
+    expect(classifyAsset({ status: 500, bytes: 0 })).toBe('broken');
+  });
+  it('200 s obsahom → ok', () => {
+    expect(classifyAsset({ status: 200, bytes: 4200 })).toBe('ok');
+    expect(classifyAsset({ status: 200, bytes: null })).toBe('ok'); // dĺžku nevieme → dôveruj 2xx
+  });
+  it('200 ale 0 bajtov → broken (prázdny CSS)', () => {
+    expect(classifyAsset({ status: 200, bytes: 0 })).toBe('broken');
+  });
+  it('null status (naša sieťová chyba/timeout) → unknown, NIE broken', () => {
+    expect(classifyAsset({ status: null, bytes: null })).toBe('unknown');
+  });
+  it('3xx (redirect nenasledovaný) → unknown', () => {
+    expect(classifyAsset({ status: 302, bytes: 0 })).toBe('unknown');
   });
 });

@@ -63,3 +63,16 @@ export function extractMenuLinks(html: string, origin: string, max = 4): string[
   }
   return links.slice(0, max);
 }
+
+export type AssetVerdict = 'ok' | 'broken' | 'unknown';
+
+// `bytes: null` = dĺžku nevieme (napr. HEAD bez Content-Length) — pri 2xx to
+// NEráta ako prázdne. `status: null` = NAŠA sieťová chyba/timeout, nie fakt o
+// webe → `unknown` (nikdy nehlásime ako broken; collector to skúsi znova a ak
+// stále unknown, preskočí — zero-fabrication).
+export function classifyAsset({ status, bytes }: { status: number | null; bytes: number | null }): AssetVerdict {
+  if (status === null) return 'unknown';
+  if (status >= 400) return 'broken';
+  if (status >= 200 && status < 300) return bytes === 0 ? 'broken' : 'ok';
+  return 'unknown'; // 1xx/3xx — neistý stav, nehlásime
+}
