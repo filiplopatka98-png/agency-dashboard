@@ -40,19 +40,16 @@ async function fetchText(url) {
 // prehliadač načíta CSS GET-om, takže GET je zdroj pravdy). Inak najprv HEAD;
 // ak HEAD nie je 2xx (AKÝKOĽVEK non-2xx alebo sieťová chyba/null) → fallback na
 // GET, lebo WAF/servre nepriateľské voči HEAD bežne vrátia 403/400/405 na HEAD,
-// hoci ten istý súbor GET-om servírujú úplne v poriadku. `bytes` z
-// Content-Length (HEAD) alebo z tela (GET); null ak sa nedá zistiť.
+// hoci ten istý súbor GET-om servírujú úplne v poriadku. Vráti len HTTP status
+// — `broken` je čisto o tom, či súbor existuje (404/410), nie o jeho veľkosti
+// (prázdny 200 je legitímny CSS, viď classifyAsset).
 async function checkAsset(url, forceGet = false) {
   const doReq = async (method) => {
     try {
       const res = await fetch(url, { method, redirect: 'follow', signal: AbortSignal.timeout(ASSET_TIMEOUT), headers: { 'User-Agent': UA } });
-      let bytes = null;
-      const cl = res.headers.get('content-length');
-      if (cl !== null && !Number.isNaN(Number(cl))) bytes = Number(cl);
-      if (method === 'GET') bytes = (await res.text()).length;
-      return { status: res.status, bytes };
+      return { status: res.status };
     } catch {
-      return { status: null, bytes: null };
+      return { status: null };
     }
   };
   if (forceGet) return doReq('GET');
@@ -127,11 +124,11 @@ async function run() {
       const broken = [];
       for (const [css, pageSet] of cssToPages) {
         let res = await checkAsset(css);
-        let verdict = classifyAsset(res);
+        let verdict = classifyAsset(res.status);
         if (verdict !== 'ok') {
           await sleep(1_000);
           res = await checkAsset(css, true); // vynútený GET = definitívne potvrdenie
-          verdict = classifyAsset(res);
+          verdict = classifyAsset(res.status);
         }
         if (verdict === 'broken') broken.push({ css, status: res.status, page: [...pageSet][0] });
         await sleep(150); // zdvorilé tempo medzi asset kontrolami — nech nespustíme WAF rate-limit

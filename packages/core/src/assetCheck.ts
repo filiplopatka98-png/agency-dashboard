@@ -66,14 +66,18 @@ export function extractMenuLinks(html: string, origin: string, max = 4): string[
 
 export type AssetVerdict = 'ok' | 'broken' | 'unknown';
 
-// `bytes: null` = dĺžku nevieme (napr. HEAD bez Content-Length) — pri 2xx to
-// NEráta ako prázdne. `status: null` = NAŠA sieťová chyba/timeout, nie fakt o
-// webe → `unknown` (nikdy nehlásime ako broken; collector to skúsi znova a ak
-// stále unknown, preskočí — zero-fabrication).
+// `status: null` = NAŠA sieťová chyba/timeout, nie fakt o webe → `unknown`
+// (nikdy nehlásime ako broken; collector to skúsi znova a ak stále unknown,
+// preskočí — zero-fabrication).
 //
-// `broken` je LEN definitívny signál „súbor je preukázateľne preč": 404/410
-// (presne to, čo Elementor spraví keď prečísluje/zmaže vygenerovaný CSS) alebo
-// 0-bajtový 200 (prázdny CSS). VŠETKO ostatné je `unknown`, NIE broken:
+// `broken` je LEN definitívny signál „súbor je preukázateľne preč": 404/410 —
+// presne to, čo Elementor spraví keď prečísluje/zmaže vygenerovaný CSS a
+// zacachovaná HTML naň stále odkazuje. VŠETKO ostatné je `unknown`, NIE broken:
+//   - 2xx (súbor sa NAČÍTA — vrátane prázdneho 0-bajtového; prázdny CSS je
+//     bežný a legitímny: LiteSpeed inlinuje kritické CSS a kombinovaný súbor
+//     nechá prázdny, pluginy dodávajú placeholder CSS. Overené na reálnych
+//     weboch — 0-bajt dával falošné poplachy. Symptóm „nenačíta sa" je 404,
+//     nie prázdny 200; režim „200 ale prázdne/staré" je vedome mimo rozsah.)
 //   - 403/406/… (WAF alebo server nepriateľský voči HEAD — súbor sa reálne
 //     servíruje na GET),
 //   - 429 (rate-limit — naša chyba tempa, nie fakt o webe),
@@ -81,9 +85,9 @@ export type AssetVerdict = 'ok' | 'broken' | 'unknown';
 //   - 3xx (nenasledovaný redirect).
 // Tým sa nikdy neposkytne falošný poplach z prechodného/dvojznačného stavu —
 // collector `unknown` GET-om overí a ak stále nie je definitívne preč, preskočí.
-export function classifyAsset({ status, bytes }: { status: number | null; bytes: number | null }): AssetVerdict {
+export function classifyAsset(status: number | null): AssetVerdict {
   if (status === null) return 'unknown';
   if (status === 404 || status === 410) return 'broken';
-  if (status >= 200 && status < 300) return bytes === 0 ? 'broken' : 'ok';
+  if (status >= 200 && status < 300) return 'ok';
   return 'unknown'; // iné 4xx (403/429/…), 5xx, 3xx, 1xx — neistý stav, nehlásime
 }
