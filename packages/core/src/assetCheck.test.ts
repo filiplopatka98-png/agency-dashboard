@@ -47,10 +47,9 @@ describe('extractMenuLinks', () => {
 });
 
 describe('classifyAsset', () => {
-  it('404/410/5xx → broken', () => {
+  it('LEN 404/410 (definitívne zmazané) → broken', () => {
     expect(classifyAsset({ status: 404, bytes: 0 })).toBe('broken');
     expect(classifyAsset({ status: 410, bytes: 123 })).toBe('broken');
-    expect(classifyAsset({ status: 500, bytes: 0 })).toBe('broken');
   });
   it('200 s obsahom → ok', () => {
     expect(classifyAsset({ status: 200, bytes: 4200 })).toBe('ok');
@@ -58,6 +57,16 @@ describe('classifyAsset', () => {
   });
   it('200 ale 0 bajtov → broken (prázdny CSS)', () => {
     expect(classifyAsset({ status: 200, bytes: 0 })).toBe('broken');
+  });
+  it('5xx (prechodná serverová chyba) → unknown, NIE broken', () => {
+    expect(classifyAsset({ status: 500, bytes: 0 })).toBe('unknown');
+    expect(classifyAsset({ status: 503, bytes: 0 })).toBe('unknown');
+  });
+  it('429 (rate-limit) → unknown, NIE broken', () => {
+    expect(classifyAsset({ status: 429, bytes: 0 })).toBe('unknown');
+  });
+  it('403 (WAF/HEAD-hostilný server) → unknown, NIE broken', () => {
+    expect(classifyAsset({ status: 403, bytes: 0 })).toBe('unknown');
   });
   it('null status (naša sieťová chyba/timeout) → unknown, NIE broken', () => {
     expect(classifyAsset({ status: null, bytes: null })).toBe('unknown');

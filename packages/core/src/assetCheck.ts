@@ -70,9 +70,20 @@ export type AssetVerdict = 'ok' | 'broken' | 'unknown';
 // NEráta ako prázdne. `status: null` = NAŠA sieťová chyba/timeout, nie fakt o
 // webe → `unknown` (nikdy nehlásime ako broken; collector to skúsi znova a ak
 // stále unknown, preskočí — zero-fabrication).
+//
+// `broken` je LEN definitívny signál „súbor je preukázateľne preč": 404/410
+// (presne to, čo Elementor spraví keď prečísluje/zmaže vygenerovaný CSS) alebo
+// 0-bajtový 200 (prázdny CSS). VŠETKO ostatné je `unknown`, NIE broken:
+//   - 403/406/… (WAF alebo server nepriateľský voči HEAD — súbor sa reálne
+//     servíruje na GET),
+//   - 429 (rate-limit — naša chyba tempa, nie fakt o webe),
+//   - 5xx (prechodná serverová chyba — self-heal),
+//   - 3xx (nenasledovaný redirect).
+// Tým sa nikdy neposkytne falošný poplach z prechodného/dvojznačného stavu —
+// collector `unknown` GET-om overí a ak stále nie je definitívne preč, preskočí.
 export function classifyAsset({ status, bytes }: { status: number | null; bytes: number | null }): AssetVerdict {
   if (status === null) return 'unknown';
-  if (status >= 400) return 'broken';
+  if (status === 404 || status === 410) return 'broken';
   if (status >= 200 && status < 300) return bytes === 0 ? 'broken' : 'ok';
-  return 'unknown'; // 1xx/3xx — neistý stav, nehlásime
+  return 'unknown'; // iné 4xx (403/429/…), 5xx, 3xx, 1xx — neistý stav, nehlásime
 }
