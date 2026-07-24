@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractStylesheets } from './assetCheck';
+import { extractStylesheets, extractMenuLinks } from './assetCheck';
 
 describe('extractStylesheets', () => {
   const base = 'https://x.sk/';
@@ -22,5 +22,26 @@ describe('extractStylesheets', () => {
   it('zachová query (?ver=) — Elementor cache-bust', () => {
     const html = `<link rel="stylesheet" href="/wp-content/uploads/elementor/css/post-12.css?ver=170">`;
     expect(extractStylesheets(html, base)).toEqual(['https://x.sk/wp-content/uploads/elementor/css/post-12.css?ver=170']);
+  });
+});
+
+describe('extractMenuLinks', () => {
+  const origin = 'https://x.sk';
+  it('vezme interné odkazy z <nav>, max N, dedup, bez homepage/#/mailto', () => {
+    const html = `
+      <header><a href="/">Domov</a><nav>
+        <a href="/sluzby">Služby</a><a href="/o-nas/">O nás</a>
+        <a href="/sluzby">Služby dup</a><a href="mailto:a@x.sk">Mail</a>
+        <a href="https://iny.sk/extern">Extern</a><a href="#top">Hore</a>
+      </nav></header>`;
+    expect(extractMenuLinks(html, origin, 4)).toEqual(['https://x.sk/sluzby', 'https://x.sk/o-nas']);
+  });
+  it('fallback: bez nav/header doplní prvými internými odkazmi z celej stránky', () => {
+    const html = `<a href="/a">A</a><a href="/b">B</a><a href="https://cdn.sk/x">Ext</a>`;
+    expect(extractMenuLinks(html, origin, 4)).toEqual(['https://x.sk/a', 'https://x.sk/b']);
+  });
+  it('reže na max', () => {
+    const html = `<nav><a href="/a">A</a><a href="/b">B</a><a href="/c">C</a></nav>`;
+    expect(extractMenuLinks(html, origin, 2)).toEqual(['https://x.sk/a', 'https://x.sk/b']);
   });
 });
