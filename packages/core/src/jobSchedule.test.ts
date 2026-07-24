@@ -47,8 +47,8 @@ describe('isOverdue', () => {
 });
 
 describe('JOB_SCHEDULES', () => {
-  it('obsahuje presne 12 jobov (11 collectorov + scheduler)', () => {
-    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(12);
+  it('obsahuje presne 13 jobov (12 collectorov + scheduler)', () => {
+    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(13);
   });
 
   it('kľúče zodpovedajú job_runs.job hodnotám použitým v collectoroch', () => {
@@ -61,5 +61,10 @@ describe('JOB_SCHEDULES', () => {
 
   it('cve je DENNÝ (wp-cve.yml beží 0 6 * * *), nie týždenný (FIX 3)', () => {
     expect(JOB_SCHEDULES.cve!.kind).toBe('daily');
+  });
+
+  it('asset-check je hourly a expectedIntervalMs = 1 h', () => {
+    expect(JOB_SCHEDULES['asset-check']!.kind).toBe('hourly');
+    expect(expectedIntervalMs({ kind: 'hourly' })).toBe(3_600_000);
   });
 });

@@ -23,6 +23,7 @@ const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] =
   { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC' },
   { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC' },
   { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC' },
+  { key: 'asset-check', label: 'Kontrola CSS (rozbité assety)', desc: 'každú hodinu' },
 ].map((j) => ({ ...j, sched: JOB_SCHEDULES[j.key]! }));
 
 function nextRun(sched: JobSchedule, from: Date): Date {
@@ -30,6 +31,11 @@ function nextRun(sched: JobSchedule, from: Date): Date {
   if (sched.kind === 'every5') {
     n.setUTCSeconds(0, 0);
     n.setUTCMinutes(Math.floor(from.getUTCMinutes() / 5) * 5 + 5);
+    return n;
+  }
+  if (sched.kind === 'hourly') {
+    n.setUTCMinutes(0, 0, 0);
+    n.setUTCHours(from.getUTCHours() + 1);
     return n;
   }
   n.setUTCHours(sched.hh, sched.mm, 0, 0);
@@ -60,7 +66,7 @@ function rel(ms: number): string {
 
 // Worker endpoint pre ručné spustenie (dispatchne GitHub workflow). Scheduler beží na cron → nedispatchovateľný.
 const WORKER_URL = 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev';
-const DISPATCHABLE = new Set(['psi', 'tls', 'security', 'aeo', 'gsc', 'seo', 'infra', 'cve', 'history', 'digest', 'report']);
+const DISPATCHABLE = new Set(['psi', 'tls', 'security', 'aeo', 'gsc', 'seo', 'infra', 'cve', 'history', 'digest', 'report', 'asset-check']);
 
 const jobStatusColor: Record<string, [string, string]> = {
   ok: ['var(--ok-color)', 'var(--ok-bg)'],

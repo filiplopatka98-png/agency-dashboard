@@ -13,6 +13,7 @@
 
 export type JobSchedule =
   | { kind: 'every5' }
+  | { kind: 'hourly' }
   | { kind: 'daily'; hh: number; mm: number }
   | { kind: 'weekly'; dow: number; hh: number; mm: number }
   | { kind: 'monthly'; dom: number; hh: number; mm: number };
@@ -31,6 +32,7 @@ export const JOB_SCHEDULES: Record<string, JobSchedule> = {
   history: { kind: 'weekly', dow: 1, hh: 7, mm: 0 },
   digest: { kind: 'weekly', dow: 1, hh: 8, mm: 0 },
   report: { kind: 'monthly', dom: 1, hh: 7, mm: 0 },
+  'asset-check': { kind: 'hourly' },
 };
 
 // Očakávaný interval medzi behmi v ms — vychádza len z `kind` (presný
@@ -41,6 +43,8 @@ export function expectedIntervalMs(sched: JobSchedule): number {
   switch (sched.kind) {
     case 'every5':
       return 5 * 60_000;
+    case 'hourly':
+      return 3_600_000;
     case 'daily':
       return 24 * 3_600_000;
     case 'weekly':
