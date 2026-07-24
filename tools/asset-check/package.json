@@ -1,0 +1,10 @@
+{
+  "name": "@agency/asset-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node collector: kontrola rozbitých CSS (404 referencovaných stylesheetov) na 5 stránkach každého webu → alert css_broken. GitHub Action, zadarmo.",
+  "scripts": {
+    "probe": "node index.mjs"
+  }
+}
