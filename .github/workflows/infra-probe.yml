@@ -18,6 +18,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # infra-probe importuje `packages/core/dist/eol.js` (EOL kontrola WP/PHP) —
+      # dist musí existovať pred behom, inak ERR_MODULE_NOT_FOUND.
+      - run: pnpm --filter @agency/core build
       - name: Run infra probe
         run: node tools/infra-probe/index.mjs
         env:
