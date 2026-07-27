@@ -49,13 +49,27 @@ describe('runJobHealth — job_failed pri zlyhanom zbere (FIX 2)', () => {
     expect(jobFailed(store)).toHaveLength(0);
   });
 
-  it('posledný beh partial → vloží job_failed alert (N webov zlyhalo)', async () => {
+  it('VÄČŠINOVÉ partial (0 ok / 16 failed = dead token) → job_failed alert', async () => {
     const store = baseStore();
-    store.job_runs.push({ job: 'psi', status: 'partial', failed: 3, finished_at: FRESH });
+    store.job_runs.push({ job: 'psi', status: 'partial', ok: 0, failed: 16, finished_at: FRESH });
     await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
     const rows = jobFailed(store);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.body).toContain('3');
+    expect(rows[0]!.body).toContain('16');
+  });
+
+  it('MENŠINOVÉ partial (14 ok / 2 failed = Google PSI flakinesss) → ŽIADNY alert', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'psi', status: 'partial', ok: 14, failed: 2, finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobFailed(store)).toHaveLength(0);
+  });
+
+  it('partial na hranici (8 ok / 8 failed) → alert (viac rozbité než funkčné)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'aeo', status: 'partial', ok: 8, failed: 8, finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobFailed(store)).toHaveLength(1);
   });
 
   it('dvakrát v ten istý deň → len jeden job_failed riadok (dedupe)', async () => {

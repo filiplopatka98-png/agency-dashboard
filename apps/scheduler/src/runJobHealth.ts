@@ -43,13 +43,14 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
     status: string | null;
     error: string | null;
     failed: number | null;
+    ok: number | null;
   }
   const latest = new Map<string, LatestRun>();
   await Promise.all(
     jobs.map(async (job) => {
       const { data, error } = await supabase
         .from('job_runs')
-        .select('finished_at, status, error, failed')
+        .select('finished_at, status, error, failed, ok')
         .eq('job', job)
         .order('finished_at', { ascending: false })
         .limit(1)
@@ -67,6 +68,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
           status: data.status ?? null,
           error: data.error ?? null,
           failed: data.failed ?? null,
+          ok: data.ok ?? null,
         });
       }
     }),
@@ -92,8 +94,21 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   // rieši zápis statusu + (akceptovaná) medzera vlastnej smrti, nie job_failed.
   const failedJobs = jobs.filter((job) => {
     if (job === 'scheduler') return false;
-    const st = latest.get(job)?.status;
-    return st === 'error' || st === 'partial';
+    const run = latest.get(job);
+    if (!run) return false;
+    // `error` = systémové zlyhanie (celý beh hodil — chýbajúci/mŕtvy token cez
+    // throw, nedostupná DB) → vždy alert.
+    if (run.status === 'error') return true;
+    if (run.status !== 'partial') return false;
+    // `partial` = niektoré položky zlyhali. MENŠINOVÉ zlyhanie je bežná
+    // prechodná flakinesss externých API — napr. Google PSI dá ~9% náhodných
+    // Lighthouse 500, takže 1–3 z 16 meraní zlyhá skoro každý deň (weby sú OK,
+    // len jedna stratégia hipla). Alertuj LEN keď je zlyhaní aspoň toľko čo
+    // úspechov (failed >= ok) — to je „viac rozbité než funkčné": dead token
+    // (ok=0), systémový výpadok, nie šum. Menšinové partial ticho ignoruj.
+    const ok = run.ok ?? 0;
+    const failed = run.failed ?? 0;
+    return failed >= ok && failed > 0;
   });
 
   if (overdueJobs.length === 0 && failedJobs.length === 0) {

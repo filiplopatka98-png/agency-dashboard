@@ -152,8 +152,10 @@ async function run() {
     if (!r.ok) console.log(JSON.stringify({ ev: 'history.changelog_fail', status: r.status, body: await r.text() }));
   }
   // Proaktívne alerty — ignoruj konflikt (dedupe_key unique), pošle ich runAlerts.
+  // `?on_conflict=dedupe_key` je povinné, inak ON CONFLICT mieri na PK (id) a
+  // duplikát dedupe_key vyhodí 23505 → odmietne celú dávku (viď raiseAlert.mjs).
   if (alertRows.length) {
-    const r = await fetch(`${url}/rest/v1/alerts`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal,resolution=ignore-duplicates' }, body: JSON.stringify(alertRows) });
+    const r = await fetch(`${url}/rest/v1/alerts?on_conflict=dedupe_key`, { method: 'POST', headers: { ...H, Prefer: 'return=minimal,resolution=ignore-duplicates' }, body: JSON.stringify(alertRows) });
     if (!r.ok) console.log(JSON.stringify({ ev: 'history.alerts_fail', status: r.status, body: await r.text() }));
   }
   console.log(JSON.stringify({ ev: 'history.done', sites: sites.length, history: historyRows.length, changes: changeRows.length, alerts: alertRows.length }));
