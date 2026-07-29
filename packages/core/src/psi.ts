@@ -4,6 +4,14 @@
  * ⚠️ PSI vracia 200 aj pri chybe s prázdnym lighthouseResult — kontrolujeme score.
  */
 
+export interface PsiOpportunity {
+  id: string;
+  title: string;
+  savingsMs: number | null;
+  savingsBytes: number | null;
+  score: number | null;
+}
+
 export interface PerfSnap {
   performanceScore: number;
   accessibility: number;
@@ -20,12 +28,18 @@ export interface PerfSnap {
   fieldLcpMs: number | null;
   fieldInpMs: number | null;
   fieldCls: number | null;
+  opportunities: PsiOpportunity[];
 }
 
 interface PsiJson {
   lighthouseResult?: {
     categories?: Record<string, { score?: number | null } | undefined>;
-    audits?: Record<string, { numericValue?: number; details?: { items?: unknown[] } } | undefined>;
+    audits?: Record<string, {
+      numericValue?: number;
+      title?: string;
+      score?: number | null;
+      details?: { type?: string; items?: unknown[]; overallSavingsMs?: number; overallSavingsBytes?: number };
+    } | undefined>;
   };
   loadingExperience?: { metrics?: Record<string, { percentile?: number } | undefined> };
 }
@@ -55,6 +69,21 @@ export function parsePsi(json: PsiJson): { ok: true; snap: PerfSnap } | { ok: fa
   };
   const fieldClsRaw = fieldNum('CUMULATIVE_LAYOUT_SHIFT_SCORE');
 
+  // Len sekcia „Opportunities" (details.type === 'opportunity'), čo reálne majú
+  // čo zlepšiť (score < 1). Diagnostiku zámerne neberieme (fuzzy). Top 8 podľa
+  // úspory ms; chýbajúca úspora = null (bez fabrikácie).
+  const opportunities: PsiOpportunity[] = Object.entries(audits)
+    .filter(([, a]) => !!a && a.details?.type === 'opportunity' && typeof a.score === 'number' && a.score < 1)
+    .map(([id, a]) => ({
+      id,
+      title: a!.title ?? id,
+      savingsMs: typeof a!.details?.overallSavingsMs === 'number' ? Math.round(a!.details.overallSavingsMs) : null,
+      savingsBytes: typeof a!.details?.overallSavingsBytes === 'number' ? Math.round(a!.details.overallSavingsBytes) : null,
+      score: typeof a!.score === 'number' ? a!.score : null,
+    }))
+    .sort((x, y) => (y.savingsMs ?? -1) - (x.savingsMs ?? -1))
+    .slice(0, 8);
+
   return {
     ok: true,
     snap: {
@@ -73,6 +102,7 @@ export function parsePsi(json: PsiJson): { ok: true; snap: PerfSnap } | { ok: fa
       fieldLcpMs: fieldNum('LARGEST_CONTENTFUL_PAINT_MS'),
       fieldInpMs: fieldNum('INTERACTION_TO_NEXT_PAINT'),
       fieldCls: fieldClsRaw !== null ? fieldClsRaw / 100 : null,
+      opportunities,
     },
   };
 }

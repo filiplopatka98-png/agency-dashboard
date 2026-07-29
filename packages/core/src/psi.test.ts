@@ -65,6 +65,25 @@ describe('parsePsi', () => {
     const r = parsePsi(json as never);
     if (r.ok) expect(r.snap.fcpMs).toBeNull();
   });
+
+  it('parsePsi zoberie len opportunity audity, zoradí podľa úspory, cap 8', () => {
+    const audits: Record<string, unknown> = {
+      'unused-css': { title: 'Reduce unused CSS', score: 0.5, details: { type: 'opportunity', overallSavingsMs: 300, overallSavingsBytes: 12000 } },
+      'unused-js': { title: 'Reduce unused JavaScript', score: 0.2, details: { type: 'opportunity', overallSavingsMs: 900 } },
+      'ok-audit': { title: 'Perfektné', score: 1, details: { type: 'opportunity', overallSavingsMs: 0 } },
+      'not-opp': { title: 'Diagnostika', score: 0.3, details: { type: 'table' } },
+    };
+    const json = { lighthouseResult: { categories: { performance: { score: 0.4 } }, audits } };
+    const r = parsePsi(json as never);
+    if (!r.ok) throw new Error('má byť ok');
+    expect(r.snap.opportunities.map((o) => o.id)).toEqual(['unused-js', 'unused-css']); // score<1, opportunity, zoradené savingsMs desc
+    expect(r.snap.opportunities[0]).toEqual({ id: 'unused-js', title: 'Reduce unused JavaScript', savingsMs: 900, savingsBytes: null, score: 0.2 });
+  });
+  it('parsePsi opportunities = [] keď žiadne', () => {
+    const json = { lighthouseResult: { categories: { performance: { score: 1 } }, audits: {} } };
+    const r = parsePsi(json as never);
+    if (r.ok) expect(r.snap.opportunities).toEqual([]);
+  });
 });
 
 /** fetch mock, ktorý vracia responses z fronty (jedna na volanie). */
