@@ -48,6 +48,23 @@ describe('parsePsi', () => {
     expect(parsePsi({ lighthouseResult: {} }).ok).toBe(false);
     expect(parsePsi({}).ok).toBe(false);
   });
+
+  it('parsePsi extrahuje FCP z first-contentful-paint auditu', () => {
+    const json = {
+      lighthouseResult: {
+        categories: { performance: { score: 0.9 } },
+        audits: { 'first-contentful-paint': { numericValue: 1234.6 } },
+      },
+    };
+    const r = parsePsi(json as never);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.snap.fcpMs).toBe(1235);
+  });
+  it('parsePsi fcpMs = null keď audit chýba', () => {
+    const json = { lighthouseResult: { categories: { performance: { score: 0.5 } }, audits: {} } };
+    const r = parsePsi(json as never);
+    if (r.ok) expect(r.snap.fcpMs).toBeNull();
+  });
 });
 
 /** fetch mock, ktorý vracia responses z fronty (jedna na volanie). */

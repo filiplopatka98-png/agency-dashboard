@@ -14,6 +14,7 @@ export interface PerfSnap {
   cls: number | null;
   tbtMs: number | null;
   ttfbMs: number | null;
+  fcpMs: number | null;
   pageWeightKb: number | null;
   requests: number | null;
   fieldLcpMs: number | null;
@@ -66,6 +67,7 @@ export function parsePsi(json: PsiJson): { ok: true; snap: PerfSnap } | { ok: fa
       cls: num('cumulative-layout-shift'),
       tbtMs: num('total-blocking-time') !== null ? Math.round(num('total-blocking-time')!) : null,
       ttfbMs: num('server-response-time') !== null ? Math.round(num('server-response-time')!) : null,
+      fcpMs: num('first-contentful-paint') !== null ? Math.round(num('first-contentful-paint')!) : null,
       pageWeightKb: weight !== null ? Math.round(weight / 1024) : null,
       requests,
       fieldLcpMs: fieldNum('LARGEST_CONTENTFUL_PAINT_MS'),
