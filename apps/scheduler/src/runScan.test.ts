@@ -29,11 +29,20 @@ describe('handleScan', () => {
     const res = await handleScan(req({ page_id: 'nope', strategy: 'mobile' }), env, { waitUntil() {} }, { supabase: fakeSupabase(s), auth: okAuth });
     expect(res.status).toBe(404);
   });
-  it('in-flight (pending) → 429', async () => {
+  it('in-flight (fresh pending) → 429', async () => {
     const s = store();
     s.scan_jobs = [{ id: 'j0', page_id: 'page-1', org_id: 'org-1', strategy: 'mobile', status: 'pending', requested_at: new Date().toISOString() }];
     const res = await handleScan(req({ page_id: 'page-1', strategy: 'mobile' }), env, { waitUntil() {} }, { supabase: fakeSupabase(s), auth: okAuth });
     expect(res.status).toBe(429);
+  });
+  it('stale pending (>5 min, evictnutý Worker) → povolené (202), nový pending job', async () => {
+    const s = store();
+    const staleAt = new Date(Date.now() - 10 * 60_000).toISOString();
+    s.scan_jobs = [{ id: 'j0', page_id: 'page-1', org_id: 'org-1', strategy: 'mobile', status: 'pending', requested_at: staleAt }];
+    const res = await handleScan(req({ page_id: 'page-1', strategy: 'mobile' }), env, { waitUntil() {} }, { supabase: fakeSupabase(s), auth: okAuth });
+    expect(res.status).toBe(202);
+    expect(s.scan_jobs).toHaveLength(2);
+    expect(s.scan_jobs![1]!.status).toBe('pending');
   });
   it('happy path → 202 + scan_job pending + po dobehnutí done + perf_runs riadok', async () => {
     const s = store();

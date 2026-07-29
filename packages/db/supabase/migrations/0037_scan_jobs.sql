@@ -23,7 +23,10 @@ create policy "org members read" on scan_jobs for select
 create policy "staff write" on scan_jobs for all
   using (org_id in (select private.user_write_orgs()))
   with check (org_id in (select private.user_write_orgs()));
-grant select, insert, update, delete on scan_jobs to authenticated;
+-- Least-privilege: UI len číta; zápis (insert/update) ide výhradne cez Worker
+-- (service_role nižšie). Bez write grantu staff nevie ručne vpísať scan_job a
+-- obísť rate-limit / in-flight logiku Workera. RLS "staff write" ostáva.
+grant select on scan_jobs to authenticated;
 grant all on scan_jobs to service_role;
 
 -- Retencia: len operačné stavy, drž 7 dní. Pomenovaný job → re-run migrácie aktualizuje.
