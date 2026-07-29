@@ -709,6 +709,189 @@ export type Database = {
           },
         ]
       }
+      monitored_pages: {
+        Row: {
+          active: boolean
+          added_at: string
+          id: string
+          is_homepage: boolean
+          org_id: string
+          site_id: string
+          url: string
+        }
+        Insert: {
+          active?: boolean
+          added_at?: string
+          id?: string
+          is_homepage?: boolean
+          org_id: string
+          site_id: string
+          url: string
+        }
+        Update: {
+          active?: boolean
+          added_at?: string
+          id?: string
+          is_homepage?: boolean
+          org_id?: string
+          site_id?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitored_pages_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monitored_pages_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      perf_runs: {
+        Row: {
+          accessibility: number | null
+          best_practices: number | null
+          cls: number | null
+          error: string | null
+          fcp_ms: number | null
+          field_cls: number | null
+          field_inp_ms: number | null
+          field_lcp_ms: number | null
+          id: string
+          inp_ms: number | null
+          lcp_ms: number | null
+          measured_at: string
+          opportunities: Json
+          org_id: string
+          page_id: string
+          page_weight_kb: number | null
+          performance_score: number | null
+          requests: number | null
+          seo: number | null
+          strategy: string
+          tbt_ms: number | null
+          ttfb_ms: number | null
+        }
+        Insert: {
+          accessibility?: number | null
+          best_practices?: number | null
+          cls?: number | null
+          error?: string | null
+          fcp_ms?: number | null
+          field_cls?: number | null
+          field_inp_ms?: number | null
+          field_lcp_ms?: number | null
+          id?: string
+          inp_ms?: number | null
+          lcp_ms?: number | null
+          measured_at?: string
+          opportunities?: Json
+          org_id: string
+          page_id: string
+          page_weight_kb?: number | null
+          performance_score?: number | null
+          requests?: number | null
+          seo?: number | null
+          strategy: string
+          tbt_ms?: number | null
+          ttfb_ms?: number | null
+        }
+        Update: {
+          accessibility?: number | null
+          best_practices?: number | null
+          cls?: number | null
+          error?: string | null
+          fcp_ms?: number | null
+          field_cls?: number | null
+          field_inp_ms?: number | null
+          field_lcp_ms?: number | null
+          id?: string
+          inp_ms?: number | null
+          lcp_ms?: number | null
+          measured_at?: string
+          opportunities?: Json
+          org_id?: string
+          page_id?: string
+          page_weight_kb?: number | null
+          performance_score?: number | null
+          requests?: number | null
+          seo?: number | null
+          strategy?: string
+          tbt_ms?: number | null
+          ttfb_ms?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "perf_runs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "perf_runs_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "monitored_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scan_jobs: {
+        Row: {
+          error: string | null
+          finished_at: string | null
+          id: string
+          org_id: string
+          page_id: string
+          requested_at: string
+          status: string
+          strategy: string
+        }
+        Insert: {
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          org_id: string
+          page_id: string
+          requested_at?: string
+          status?: string
+          strategy: string
+        }
+        Update: {
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          org_id?: string
+          page_id?: string
+          requested_at?: string
+          status?: string
+          strategy?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_jobs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_jobs_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "monitored_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       security_snapshots: {
         Row: {
           error: string | null
