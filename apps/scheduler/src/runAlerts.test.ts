@@ -9,6 +9,7 @@ const env: Env = {
   SUPABASE_URL: 'http://local',
   SUPABASE_SERVICE_ROLE_KEY: 'svc',
   RESEND_API_KEY: 're_fake',
+  PSI_API_KEY: '',
   ALERT_EMAIL_TO: 'to@lopatka.sk',
   ALERT_EMAIL_FROM: 'from@lopatka.sk',
   UPTIME_PROVIDER: 'local',

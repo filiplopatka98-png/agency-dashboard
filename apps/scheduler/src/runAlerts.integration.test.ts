@@ -46,6 +46,7 @@ describe.skipIf(!enabled)('runAlerts + dedupe (integration)', () => {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,
       RESEND_API_KEY: '',
+      PSI_API_KEY: '',
       ALERT_EMAIL_TO: 'to@lopatka.sk',
       ALERT_EMAIL_FROM: 'from@lopatka.sk',
       UPTIME_PROVIDER: 'local',

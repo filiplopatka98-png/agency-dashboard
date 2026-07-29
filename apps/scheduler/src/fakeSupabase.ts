@@ -13,6 +13,10 @@ export interface FakeStore {
   alerts: FakeAlertRow[];
   job_runs: FakeJobRunRow[];
   organizations: { id: string }[];
+  // On-demand PSI sken (SP2) — generické riadky, testy si tvar overia samy.
+  monitored_pages?: Record<string, unknown>[];
+  scan_jobs?: Record<string, unknown>[];
+  perf_runs?: Record<string, unknown>[];
 }
 
 export interface FakeAlertRow {
@@ -44,12 +48,14 @@ class FakeQuery {
   private orderCol: string | null = null;
   private orderAsc = true;
   private limitN: number | null = null;
-  private single = false;
+  private wantSingle = false;
   private selectHead = false;
   private updatePatch: Record<string, unknown> | null = null;
   private upsertRows: Record<string, unknown>[] | null = null;
   private upsertConflict: string | null = null;
   private upsertIgnore = false;
+  private insertRows: Record<string, unknown>[] | null = null;
+  private selectCalled = false;
 
   constructor(
     private store: FakeStore,
@@ -57,7 +63,12 @@ class FakeQuery {
   ) {}
 
   select(_cols?: string, opts?: { count?: string; head?: boolean }): this {
+    this.selectCalled = true;
     if (opts?.head) this.selectHead = true;
+    return this;
+  }
+  insert(rows: Record<string, unknown> | Record<string, unknown>[]): this {
+    this.insertRows = Array.isArray(rows) ? rows : [rows];
     return this;
   }
   is(col: string, val: unknown): this {
@@ -88,7 +99,11 @@ class FakeQuery {
     return this;
   }
   maybeSingle(): this {
-    this.single = true;
+    this.wantSingle = true;
+    return this;
+  }
+  single(): this {
+    this.wantSingle = true;
     return this;
   }
 
@@ -108,6 +123,15 @@ class FakeQuery {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private exec(): { data: any; error: null; count?: number } {
     const rows = this.store[this.table] as unknown as Record<string, unknown>[];
+
+    if (this.insertRows) {
+      // Vlož riadky do store (skutočný append) — vygeneruj `id`, ak chýba, nech
+      // `insert().select('id').single()` vráti reálne id ako PostgREST.
+      const inserted = this.insertRows.map((r) => ({ id: r.id ?? crypto.randomUUID(), ...r }));
+      for (const r of inserted) rows.push(r);
+      if (!this.selectCalled) return { data: null, error: null };
+      return { data: this.wantSingle ? (inserted[0] ?? null) : inserted, error: null };
+    }
 
     if (this.upsertRows) {
       for (const r of this.upsertRows) {
@@ -137,7 +161,7 @@ class FakeQuery {
     }
     if (this.selectHead) return { data: null, error: null, count: result.length };
     if (this.limitN != null) result = result.slice(0, this.limitN);
-    if (this.single) return { data: result[0] ?? null, error: null };
+    if (this.wantSingle) return { data: result[0] ?? null, error: null };
     return { data: result, error: null };
   }
 }

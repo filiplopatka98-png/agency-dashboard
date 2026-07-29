@@ -6,6 +6,7 @@ import { runWpCronKick } from './runWpCronKick';
 import { serviceClient } from './supabase';
 import { wpIngest } from './wpIngest';
 import { triggerJob } from './trigger';
+import { handleScan } from './runScan';
 
 // CORS pre volanie z web appky (pages.dev / vlastná doména).
 const CORS = {
@@ -27,12 +28,19 @@ export default {
   },
 
   // HTTP endpoint — WP agent push + ručné spustenie jobu z UI.
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS' && url.pathname === '/trigger') return new Response(null, { status: 204, headers: CORS });
     if (request.method === 'POST' && url.pathname === '/wp-ingest') return wpIngest(request, env);
     if (request.method === 'POST' && url.pathname === '/trigger') {
       const res = await triggerJob(request, env);
+      const h = new Headers(res.headers);
+      for (const [k, v] of Object.entries(CORS)) h.set(k, v);
+      return new Response(res.body, { status: res.status, headers: h });
+    }
+    if (request.method === 'OPTIONS' && url.pathname === '/scan') return new Response(null, { status: 204, headers: CORS });
+    if (request.method === 'POST' && url.pathname === '/scan') {
+      const res = await handleScan(request, env, ctx);
       const h = new Headers(res.headers);
       for (const [k, v] of Object.entries(CORS)) h.set(k, v);
       return new Response(res.body, { status: res.status, headers: h });

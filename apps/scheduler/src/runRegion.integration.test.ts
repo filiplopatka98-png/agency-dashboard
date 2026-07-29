@@ -30,6 +30,7 @@ describe.skipIf(!enabled)('region_outage (integration)', () => {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,
       RESEND_API_KEY: '',
+      PSI_API_KEY: '',
       ALERT_EMAIL_TO: '',
       ALERT_EMAIL_FROM: '',
       UPTIME_PROVIDER: 'local',
