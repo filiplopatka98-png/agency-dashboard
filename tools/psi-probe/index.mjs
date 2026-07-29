@@ -6,6 +6,7 @@
 //
 // Env: PSI_API_KEY, (DB režim) SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { fetchPsi } from '../../packages/core/dist/psi.js';
+import { perfRunRow } from '../../packages/core/dist/perfRow.js';
 import { isoWeek, isDrop } from '../../packages/core/dist/proactive.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -113,14 +114,7 @@ async function run() {
     const r = await fetchPsi(p.url, KEY, strategy);
     if (r.ok) {
       const x = r.snap;
-      perfRuns.push({
-        page_id: p.id, org_id: p.org_id, strategy,
-        performance_score: x.performanceScore, accessibility: x.accessibility, best_practices: x.bestPractices, seo: x.seo,
-        lcp_ms: x.lcpMs, fcp_ms: x.fcpMs, inp_ms: x.inpMs, cls: x.cls, tbt_ms: x.tbtMs, ttfb_ms: x.ttfbMs,
-        page_weight_kb: x.pageWeightKb, requests: x.requests,
-        field_lcp_ms: x.fieldLcpMs, field_inp_ms: x.fieldInpMs, field_cls: x.fieldCls,
-        opportunities: x.opportunities, measured_at: now, error: null,
-      });
+      perfRuns.push({ ...perfRunRow(x, p, strategy), measured_at: now, error: null });
       ok++;
       console.log(JSON.stringify({ ev: 'psi.ok', url: p.url, strategy, perf: x.performanceScore }));
 
