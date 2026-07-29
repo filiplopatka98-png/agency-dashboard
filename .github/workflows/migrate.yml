@@ -1,0 +1,49 @@
+name: migrate
+
+# Aplikuje DB migrácie na produkciu cez `secrets.SUPABASE_DB_URL` (Session pooler
+# connection string s DB heslom). Rovnaký princíp ako deploy.yml — credential žije
+# LEN v GitHub secrets: nikdy neprejde cez chat ani cez lokál/agenta.
+#
+# Migrácie sú IDEMPOTENTNÉ (create/alter … if not exists, drop policy if exists +
+# create, insert … on conflict do nothing, cron.schedule podľa mena, create or
+# replace). Preto workflow bezpečne aplikuje VŠETKY súbory v poradí podľa čísla —
+# už aplikované sa len „prepíšu na to isté". KAŽDÁ nová migrácia MUSÍ zostať
+# idempotentná, inak re-beh zlyhá.
+#
+# Spúšťanie:
+#   • automaticky pri pushi novej/zmenenej migrácie do main (paths nižšie), alebo
+#   • ručne: GitHub → Actions → "migrate" → Run workflow.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - 'packages/db/supabase/migrations/**'
+
+concurrency:
+  group: migrate-prod
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      - name: Apply migrations (idempotentné, v poradí)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL secret nie je nastavený (GitHub → Settings → Secrets → Actions)."
+            exit 1
+          fi
+          shopt -s nullglob
+          files=$(ls packages/db/supabase/migrations/*.sql | sort)
+          for f in $files; do
+            echo "→ $f"
+            # -1 = každý súbor v jednej transakcii; ON_ERROR_STOP = zlyhaj hneď.
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -1 -q -f "$f"
+          done
+          echo "✅ Všetky migrácie aplikované."
