@@ -9,7 +9,6 @@ import { loadDashboard, type SiteVM } from '../lib/data';
 import { supabase, type Client } from '../lib/supabase';
 import {
   sparklineFromValues,
-  cwvMeta,
   scoreColor,
   gaugeOffset,
   BOT_DEFS,
@@ -20,14 +19,8 @@ import { relativeTime } from '../lib/format';
 import type { FreshKey } from '../lib/data';
 import { maxFixedIn, maxSev, sevMeta, type Vuln } from '../lib/vulns';
 import { TabDiary } from './TabDiary';
-
-const card = {
-  background: 'var(--surface-primary)',
-  border: '1px solid var(--border-primary)',
-  borderRadius: 'var(--radius)',
-  boxShadow: 'var(--shadow-sm)',
-} as const;
-const mono = { fontFamily: "'Geist Mono', monospace", fontVariantNumeric: 'tabular-nums' } as const;
+import { TabPerformance } from './TabPerformance';
+import { Gauge, card, mono } from './perf/ui';
 
 // Čerstvosť dát — „aktualizované pred X" + výrazný štítok ak je meranie pristaré.
 function FreshLabel({ site, metric }: { site: SiteVM; metric: FreshKey }) {
@@ -444,120 +437,6 @@ function TabUptime({ site }: { site: SiteVM }) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function Gauge({ score, off, color, size = 76, sw = 7, r = 33, circ = 207.3 }: { score: number; off: number; color: string; size?: number; sw?: number; r?: number; circ?: number }) {
-  const c = size / 2;
-  return (
-    <div style={{ position: 'relative', width: size, height: size }}>
-      <svg viewBox={`0 0 ${size} ${size}`} style={{ width: size, height: size, transform: 'rotate(-90deg)' }}>
-        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--surface-secondary)" strokeWidth={sw} />
-        <circle cx={c} cy={c} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} />
-      </svg>
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size > 100 ? 34 : size > 70 ? 22 : 18, fontWeight: 800, ...mono, color }}>{score}</div>
-    </div>
-  );
-}
-
-function CwvCard({ name, thr, kind, value }: { name: string; thr: string; kind: 'lcp' | 'inp' | 'cls'; value: number | null }) {
-  const m = cwvMeta(kind, value);
-  return (
-    <div style={{ background: m.bg, borderRadius: 12, padding: 15 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{name}</span>
-        <span style={{ fontSize: 11, color: m.color, fontWeight: 600 }}>{m.state}</span>
-      </div>
-      <div style={{ fontSize: 24, fontWeight: 800, ...mono, color: m.color, marginBottom: 6 }}>{m.val}</div>
-      <div style={{ height: 5, background: 'rgba(128,128,128,0.15)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', width: m.w, background: m.color, borderRadius: 3 }} /></div>
-      <div style={{ fontSize: 10.5, color: 'var(--text-tertiary)', marginTop: 6 }}>{thr}</div>
-    </div>
-  );
-}
-
-function TabPerformance({ site }: { site: SiteVM }) {
-  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
-  const snap = site.perf ? site.perf[device] : null;
-  const hasField = snap && (snap.fieldLcpMs !== null || snap.fieldInpMs !== null || snap.fieldCls !== null);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 4, borderRadius: 10, width: 'fit-content' }}>
-          {(['desktop', 'mobile'] as const).map((d) => (
-            <button key={d} onClick={() => setDevice(d)} style={{ padding: '7px 15px', background: device === d ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, color: device === d ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 600, boxShadow: device === d ? 'var(--shadow-sm)' : 'none' }}>{d === 'desktop' ? 'Desktop' : 'Mobil'}</button>
-          ))}
-        </div>
-        <FreshLabel site={site} metric="perf" />
-      </div>
-
-      {!snap ? (
-        <div style={{ ...card, padding: 24 }}>
-          <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 28, textAlign: 'center' }}>
-            <div style={{ fontSize: 22, marginBottom: 8 }}>⚡</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-              {site.perf ? `Meranie pre ${device === 'desktop' ? 'desktop' : 'mobil'} sa nepodarilo` : 'Performance sa pre tento web ešte nemeralo'}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>Meria PageSpeed Insights (Lighthouse), týždenne. Skóre sa neodhaduje — zobrazí sa po reálnom meraní.</div>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div style={{ ...card, padding: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-              <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Lab · Lighthouse / PSI</h3>
-              <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{device === 'desktop' ? 'Desktop' : 'Mobil'}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 14 }}>
-              {([['Performance', snap.performanceScore], ['Accessibility', snap.accessibility], ['Best Practices', snap.bestPractices], ['SEO', snap.seo]] as const).map(([name, score]) => (
-                <div key={name} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: 8 }}>
-                  <Gauge score={score} off={gaugeOffset(score, 207.3)} color={scoreColor(score)} />
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{name}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ ...card, padding: 20 }}>
-            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Core Web Vitals <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12 }}>· Lab</span></h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
-              <CwvCard name="LCP" thr="práh ≤ 2,5s" kind="lcp" value={snap.lcpMs} />
-              <CwvCard name="INP" thr="práh ≤ 200ms" kind="inp" value={snap.inpMs} />
-              <CwvCard name="CLS" thr="práh ≤ 0,1" kind="cls" value={snap.cls} />
-            </div>
-          </div>
-
-          <div style={{ ...card, padding: 20 }}>
-            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text-primary)' }}>Field dáta <span style={{ fontWeight: 500, color: 'var(--text-tertiary)', fontSize: 12 }}>· CrUX (reálni návštevníci)</span></h3>
-            {hasField ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, marginTop: 12 }}>
-                <CwvCard name="LCP" thr="reálni návštevníci" kind="lcp" value={snap.fieldLcpMs} />
-                <CwvCard name="INP" thr="reálni návštevníci" kind="inp" value={snap.fieldInpMs} />
-                <CwvCard name="CLS" thr="reálni návštevníci" kind="cls" value={snap.fieldCls} />
-              </div>
-            ) : (
-              <div style={{ background: 'var(--surface-secondary)', borderRadius: 12, padding: 22, textAlign: 'center', marginTop: 12 }}>
-                <div style={{ fontSize: 20, marginBottom: 8 }}>📉</div>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Nedostatok field dát</div>
-                <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 380, margin: '0 auto', lineHeight: 1.5 }}>Web nemá dosť návštevnosti pre CrUX dataset. Nie je to chyba — Google zverejní field metriky až pri dostatočnom počte reálnych návštev.</div>
-              </div>
-            )}
-          </div>
-
-          <div style={{ ...card, padding: 20 }}>
-            <h3 style={{ fontWeight: 700, fontSize: 14, marginBottom: 16, color: 'var(--text-primary)' }}>Popis stránky</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: 13 }}>
-              {([['Veľkosť', snap.pageWeightKb === null ? '—' : `${snap.pageWeightKb} KB`], ['Requesty', snap.requests === null ? '—' : String(snap.requests)], ['TTFB', snap.ttfbMs === null ? '—' : `${snap.ttfbMs} ms`], ['TBT', snap.tbtMs === null ? '—' : `${snap.tbtMs} ms`]] as const).map(([k, v]) => (
-                <div key={k} style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 14 }}>
-                  <div style={{ ...label, fontSize: 11.5, marginBottom: 6 }}>{k}</div>
-                  <div style={{ fontWeight: 700, ...mono, fontSize: 16 }}>{v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

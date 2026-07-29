@@ -50,7 +50,7 @@ export function LineChart({ series, labels, height = 220, yFixed }: { series: Se
         {series.map((s) => {
           const off = hidden.has(s.key);
           return (
-            <button key={s.key} onClick={() => setHidden((h) => { const n = new Set(h); n.has(s.key) ? n.delete(s.key) : n.add(s.key); return n; })}
+            <button key={s.key} onClick={() => setHidden((h) => { const n = new Set(h); if (n.has(s.key)) n.delete(s.key); else n.add(s.key); return n; })}
               style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, color: off ? 'var(--text-tertiary)' : 'var(--text-secondary)', opacity: off ? 0.55 : 1 }}
               aria-pressed={!off}>
               <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, display: 'inline-block' }} />
