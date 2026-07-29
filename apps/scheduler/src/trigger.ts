@@ -178,10 +178,11 @@ async function isOwnerOrStaff(env: Env, userId: string): Promise<boolean> {
   }
 }
 
-export async function triggerJob(request: Request, env: Env): Promise<Response> {
-  if (!env.GH_DISPATCH_TOKEN || !env.GH_REPO) {
-    return json({ error: 'Ručné spustenie nie je nakonfigurované (chýba GH token / repo).' }, 503);
-  }
+// Overí prihláseného admina (owner/staff) z Bearer JWT. Vráti `{ sub }` alebo
+// `Response` s chybou (401) — jednotné pre /trigger aj /scan (DRY, rovnaký
+// fail-closed vzor). `role: 'authenticated'` je len globálna Supabase rola;
+// appková autorizácia žije v `memberships` cez `sub` (user id).
+export async function authenticateAdmin(request: Request, env: Env): Promise<{ sub: string } | { error: Response }> {
   const auth = request.headers.get('Authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   const payload = token ? await verifyJwt(token, env) : null;
@@ -190,15 +191,24 @@ export async function triggerJob(request: Request, env: Env): Promise<Response> 
     // detail bol dôvod, prečo bol HS256/ES256 bug ťažké odhaliť (oba prípady
     // vracali identické "Neautorizované."). Nástroj má jedného operátora,
     // diagnostická hodnota prevažuje nad marginálnym info-leakom.
-    return json({ error: 'Neplatný alebo expirovaný token.' }, 401);
+    return { error: json({ error: 'Neplatný alebo expirovaný token.' }, 401) };
   }
   // `role: 'authenticated'` je len globálna Supabase auth rola (má ju hocikto
   // s platným loginom) — appková autorizácia (owner/staff smie dispatchovať,
   // client nie) žije v `memberships`, cez `sub` (user id). Zlyhanie dotazu
   // = fail closed (žiadny dispatch), nie fail open.
   if (!(await isOwnerOrStaff(env, payload.sub))) {
-    return json({ error: 'Účet nemá owner/staff oprávnenie.' }, 401);
+    return { error: json({ error: 'Účet nemá owner/staff oprávnenie.' }, 401) };
   }
+  return { sub: payload.sub };
+}
+
+export async function triggerJob(request: Request, env: Env): Promise<Response> {
+  if (!env.GH_DISPATCH_TOKEN || !env.GH_REPO) {
+    return json({ error: 'Ručné spustenie nie je nakonfigurované (chýba GH token / repo).' }, 503);
+  }
+  const authed = await authenticateAdmin(request, env);
+  if ('error' in authed) return authed.error;
 
   let job = '';
   try {
@@ -221,7 +231,7 @@ export async function triggerJob(request: Request, env: Env): Promise<Response> 
     body: JSON.stringify({ ref: 'main' }),
   });
   if (res.status === 204) {
-    console.log(JSON.stringify({ ev: 'trigger.ok', job, sub: payload.sub }));
+    console.log(JSON.stringify({ ev: 'trigger.ok', job, sub: authed.sub }));
     return json({ ok: true, job }, 200);
   }
   const body = await res.text();
