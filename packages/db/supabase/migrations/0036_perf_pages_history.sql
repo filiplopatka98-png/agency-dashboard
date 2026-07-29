@@ -31,6 +31,26 @@ insert into monitored_pages (site_id, org_id, url, is_homepage)
   select s.id, s.org_id, s.url, true from sites s
   on conflict (site_id, url) do nothing;
 
+-- Každý web MUSÍ mať homepage monitorovanú stránku (owner rozhodnutie: homepage
+-- sa monitoruje automaticky). Bez toho by web pridaný po tejto migrácii vypadol
+-- z PSI (collector iteruje monitored_pages, nie sites) → žiadny perf_runs ani
+-- perf_snapshots. Trigger to zaručí pri KAŽDOM vzniku webu (UI, SQL, seed), nech
+-- riadok existuje okamžite (aj pre SP3 pages UI). SECURITY DEFINER + fixný
+-- search_path — invariant sa vynúti nezávisle od RLS práv vkladajúceho.
+create or replace function seed_homepage_monitored_page()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into monitored_pages (site_id, org_id, url, is_homepage)
+    values (new.id, new.org_id, new.url, true)
+    on conflict (site_id, url) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists sites_seed_homepage on sites;
+create trigger sites_seed_homepage after insert on sites
+  for each row execute function seed_homepage_monitored_page();
+
 create table if not exists perf_runs (
   id uuid primary key default gen_random_uuid(),
   page_id uuid not null references monitored_pages on delete cascade,
