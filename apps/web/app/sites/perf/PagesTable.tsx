@@ -1,5 +1,5 @@
 'use client';
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { supabase } from '../../lib/supabase';
 import { WORKER_URL } from '../../lib/worker';
 import { scoreColor } from '../../lib/design';
@@ -17,17 +17,32 @@ export function PagesTable({ site, pages, loading, error, refresh, selectedPageI
 }) {
   const [input, setInput] = useState('');
   const [addErr, setAddErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);           // page_id ktorý sa práve skenuje
+  const [adding, setAdding] = useState(false);                      // insert prebieha (guard proti cap-10 race)
+  const [busy, setBusy] = useState<Set<string>>(new Set());         // page_id-y ktoré sa práve skenujú
   const [rowMsg, setRowMsg] = useState<Record<string, string>>({}); // per-riadok hláška
   const atCap = pages.length >= MAX_PAGES;
   const setMsg = (id: string, m: string | null) => setRowMsg((r) => ({ ...r, [id]: m ?? '' }));
+  const startBusy = (id: string) => setBusy((b) => new Set(b).add(id));
+  const endBusy = (id: string) => setBusy((b) => { const n = new Set(b); n.delete(id); return n; });
+
+  // Komponent sa odmountuje pri prepnutí tabu/návrate na zoznam — poll timery
+  // (až 3 min) potom nesmú volať setState na odmountovanom komponente.
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
 
   async function add() {
+    if (adding) return;
     const n = normalizePageUrl(input, site.domain);
     if (!n.ok) { setAddErr(n.reason); return; }
-    const { error: e } = await supabase.from('monitored_pages').insert({ site_id: site.id, org_id: site.orgId, url: n.url, is_homepage: false });
-    if (e) { setAddErr(e.code === '23505' ? 'Táto stránka je už pridaná.' : 'Nepodarilo sa pridať.'); return; }
-    setInput(''); setAddErr(null); refresh();
+    setAdding(true);
+    try {
+      const { error: e } = await supabase.from('monitored_pages').insert({ site_id: site.id, org_id: site.orgId, url: n.url, is_homepage: false });
+      if (!mounted.current) return;
+      if (e) { setAddErr(e.code === '23505' ? 'Táto stránka je už pridaná.' : 'Nepodarilo sa pridať.'); return; }
+      setInput(''); setAddErr(null); refresh();
+    } finally {
+      if (mounted.current) setAdding(false);
+    }
   }
 
   async function remove(id: string, url: string) {
@@ -39,26 +54,33 @@ export function PagesTable({ site, pages, loading, error, refresh, selectedPageI
   }
 
   async function scan(id: string) {
-    setBusy(id); setMsg(id, '');
+    startBusy(id); setMsg(id, '');
     const { data } = await supabase.auth.getSession();
+    if (!mounted.current) return;
     const token = data.session?.access_token;
-    if (!token) { setMsg(id, 'Prihlásenie vypršalo.'); setBusy(null); return; }
+    if (!token) { setMsg(id, 'Prihlásenie vypršalo.'); endBusy(id); return; }
     try {
       const res = await fetch(`${WORKER_URL}/scan`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ page_id: id, strategy }) });
-      if (res.status === 429) { setMsg(id, 'Sken práve beží alebo dobehol pred chvíľou.'); setBusy(null); return; }
-      if (res.status === 503) { setMsg(id, 'On-demand sken nie je nakonfigurovaný.'); setBusy(null); return; }
-      if (res.status !== 202) { setMsg(id, 'Nepodarilo sa spustiť sken.'); setBusy(null); return; }
+      if (!mounted.current) return;
+      if (res.status === 429) { setMsg(id, 'Sken práve beží alebo dobehol pred chvíľou.'); endBusy(id); return; }
+      if (res.status === 503) { setMsg(id, 'On-demand sken nie je nakonfigurovaný.'); endBusy(id); return; }
+      if (res.status !== 202) { setMsg(id, 'Nepodarilo sa spustiť sken.'); endBusy(id); return; }
       const { job_id } = (await res.json()) as { job_id: string };
       const started = Date.now();
       const poll = async () => {
+        if (!mounted.current) return;
         const { data: job } = await supabase.from('scan_jobs').select('status, error').eq('id', job_id).maybeSingle();
-        if (job?.status === 'done') { setBusy(null); setMsg(id, ''); refresh(); return; }
-        if (job?.status === 'error') { setBusy(null); setMsg(id, `Sken zlyhal: ${job.error ?? ''}`); return; }
-        if (Date.now() - started > 180_000) { setBusy(null); setMsg(id, 'Sken trvá dlho — obnov neskôr.'); return; }
+        if (!mounted.current) return;
+        if (job?.status === 'done') { endBusy(id); setMsg(id, ''); refresh(); return; }
+        if (job?.status === 'error') { endBusy(id); setMsg(id, `Sken zlyhal: ${job.error ?? ''}`); return; }
+        if (Date.now() - started > 180_000) { endBusy(id); setMsg(id, 'Sken trvá dlho — obnov neskôr.'); return; }
         setTimeout(() => void poll(), 2500);
       };
       setTimeout(() => void poll(), 2500);
-    } catch { setMsg(id, 'Nepodarilo sa spustiť sken.'); setBusy(null); }
+    } catch {
+      if (!mounted.current) return;
+      setMsg(id, 'Nepodarilo sa spustiť sken.'); endBusy(id);
+    }
   }
 
   const th: CSSProperties = { textAlign: 'left', fontSize: 11.5, color: 'var(--text-tertiary)', fontWeight: 600, padding: '6px 8px', textTransform: 'uppercase' };
@@ -73,7 +95,7 @@ export function PagesTable({ site, pages, loading, error, refresh, selectedPageI
           <input value={input} onChange={(e) => { setInput(e.target.value); setAddErr(null); }} disabled={atCap}
             placeholder={atCap ? 'Max 10 stránok' : `https://${site.domain}/…`} aria-label="URL novej stránky"
             style={{ padding: '7px 10px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface-secondary)', color: 'var(--text-primary)', minWidth: 220 }} />
-          <button onClick={add} disabled={atCap || !input.trim()} style={{ padding: '7px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: 'none', cursor: atCap ? 'not-allowed' : 'pointer', background: 'var(--accent-primary)', color: '#fff', opacity: atCap || !input.trim() ? 0.5 : 1 }}>Pridať</button>
+          <button onClick={add} disabled={atCap || adding || !input.trim()} style={{ padding: '7px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: 'none', cursor: atCap || adding ? 'not-allowed' : 'pointer', background: 'var(--accent-primary)', color: '#fff', opacity: atCap || adding || !input.trim() ? 0.5 : 1 }}>Pridať</button>
         </div>
       </div>
       {addErr && <div style={{ fontSize: 12.5, color: 'var(--critical-color)', marginBottom: 8 }}>{addErr}</div>}
@@ -102,7 +124,7 @@ export function PagesTable({ site, pages, loading, error, refresh, selectedPageI
                   <td style={td}>{scoreCell(p.seo)}</td>
                   <td style={{ ...td, color: 'var(--text-tertiary)', fontSize: 12 }}>{p.measured_at ? new Date(p.measured_at).toLocaleDateString('sk') : '—'}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                    <button onClick={() => scan(p.id)} disabled={busy === p.id} aria-label={`Skenovať ${p.url}`} style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-secondary)', color: 'var(--text-secondary)', cursor: busy === p.id ? 'wait' : 'pointer', marginRight: 6 }}>{busy === p.id ? 'Skenujem…' : 'Skenuj'}</button>
+                    <button onClick={() => scan(p.id)} disabled={busy.has(p.id)} aria-label={`Skenovať ${p.url}`} style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-secondary)', color: 'var(--text-secondary)', cursor: busy.has(p.id) ? 'wait' : 'pointer', marginRight: 6 }}>{busy.has(p.id) ? 'Skenujem…' : 'Skenuj'}</button>
                     {!p.is_homepage && <button onClick={() => remove(p.id, p.url)} aria-label={`Odstrániť ${p.url}`} style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--critical-color)', cursor: 'pointer' }}>Odstrániť</button>}
                   </td>
                 </tr>

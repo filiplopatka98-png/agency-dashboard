@@ -276,7 +276,7 @@ function SiteDetail({ id }: { id: string }) {
         <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === 'overview' && <TabOverview site={site} />}
           {tab === 'uptime' && <TabUptime site={site} />}
-          {tab === 'performance' && <TabPerformance site={site} />}
+          {tab === 'performance' && <TabPerformance key={site.id} site={site} />}
           {tab === 'seo' && <TabSeo site={site} />}
           {tab === 'aeo' && <TabAeo site={site} />}
           {tab === 'infra' && <TabInfra site={site} />}

@@ -26,13 +26,17 @@ export function usePages(siteId: string, strategy: 'mobile' | 'desktop'): PagesS
       if (pErr) { setState({ pages: [], loading: false, error: pErr.message }); return; }
       const rows = pagesData ?? [];
       const ids = rows.map((p) => p.id);
-      const latest = new Map<string, { performance_score: number | null; accessibility: number | null; best_practices: number | null; seo: number | null; measured_at: string }>();
-      if (ids.length) {
-        const { data: runs } = await supabase
-          .from('perf_runs').select('page_id, performance_score, accessibility, best_practices, seo, measured_at')
-          .in('page_id', ids).eq('strategy', strategy).order('measured_at', { ascending: false }).limit(500);
-        for (const r of runs ?? []) if (!latest.has(r.page_id)) latest.set(r.page_id, r);
-      }
+      // Latest beh per stránka samostatným dotazom (≤10 stránok, paralelne). Jeden
+      // veľký `in(...) limit(500)` by mohol vytlačiť latest riadok málo skenovanej
+      // stránky za okno (keď má iná stránka veľa behov) → falošné „—".
+      const latestArr = await Promise.all(ids.map((pid) =>
+        supabase.from('perf_runs')
+          .select('page_id, performance_score, accessibility, best_practices, seo, measured_at')
+          .eq('page_id', pid).eq('strategy', strategy)
+          .order('measured_at', { ascending: false }).limit(1).maybeSingle()
+          .then(({ data }) => data)));
+      const latest = new Map<string, NonNullable<typeof latestArr[number]>>();
+      for (const r of latestArr) if (r) latest.set(r.page_id, r);
       if (cancelled) return;
       const pages: PageRow[] = rows.map((p) => {
         const l = latest.get(p.id);
