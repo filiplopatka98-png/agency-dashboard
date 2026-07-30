@@ -50,7 +50,11 @@ export function TabPerformance({ site }: { site: SiteVM }) {
 
   const seg = (active: boolean): CSSProperties => ({ padding: '7px 15px', background: active ? 'var(--surface-primary)' : 'transparent', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, color: active ? 'var(--accent-primary)' : 'var(--text-secondary)', fontWeight: 600, boxShadow: active ? 'var(--shadow-sm)' : 'none' });
   const wrap: CSSProperties = { display: 'flex', gap: 4, background: 'var(--surface-secondary)', padding: 4, borderRadius: 10, width: 'fit-content' };
-  const enoughHistory = history.length >= 2;
+  // Menej než MIN_CHART_POINTS bodov = chudobná/škaredá čiara → radšej info hláška
+  // s konkrétnym počtom (PSI meria denne, takže body ≈ dni). Doplnia sa denným zberom.
+  const MIN_CHART_POINTS = 3;
+  const enoughHistory = history.length >= MIN_CHART_POINTS;
+  const chartHint = `Graf sa zobrazí po aspoň ${MIN_CHART_POINTS} meraniach — PSI meria denne (zatiaľ ${history.length}).`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -98,14 +102,14 @@ export function TabPerformance({ site }: { site: SiteVM }) {
           <div style={{ ...card, padding: 20 }}>
             <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 14 }}>Score History</h3>
             {enoughHistory ? <LineChart series={scoreSeries} labels={labels} yFixed={{ min: 0, max: 100 }} />
-              : <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Zatiaľ málo meraní na graf (zbiera sa denne).</div>}
+              : <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{chartHint}</div>}
           </div>
 
           <div style={{ ...card, padding: 20 }}>
             <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 14 }}>Web Vitals · {source === 'lab' ? 'Lighthouse (lab)' : 'CrUX (reálni návštevníci)'}</h3>
             {source === 'crux' && !hasCrux ? <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Žiadne dáta z reálnych návštevníkov (CrUX) — málo návštevnosti.</div>
               : enoughHistory ? <LineChart series={vitalsSeries} labels={labels} />
-              : <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Zatiaľ málo meraní na graf (zbiera sa denne).</div>}
+              : <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{chartHint}</div>}
           </div>
 
           <div style={{ ...card, padding: 20 }}>
