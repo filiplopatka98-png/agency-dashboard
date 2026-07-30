@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 // Worker z nich počíta ten istý dead-man's switch, viď runJobHealth.ts).
 // Jediný zdroj pravdy pre očakávaný interval jobu — nehardcoduj druhú kópiu.
 import { JOB_SCHEDULES, isOverdue, overdueFactor, type JobSchedule } from '@agency/core/jobSchedule';
+import { WORKER_URL } from '../lib/worker';
 
 type JobRun = { status: string; ok: number | null; failed: number | null; error: string | null; finished_at: string };
 
@@ -64,8 +65,6 @@ function rel(ms: number): string {
   return `${Math.round(h / 24)} d`;
 }
 
-// Worker endpoint pre ručné spustenie (dispatchne GitHub workflow). Scheduler beží na cron → nedispatchovateľný.
-const WORKER_URL = 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev';
 const DISPATCHABLE = new Set(['psi', 'tls', 'security', 'aeo', 'gsc', 'seo', 'infra', 'cve', 'history', 'digest', 'report', 'asset-check']);
 
 const jobStatusColor: Record<string, [string, string]> = {
