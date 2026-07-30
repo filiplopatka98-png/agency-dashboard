@@ -9,6 +9,31 @@ import type { PageRow } from './usePages';
 
 const MAX_PAGES = 10; // musí zodpovedať MAX_PAGES_PER_SITE v tools/psi-probe/index.mjs
 
+// Kompaktné ikonkové akcie (namiesto textových tlačidiel). aria-label + title
+// zachovávajú prístupnosť aj tooltip. Spinner cez SVG SMIL (bez CSS keyframes).
+const iconBtn = (extra?: CSSProperties): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30,
+  borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface-secondary)',
+  color: 'var(--text-secondary)', cursor: 'pointer', padding: 0, ...extra,
+});
+const PlayIcon = () => (
+  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="currentColor">
+    <path d="M4.5 3.2c0-.5.5-.8 1-.5l7 4.8c.4.3.4.9 0 1.1l-7 4.8c-.5.3-1 0-1-.5V3.2z" />
+  </svg>
+);
+const SpinnerIcon = () => (
+  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+    <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="28" strokeDashoffset="12">
+      <animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="0.8s" repeatCount="indefinite" />
+    </circle>
+  </svg>
+);
+const TrashIcon = () => (
+  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 4h10M6.5 4V3h3v1M5 4l.5 8.5a1 1 0 0 0 1 .9h3a1 1 0 0 0 1-.9L11 4" />
+  </svg>
+);
+
 export function PagesTable({ site, pages, loading, error, refresh, selectedPageId, onSelect, strategy }: {
   site: { id: string; orgId: string; domain: string };
   pages: PageRow[]; loading: boolean; error: string | null; refresh: () => void;
@@ -105,7 +130,7 @@ export function PagesTable({ site, pages, loading, error, refresh, selectedPageI
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th scope="col" style={th}>URL</th><th scope="col" style={th}>Perf</th><th scope="col" style={th}>A11y</th>
-            <th scope="col" style={th}>BP</th><th scope="col" style={th}>SEO</th><th scope="col" style={th}>Posledný sken</th><th scope="col" style={th}></th>
+            <th scope="col" style={th}>BP</th><th scope="col" style={th}>SEO</th><th scope="col" style={th}>Posledný sken</th><th scope="col" style={{ ...th, textAlign: 'right' }}></th>
           </tr></thead>
           <tbody>
             {pages.map((p) => {
@@ -123,9 +148,16 @@ export function PagesTable({ site, pages, loading, error, refresh, selectedPageI
                   <td style={td}>{scoreCell(p.best_practices)}</td>
                   <td style={td}>{scoreCell(p.seo)}</td>
                   <td style={{ ...td, color: 'var(--text-tertiary)', fontSize: 12 }}>{p.measured_at ? new Date(p.measured_at).toLocaleDateString('sk') : '—'}</td>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                    <button onClick={() => scan(p.id)} disabled={busy.has(p.id)} aria-label={`Skenovať ${p.url}`} style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-secondary)', color: 'var(--text-secondary)', cursor: busy.has(p.id) ? 'wait' : 'pointer', marginRight: 6 }}>{busy.has(p.id) ? 'Skenujem…' : 'Skenuj'}</button>
-                    {!p.is_homepage && <button onClick={() => remove(p.id, p.url)} aria-label={`Odstrániť ${p.url}`} style={{ padding: '5px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--critical-color)', cursor: 'pointer' }}>Odstrániť</button>}
+                  <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    <button onClick={() => scan(p.id)} disabled={busy.has(p.id)} title={busy.has(p.id) ? 'Skenuje sa…' : 'Skenovať teraz'} aria-label={`Skenovať ${p.url}`}
+                      style={iconBtn({ cursor: busy.has(p.id) ? 'wait' : 'pointer', marginRight: 6, color: busy.has(p.id) ? 'var(--accent-primary)' : 'var(--text-secondary)' })}>
+                      {busy.has(p.id) ? <SpinnerIcon /> : <PlayIcon />}
+                    </button>
+                    {!p.is_homepage && (
+                      <button onClick={() => remove(p.id, p.url)} title="Odstrániť stránku" aria-label={`Odstrániť ${p.url}`} style={iconBtn({ color: 'var(--critical-color)' })}>
+                        <TrashIcon />
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
