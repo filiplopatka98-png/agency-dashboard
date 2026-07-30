@@ -6,6 +6,8 @@ import { Gauge, card, mono } from './perf/ui';
 import { LineChart, type Series } from './perf/LineChart';
 import { usePerfData, useHomepageId } from './perf/usePerfData';
 import { sinceIsoForRange, type Range } from './perf/perfChart';
+import { usePages } from './perf/usePages';
+import { PagesTable } from './perf/PagesTable';
 
 type PerfPick = { performance_score: number|null; accessibility: number|null; best_practices: number|null; seo: number|null };
 const SCORE_SERIES: { key: keyof PerfPick; label: string; color: string }[] = [
@@ -20,8 +22,11 @@ export function TabPerformance({ site }: { site: SiteVM }) {
   const [source, setSource] = useState<'lab' | 'crux'>('lab');
   const [range, setRange] = useState<Range>('30d');
   const { pageId, loading: pageLoading, error: pageError } = useHomepageId(site.id);
+  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
+  const effectivePageId = selectedPageId ?? pageId; // default homepage
+  const pagesState = usePages(site.id, strategy);
   const sinceIso = useMemo(() => sinceIsoForRange(range, new Date()), [range]);
-  const { history, latest, loading: dataLoading, error: dataError } = usePerfData(pageId, strategy, sinceIso);
+  const { history, latest, loading: dataLoading, error: dataError } = usePerfData(effectivePageId, strategy, sinceIso);
   // Kým sa resolvuje homepage id → skeleton (nie falošný prázdny stav).
   const loading = pageLoading || dataLoading;
   const error = pageError ?? dataError;
@@ -117,6 +122,8 @@ export function TabPerformance({ site }: { site: SiteVM }) {
           </div>
         </>
       )}
+
+      <PagesTable site={{ id: site.id, orgId: site.orgId, domain: site.domain }} pages={pagesState.pages} loading={pagesState.loading} error={pagesState.error} refresh={pagesState.refresh} selectedPageId={effectivePageId} onSelect={setSelectedPageId} strategy={strategy} />
     </div>
   );
 }
