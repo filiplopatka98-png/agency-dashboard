@@ -53,14 +53,27 @@ export function usePerfData(pageId: string | null, strategy: 'mobile' | 'desktop
   return { history: state.history, latest: state.latest, loading: false, error: state.error };
 }
 
+export interface HomepageState { pageId: string | null; loading: boolean; error: string | null }
+
+// Interný stav: `key` = siteId, ku ktorému výsledok patrí. `loading` sa neukladá —
+// odvodzuje sa pri renderi (key !== siteId), takže sa nevolá setState synchrónne v efekte.
+interface HomepageInternal { pageId: string | null; error: string | null; key: string | null }
+
 // Resolvne homepage monitored_pages.id pre web (SP3a; SP3b odovzdá vybranú stránku).
-export function useHomepageId(siteId: string): string | null {
-  const [id, setId] = useState<string | null>(null);
+// pageId null má dva významy — rozlíšené cez `loading`: true = ešte sa resolvuje,
+// false = homepage genuinne neexistuje. Reset pri zmene webu je inherentný (porovnanie key).
+export function useHomepageId(siteId: string): HomepageState {
+  const [state, setState] = useState<HomepageInternal>({ pageId: null, error: null, key: null });
   useEffect(() => {
     let cancelled = false;
     supabase.from('monitored_pages').select('id').eq('site_id', siteId).eq('is_homepage', true).limit(1).maybeSingle()
-      .then(({ data }) => { if (!cancelled) setId(data?.id ?? null); });
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setState({ pageId: data?.id ?? null, error: error?.message ?? null, key: siteId });
+      });
     return () => { cancelled = true; };
   }, [siteId]);
-  return id;
+  // Výsledok pre aktuálny siteId ešte nedorazil → loading (nezobrazuj homepage predošlého webu).
+  if (state.key !== siteId) return { pageId: null, loading: true, error: null };
+  return { pageId: state.pageId, loading: false, error: state.error };
 }

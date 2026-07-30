@@ -19,9 +19,12 @@ export function TabPerformance({ site }: { site: SiteVM }) {
   const [strategy, setStrategy] = useState<'mobile' | 'desktop'>('mobile');
   const [source, setSource] = useState<'lab' | 'crux'>('lab');
   const [range, setRange] = useState<Range>('30d');
-  const pageId = useHomepageId(site.id);
+  const { pageId, loading: pageLoading, error: pageError } = useHomepageId(site.id);
   const sinceIso = useMemo(() => sinceIsoForRange(range, new Date()), [range]);
-  const { history, latest, loading, error } = usePerfData(pageId, strategy, sinceIso);
+  const { history, latest, loading: dataLoading, error: dataError } = usePerfData(pageId, strategy, sinceIso);
+  // Kým sa resolvuje homepage id → skeleton (nie falošný prázdny stav).
+  const loading = pageLoading || dataLoading;
+  const error = pageError ?? dataError;
 
   const labels = history.map((r) => r.measured_at);
   const scoreSeries: Series[] = SCORE_SERIES.map((s) => ({ key: s.key, label: s.label, color: s.color, values: history.map((r) => r[s.key]) }));
