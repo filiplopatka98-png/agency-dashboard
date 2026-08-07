@@ -24,7 +24,7 @@ const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] =
   { key: 'history', label: 'História + zmeny', desc: 'pondelok 07:00 UTC' },
   { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC' },
   { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC' },
-  { key: 'asset-check', label: 'Kontrola CSS (rozbité assety)', desc: 'každú hodinu' },
+  { key: 'asset-check', label: 'Kontrola CSS (rozbité assety)', desc: 'každých 6 h' },
 ].map((j) => ({ ...j, sched: JOB_SCHEDULES[j.key]! }));
 
 function nextRun(sched: JobSchedule, from: Date): Date {
@@ -37,6 +37,12 @@ function nextRun(sched: JobSchedule, from: Date): Date {
   if (sched.kind === 'hourly') {
     n.setUTCMinutes(0, 0, 0);
     n.setUTCHours(from.getUTCHours() + 1);
+    return n;
+  }
+  if (sched.kind === 'sixhourly') {
+    // najbližšia 6-hodinová hranica UTC (00/06/12/18); setUTCHours(24)→00:00 ďalší deň
+    n.setUTCMinutes(0, 0, 0);
+    n.setUTCHours(Math.floor(from.getUTCHours() / 6) * 6 + 6);
     return n;
   }
   n.setUTCHours(sched.hh, sched.mm, 0, 0);

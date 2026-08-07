@@ -14,6 +14,7 @@
 export type JobSchedule =
   | { kind: 'every5' }
   | { kind: 'hourly' }
+  | { kind: 'sixhourly' }
   | { kind: 'daily'; hh: number; mm: number }
   | { kind: 'weekly'; dow: number; hh: number; mm: number }
   | { kind: 'monthly'; dom: number; hh: number; mm: number };
@@ -32,7 +33,12 @@ export const JOB_SCHEDULES: Record<string, JobSchedule> = {
   history: { kind: 'weekly', dow: 1, hh: 7, mm: 0 },
   digest: { kind: 'weekly', dow: 1, hh: 8, mm: 0 },
   report: { kind: 'monthly', dom: 1, hh: 7, mm: 0 },
-  'asset-check': { kind: 'hourly' },
+  // asset-check.yml beží každých 6 h (0 */6 * * *). Bolo hodinovo, ale
+  // hodinová CSS kontrola je pri najnižšej hodnote (CSS sa láme zriedka,
+  // detekcia do 6 h stačí) najväčším zdrojom GitHub-runner šumu (24 behov/deň
+  // = 24 šancí naraziť na „job not acquired by hosted runner"). 6 h kadencia
+  // + 24 h tolerancia (overdueFactor 4×) planý overdue eliminuje.
+  'asset-check': { kind: 'sixhourly' },
 };
 
 // Očakávaný interval medzi behmi v ms — vychádza len z `kind` (presný
@@ -45,6 +51,8 @@ export function expectedIntervalMs(sched: JobSchedule): number {
       return 5 * 60_000;
     case 'hourly':
       return 3_600_000;
+    case 'sixhourly':
+      return 6 * 3_600_000;
     case 'daily':
       return 24 * 3_600_000;
     case 'weekly':
@@ -59,6 +67,7 @@ export function expectedIntervalMs(sched: JobSchedule): number {
 // intervalu — BEZ OHĽADU na to, aký bol jeho posledný `status` (audit 3.3:
 // job, čo naposledy uspel pred dvoma mesiacmi, dnes svieti zeleno).
 //
+// (POZOR: `sixhourly` — asset-check — dostáva 4× → 24 h ticha, viď overdueFactor.)
 // `finishedAt: null` (job nikdy nezaznamenal beh) sa NEPOVAŽUJE za overdue —
 // to je iný, už existujúci stav („nikdy" / neutrálny odznak). Vďaka FIX 2
 // (`runJob` wrapper zapisuje presne jeden riadok pri KAŽDOM behu) by sa
@@ -76,12 +85,17 @@ export function isOverdue(
 }
 
 // Koľkonásobok očakávaného intervalu je „overdue". GitHub Actions cron je
-// best-effort: hodinový `0 * * * *` slot je najvyťaženejší a behy bežne mešká
-// 10–30 min alebo NIEKTORÉ VYNECHÁ (reálne pozorované medzery ~2,5 h medzi
-// hodinovými behmi). S 2× by jeden vynechaný GitHub beh spustil falošný
-// overdue → hodinové joby dostávajú 6× (~6 h bez behu = naozaj mŕtvy). Denné/
-// týždenné/mesačné majú aj pri 2× obrovskú rezervu (48 h / 2 týž. / 62 dní) a
-// Cloudflare `every5` je spoľahlivý, tým 2× stačí.
+// best-effort: hosted runnery sa občas NEPRIDELIA aj niekoľko hodín za sebou
+// („job not acquired by hosted runner" / internal server error), takže beh
+// reálne nebeží a `job_runs` sa neaktualizuje. S tesným 2× by taký GitHub
+// výpadok spúšťal falošný overdue.
+//   - hourly → 6× (~6 h ticha = naozaj mŕtvy)
+//   - sixhourly (asset-check, 6 h kadencia) → 4× = 24 h ticha; nízka hodnota
+//     jobu neospravedlňuje same-day alert pri bežnom GitHub runner výpadku.
+// Denné/týždenné/mesačné majú aj pri 2× obrovskú rezervu (48 h / 2 týž. /
+// 62 dní) a Cloudflare `every5` je spoľahlivý, tým 2× stačí.
 export function overdueFactor(sched: JobSchedule): number {
-  return sched.kind === 'hourly' ? 6 : 2;
+  if (sched.kind === 'hourly') return 6;
+  if (sched.kind === 'sixhourly') return 4;
+  return 2;
 }

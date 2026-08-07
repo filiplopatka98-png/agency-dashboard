@@ -14,6 +14,10 @@ describe('expectedIntervalMs', () => {
   it('monthly = horný odhad 31 dní', () => {
     expect(expectedIntervalMs({ kind: 'monthly', dom: 1, hh: 7, mm: 0 })).toBe(31 * 24 * 3_600_000);
   });
+  it('hourly = 1 h, sixhourly = 6 h', () => {
+    expect(expectedIntervalMs({ kind: 'hourly' })).toBe(3_600_000);
+    expect(expectedIntervalMs({ kind: 'sixhourly' })).toBe(6 * 3_600_000);
+  });
 });
 
 describe('isOverdue', () => {
@@ -63,15 +67,18 @@ describe('JOB_SCHEDULES', () => {
     expect(JOB_SCHEDULES.cve!.kind).toBe('daily');
   });
 
-  it('asset-check je hourly a expectedIntervalMs = 1 h', () => {
-    expect(JOB_SCHEDULES['asset-check']!.kind).toBe('hourly');
-    expect(expectedIntervalMs({ kind: 'hourly' })).toBe(3_600_000);
+  it('asset-check je sixhourly (6 h kadencia, menej GitHub-runner šumu)', () => {
+    expect(JOB_SCHEDULES['asset-check']!.kind).toBe('sixhourly');
+    expect(expectedIntervalMs(JOB_SCHEDULES['asset-check']!)).toBe(6 * 3_600_000);
   });
 });
 
 describe('overdueFactor', () => {
   it('hourly dostáva väčšiu toleranciu (6×) — GitHub cron mešká/vynecháva hodinové behy', () => {
     expect(overdueFactor({ kind: 'hourly' })).toBe(6);
+  });
+  it('sixhourly (asset-check) dostáva 4× → 24 h tolerancia', () => {
+    expect(overdueFactor({ kind: 'sixhourly' })).toBe(4);
   });
   it('ostatné kindy = 2×', () => {
     expect(overdueFactor({ kind: 'every5' })).toBe(2);
@@ -86,5 +93,13 @@ describe('overdueFactor', () => {
     // s overdueFactor (6×) — prah je 6 h
     expect(isOverdue(new Date(now - 2.5 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(false);
     expect(isOverdue(new Date(now - 7 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(true);
+  });
+  it('sixhourly (asset-check): beh spred 12 h NIE je overdue, spred 25 h ÁNO', () => {
+    const now = Date.parse('2026-07-20T12:00:00Z');
+    const h = 3_600_000;
+    const sched = { kind: 'sixhourly' } as const;
+    // s overdueFactor (4×) — prah je 24 h; GitHub runner výpadok do 24 h nespamuje
+    expect(isOverdue(new Date(now - 12 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(false);
+    expect(isOverdue(new Date(now - 25 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(true);
   });
 });

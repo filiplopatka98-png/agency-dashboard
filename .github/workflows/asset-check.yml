@@ -1,11 +1,12 @@
 name: asset-check
 
-# Hodinová kontrola rozbitých CSS: na 5 stránkach každého webu overí, či
+# Kontrola rozbitých CSS každých 6 h: na 5 stránkach každého webu overí, či
 # referencované stylesheety reálne existujú (200). 404 = rozbité → alert
-# css_broken. Ľahké HEAD kontroly, zadarmo.
+# css_broken. Ľahké HEAD kontroly, zadarmo. Bolo hodinovo — 6 h stačí (CSS sa
+# láme zriedka) a 4× menej behov = 4× menej GitHub-runner šumu.
 on:
   schedule:
-    - cron: '0 * * * *' # každú hodinu
+    - cron: '0 */6 * * *' # každých 6 h (00/06/12/18 UTC)
   workflow_dispatch: {}
   push:
     tags:

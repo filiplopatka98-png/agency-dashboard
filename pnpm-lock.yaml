@@ -118,6 +118,8 @@ importers:
 
   tools/aeo-probe: {}
 
+  tools/asset-check: {}
+
   tools/gsc-probe: {}
 
   tools/history-snapshot: {}
