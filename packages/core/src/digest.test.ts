@@ -53,12 +53,14 @@ describe('renderDigest', () => {
     expect(r.text.indexOf('b.sk')).toBeLessThan(r.text.indexOf('a.sk'));
   });
 
-  it('renders e-mail health line when present', () => {
+  it('renders e-mail health line when present, labeled as a 24h window (not weekly)', () => {
     const out = renderDigest({
       weekLabel: 't', orgName: 'o',
       sites: [{ domain: 'x.sk', status: 'up', uptime30: 100, openIssues: 0, vulns: 0, criticalVulns: 0, attention: [], email: { sent: 40, failed: 3 } }],
     });
     expect(out.text).toContain('odoslaných 40');
+    expect(out.text).toContain('za 24 h');
     expect(out.html).toContain('40');
+    expect(out.html).toContain('za 24 h');
   });
 });

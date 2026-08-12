@@ -11,7 +11,7 @@ export interface DigestSite {
   vulns: number; // spolu CVE
   criticalVulns: number; // critical+high CVE
   attention: string[]; // expiry / neaktuálne / poklesy
-  email?: { sent: number; failed: number } | null; // týždenné odoslané/zlyhané; null = nemonitorované
+  email?: { sent: number; failed: number } | null; // posledné meranie za 24 h (rolling sent_24h/failed_24h, NIE týždenný súčet); null = nemonitorované
 }
 
 export interface DigestChange {
@@ -66,7 +66,7 @@ export function renderDigest(data: DigestData): { subject: string; html: string;
       if (s.criticalVulns) badges.push(`<span style="color:#dc2626">${s.criticalVulns} kritických CVE</span>`);
       else if (s.vulns) badges.push(`<span style="color:#d97706">${s.vulns} CVE</span>`);
       if (s.openIssues) badges.push(`<span style="color:#6b7280">${s.openIssues} SEO issues</span>`);
-      if (s.email) badges.push(`<span style="color:${s.email.failed > 0 ? '#dc2626' : '#6b7280'}">e-maily: ${s.email.sent} odoslaných${s.email.failed ? `, ${s.email.failed} zlyhaných` : ''}</span>`);
+      if (s.email) badges.push(`<span style="color:${s.email.failed > 0 ? '#dc2626' : '#6b7280'}">e-maily za 24 h: ${s.email.sent} odoslaných${s.email.failed ? `, ${s.email.failed} zlyhaných` : ''}</span>`);
       const att = s.attention.length ? `<div style="font-size:12px;color:#d97706;margin-top:3px">${s.attention.map(esc).join(' · ')}</div>` : '';
       const up = s.uptime30 != null ? `${s.uptime30.toFixed(2)} %` : '—';
       return `<tr><td style="padding:10px 0;border-bottom:1px solid #eee">
@@ -116,7 +116,7 @@ export function renderDigest(data: DigestData): { subject: string; html: string;
         const extra = [
           s.criticalVulns ? `${s.criticalVulns} krit. CVE` : s.vulns ? `${s.vulns} CVE` : '',
           s.openIssues ? `${s.openIssues} issues` : '',
-          s.email ? `e-maily: odoslaných ${s.email.sent}${s.email.failed ? `, zlyhaných ${s.email.failed}` : ''}` : '',
+          s.email ? `e-maily za 24 h: odoslaných ${s.email.sent}${s.email.failed ? `, zlyhaných ${s.email.failed}` : ''}` : '',
           ...s.attention,
         ]
           .filter(Boolean)
