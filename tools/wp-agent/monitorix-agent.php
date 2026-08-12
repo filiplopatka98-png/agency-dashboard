@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Monitorix Agent
  * Description: Posiela stav webu (WP/PHP/MySQL verzie, pluginy + updaty, téma, záloha) do Monitorix dashboardu. Stačí nainštalovať a aktivovať — žiadna konfigurácia.
- * Version: 2.1.0
+ * Version: 2.2.0
  * Author: Lopatka
  *
  * Inštalácia (nič iné netreba):
@@ -29,7 +29,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MONITORIX_AGENT_VERSION', '2.1.0');
+define('MONITORIX_AGENT_VERSION', '2.2.0');
 define('MONITORIX_INGEST_URL', 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev/wp-ingest');
 define('MONITORIX_INGEST_TOKEN', '__MONITORIX_INGEST_TOKEN__');
 
@@ -40,7 +40,7 @@ register_activation_hook(__FILE__, 'monitorix_agent_do_push');
 // Naplánuj denný push + jednorazový hneď po prvom načítaní (funguje aj ako mu-plugin).
 add_action('init', function () {
     if (!wp_next_scheduled('monitorix_agent_push')) {
-        wp_schedule_event(time() + 60, 'daily', 'monitorix_agent_push');
+        wp_schedule_event(time() + 60, 'hourly', 'monitorix_agent_push');
     }
     if (!get_transient('monitorix_agent_kick')) {
         set_transient('monitorix_agent_kick', 1, DAY_IN_SECONDS);
@@ -55,8 +55,18 @@ register_deactivation_hook(__FILE__, function () {
     wp_clear_scheduled_hook('monitorix_agent_push');
 });
 
+// Event-driven: the instant a send fails, push immediately (debounced) so the
+// dashboard sees an acute outage within minutes — not at the next hourly beat.
+add_action('wp_mail_failed', function ($wp_error) {
+    if (get_transient('monitorix_agent_mail_fail_kick')) {
+        return; // debounce: at most one event push / 10 min
+    }
+    set_transient('monitorix_agent_mail_fail_kick', 1, 10 * MINUTE_IN_SECONDS);
+    monitorix_agent_do_push('event');
+});
+
 /** Zozbiera stav WordPressu a pošle ho do Monitorixu (read-only). */
-function monitorix_agent_do_push()
+function monitorix_agent_do_push($source = 'heartbeat')
 {
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -111,13 +121,87 @@ function monitorix_agent_do_push()
         'agent_version' => MONITORIX_AGENT_VERSION,
     ];
 
+    $payload['email_health'] = monitorix_agent_email_health();
+
     wp_remote_post(MONITORIX_INGEST_URL, [
         'timeout'  => 15,
         'blocking' => false,
         'headers'  => [
             'Content-Type'      => 'application/json',
             'X-Monitorix-Token' => MONITORIX_INGEST_TOKEN,
+            'X-Monitorix-Source'=> is_string($source) ? $source : 'heartbeat',
         ],
         'body'     => wp_json_encode($payload),
     ]);
+}
+
+/**
+ * E-mail deliverability aggregates from the SMTP log plugin. Read-only.
+ * Returns null if no supported log table exists. NO recipient addresses or
+ * bodies leave the site — only counts + a sanitized last error.
+ */
+function monitorix_agent_email_health()
+{
+    global $wpdb;
+
+    // FluentSMTP — verify the real table name at runtime (do not assume).
+    $fsmtp = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}fsmpt_email_logs'");
+    if ($fsmtp) {
+        return monitorix_agent_agg($wpdb->prefix . 'fsmpt_email_logs', 'status', 'created_at', "status = 'failed'", "status = 'sent'", 'FluentSMTP');
+    }
+    // WP Mail Logging fallback.
+    $wpml = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}wpml_mails'");
+    if ($wpml) {
+        // WP Mail Logging does not always record status; treat presence as sent, error column as failure if available.
+        return monitorix_agent_agg($wpdb->prefix . 'wpml_mails', null, 'timestamp', null, null, 'WP Mail Logging');
+    }
+    return null; // no provider → dashboard shows "not monitored", NOT zero.
+}
+
+/** Windowed counts + last success/failure from a log table. */
+function monitorix_agent_agg($table, $statusCol, $timeCol, $failedWhere, $sentWhere, $providerName)
+{
+    global $wpdb;
+    $now = current_time('timestamp', true); // UTC
+    $win1h  = gmdate('Y-m-d H:i:s', $now - HOUR_IN_SECONDS);
+    $win24h = gmdate('Y-m-d H:i:s', $now - DAY_IN_SECONDS);
+
+    $count = function ($where, $sinceCol) use ($wpdb, $table, $timeCol) {
+        $sql = "SELECT COUNT(*) FROM `$table` WHERE `$timeCol` >= %s" . ($where ? " AND $where" : '');
+        return (int) $wpdb->get_var($wpdb->prepare($sql, $sinceCol));
+    };
+
+    $sent1h   = $sentWhere   ? $count($sentWhere, $win1h)   : $count('1=1', $win1h);
+    $failed1h = $failedWhere ? $count($failedWhere, $win1h) : 0;
+    $sent24h  = $sentWhere   ? $count($sentWhere, $win24h)  : $count('1=1', $win24h);
+    $failed24h= $failedWhere ? $count($failedWhere, $win24h): 0;
+
+    $lastSuccess = $sentWhere
+        ? $wpdb->get_var("SELECT MAX(`$timeCol`) FROM `$table` WHERE $sentWhere")
+        : $wpdb->get_var("SELECT MAX(`$timeCol`) FROM `$table`");
+    $lastFailAt = $failedWhere ? $wpdb->get_var("SELECT MAX(`$timeCol`) FROM `$table` WHERE $failedWhere") : null;
+
+    // Last failure message — sanitized: strip anything that looks like an e-mail address.
+    $lastFailMsg = null;
+    if ($failedWhere) {
+        $raw = $wpdb->get_var("SELECT `response` FROM `$table` WHERE $failedWhere ORDER BY `$timeCol` DESC LIMIT 1");
+        if ($raw) {
+            $raw = preg_replace('/[\w.+-]+@[\w.-]+/', '[email]', (string) $raw);
+            $lastFailMsg = mb_substr(trim($raw), 0, 200);
+        }
+    }
+
+    $iso = function ($v) { return $v ? gmdate('c', strtotime($v . ' UTC')) : null; };
+
+    return [
+        'provider'             => $providerName,
+        'sent_1h'              => $sent1h,
+        'failed_1h'            => $failed1h,
+        'sent_24h'             => $sent24h,
+        'failed_24h'           => $failed24h,
+        'last_success_at'      => $iso($lastSuccess),
+        'last_failure_at'      => $iso($lastFailAt),
+        'last_failure_message' => $lastFailMsg,
+        'queue_depth'          => null, // best-effort; FluentSMTP queue not reliably exposed
+    ];
 }
