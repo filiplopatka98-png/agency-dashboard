@@ -1216,6 +1216,75 @@ export type Database = {
           },
         ]
       }
+      wp_email_health: {
+        Row: {
+          failed_1h: number | null
+          failed_24h: number | null
+          failed_pct_1h: number | null
+          id: string
+          last_failure_at: string | null
+          last_failure_message: string | null
+          last_success_at: string | null
+          measured_at: string
+          org_id: string
+          provider: string | null
+          queue_depth: number | null
+          sent_1h: number | null
+          sent_24h: number | null
+          site_id: string
+          source: string
+        }
+        Insert: {
+          failed_1h?: number | null
+          failed_24h?: number | null
+          failed_pct_1h?: number | null
+          id?: string
+          last_failure_at?: string | null
+          last_failure_message?: string | null
+          last_success_at?: string | null
+          measured_at?: string
+          org_id: string
+          provider?: string | null
+          queue_depth?: number | null
+          sent_1h?: number | null
+          sent_24h?: number | null
+          site_id: string
+          source: string
+        }
+        Update: {
+          failed_1h?: number | null
+          failed_24h?: number | null
+          failed_pct_1h?: number | null
+          id?: string
+          last_failure_at?: string | null
+          last_failure_message?: string | null
+          last_success_at?: string | null
+          measured_at?: string
+          org_id?: string
+          provider?: string | null
+          queue_depth?: number | null
+          sent_1h?: number | null
+          sent_24h?: number | null
+          site_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wp_email_health_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wp_email_health_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wp_snapshots: {
         Row: {
           backup_at: string | null
