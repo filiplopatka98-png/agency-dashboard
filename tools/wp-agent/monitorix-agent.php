@@ -147,39 +147,53 @@ function monitorix_agent_email_health()
     // FluentSMTP — verify the real table name at runtime (do not assume).
     $fsmtp = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}fsmpt_email_logs'");
     if ($fsmtp) {
-        return monitorix_agent_agg($wpdb->prefix . 'fsmpt_email_logs', 'status', 'created_at', "status = 'failed'", "status = 'sent'", 'FluentSMTP');
+        // Verified on a live install (2026-08-12): status values 'sent'/'failed'/'pending',
+        // time column `created_at` (TIMESTAMP → stored UTC, read in session tz).
+        return monitorix_agent_agg($wpdb->prefix . 'fsmpt_email_logs', 'created_at', "status = 'failed'", "status = 'sent'", "status = 'pending'", 'FluentSMTP');
     }
     // WP Mail Logging fallback.
     $wpml = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}wpml_mails'");
     if ($wpml) {
-        // WP Mail Logging does not always record status; treat presence as sent, error column as failure if available.
-        return monitorix_agent_agg($wpdb->prefix . 'wpml_mails', null, 'timestamp', null, null, 'WP Mail Logging');
+        // WP Mail Logging does not always record status; treat presence as sent, no reliable failed/pending signal.
+        return monitorix_agent_agg($wpdb->prefix . 'wpml_mails', 'timestamp', null, null, null, 'WP Mail Logging');
     }
     return null; // no provider → dashboard shows "not monitored", NOT zero.
 }
 
-/** Windowed counts + last success/failure from a log table. */
-function monitorix_agent_agg($table, $statusCol, $timeCol, $failedWhere, $sentWhere, $providerName)
+/**
+ * Windowed counts + last success/failure from a log table.
+ *
+ * All time math runs IN SQL relative to the DB server clock: `$timeCol` and
+ * NOW() share the same session timezone, so the 1h/24h windows are correct no
+ * matter whether the plugin stores UTC or local time. (Verified 2026-08-12:
+ * FluentSMTP's `created_at` is a TIMESTAMP read in the site's local tz — a
+ * PHP/UTC boundary was off by the site's offset.) Outgoing ISO timestamps are
+ * absolute UTC via UNIX_TIMESTAMP(), which converts the stored value to a real
+ * epoch. `$*Where` args are code constants (never user input).
+ */
+function monitorix_agent_agg($table, $timeCol, $failedWhere, $sentWhere, $pendingWhere, $providerName)
 {
     global $wpdb;
-    $now = current_time('timestamp', true); // UTC
-    $win1h  = gmdate('Y-m-d H:i:s', $now - HOUR_IN_SECONDS);
-    $win24h = gmdate('Y-m-d H:i:s', $now - DAY_IN_SECONDS);
 
-    $count = function ($where, $sinceCol) use ($wpdb, $table, $timeCol) {
-        $sql = "SELECT COUNT(*) FROM `$table` WHERE `$timeCol` >= %s" . ($where ? " AND $where" : '');
-        return (int) $wpdb->get_var($wpdb->prepare($sql, $sinceCol));
+    $count = function ($where, $interval) use ($wpdb, $table, $timeCol) {
+        $sql = "SELECT COUNT(*) FROM `$table` WHERE `$timeCol` >= (NOW() - INTERVAL $interval)"
+             . ($where ? " AND $where" : '');
+        return (int) $wpdb->get_var($sql);
     };
 
-    $sent1h   = $sentWhere   ? $count($sentWhere, $win1h)   : $count('1=1', $win1h);
-    $failed1h = $failedWhere ? $count($failedWhere, $win1h) : 0;
-    $sent24h  = $sentWhere   ? $count($sentWhere, $win24h)  : $count('1=1', $win24h);
-    $failed24h= $failedWhere ? $count($failedWhere, $win24h): 0;
+    $sent1h    = $sentWhere   ? $count($sentWhere, '1 HOUR')    : $count('', '1 HOUR');
+    $failed1h  = $failedWhere ? $count($failedWhere, '1 HOUR')  : 0;
+    $sent24h   = $sentWhere   ? $count($sentWhere, '24 HOUR')   : $count('', '24 HOUR');
+    $failed24h = $failedWhere ? $count($failedWhere, '24 HOUR') : 0;
 
-    $lastSuccess = $sentWhere
-        ? $wpdb->get_var("SELECT MAX(`$timeCol`) FROM `$table` WHERE $sentWhere")
-        : $wpdb->get_var("SELECT MAX(`$timeCol`) FROM `$table`");
-    $lastFailAt = $failedWhere ? $wpdb->get_var("SELECT MAX(`$timeCol`) FROM `$table` WHERE $failedWhere") : null;
+    // Absolute-UTC epoch of the newest sent/failed row → ISO 8601.
+    $maxEpoch = function ($where) use ($wpdb, $table, $timeCol) {
+        $sql = "SELECT UNIX_TIMESTAMP(MAX(`$timeCol`)) FROM `$table`" . ($where ? " WHERE $where" : '');
+        $v = $wpdb->get_var($sql);
+        return $v ? (int) $v : null;
+    };
+    $lastSuccessEpoch = $maxEpoch($sentWhere ? $sentWhere : '');
+    $lastFailEpoch    = $failedWhere ? $maxEpoch($failedWhere) : null;
 
     // Last failure message — sanitized: strip anything that looks like an e-mail address.
     $lastFailMsg = null;
@@ -191,7 +205,8 @@ function monitorix_agent_agg($table, $statusCol, $timeCol, $failedWhere, $sentWh
         }
     }
 
-    $iso = function ($v) { return $v ? gmdate('c', strtotime($v . ' UTC')) : null; };
+    // Queue depth — messages still waiting to be sent (e.g. FluentSMTP 'pending').
+    $queueDepth = $pendingWhere ? (int) $wpdb->get_var("SELECT COUNT(*) FROM `$table` WHERE $pendingWhere") : null;
 
     return [
         'provider'             => $providerName,
@@ -199,9 +214,9 @@ function monitorix_agent_agg($table, $statusCol, $timeCol, $failedWhere, $sentWh
         'failed_1h'            => $failed1h,
         'sent_24h'             => $sent24h,
         'failed_24h'           => $failed24h,
-        'last_success_at'      => $iso($lastSuccess),
-        'last_failure_at'      => $iso($lastFailAt),
+        'last_success_at'      => $lastSuccessEpoch ? gmdate('c', $lastSuccessEpoch) : null,
+        'last_failure_at'      => $lastFailEpoch ? gmdate('c', $lastFailEpoch) : null,
         'last_failure_message' => $lastFailMsg,
-        'queue_depth'          => null, // best-effort; FluentSMTP queue not reliably exposed
+        'queue_depth'          => $queueDepth,
     ];
 }
