@@ -28,3 +28,4 @@ export type Alert = Tables['alerts']['Row'];
 export type Domain = Tables['domains']['Row'];
 export type TlsCert = Tables['tls_certs']['Row'];
 export type Client = Tables['clients']['Row'];
+export type EmailHealth = Tables['wp_email_health']['Row'];

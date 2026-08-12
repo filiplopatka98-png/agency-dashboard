@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Shell } from '../components/Shell';
 import { Modal } from '../components/Modal';
 import { loadDashboard, type SiteVM } from '../lib/data';
-import { supabase, type Client } from '../lib/supabase';
+import { supabase, type Client, type EmailHealth } from '../lib/supabase';
+import { EMAIL_FAIL_PCT_THRESHOLD } from '@agency/core';
 import {
   sparklineFromValues,
   scoreColor,
@@ -647,6 +648,111 @@ function TabAeo({ site }: { site: SiteVM }) {
   );
 }
 
+// Najnovší riadok wp_email_health pre web. `key` sleduje siteId, ku ktorému
+// dáta patria — loading sa odvodzuje pri renderi (rovnaký vzor ako useHomepageId),
+// takže sa nevolá setState synchrónne v efekte.
+interface EmailHealthState { row: EmailHealth | null; error: string | null; key: string | null }
+function useEmailHealth(siteId: string): { row: EmailHealth | null; loading: boolean; error: string | null } {
+  const [state, setState] = useState<EmailHealthState>({ row: null, error: null, key: null });
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('wp_email_health')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('measured_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setState({ row: data ?? null, error: error?.message ?? null, key: siteId });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
+  if (state.key !== siteId) return { row: null, loading: true, error: null };
+  return { row: state.row, loading: false, error: state.error };
+}
+
+const truncate = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+// `provider === null` znamená, že agent nenašiel FluentSMTP ani WP Mail Logging
+// → nemonitorované, nie „0 zlyhaní". Predikát namiesto `!` — nech TS narrowuje
+// `activeRow.provider` na `string` v JSX vetve bez ručných asercií.
+function hasProvider(r: EmailHealth | null): r is EmailHealth & { provider: string } {
+  return r !== null && r.provider !== null;
+}
+
+// Doručovanie e-mailov — číta z wp_email_health (WP agent, event-driven + hodinový
+// heartbeat).
+function EmailHealthPanel({ siteId }: { siteId: string }) {
+  const { row, loading, error } = useEmailHealth(siteId);
+  const activeRow = hasProvider(row) ? row : null;
+  const pct = activeRow ? activeRow.failed_pct_1h : null;
+  const ok = pct === null || pct < EMAIL_FAIL_PCT_THRESHOLD;
+  const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('sk-SK') : 'nezistené');
+  return (
+    <div style={{ ...card, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+        <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Doručovanie e-mailov</h3>
+        {activeRow && (
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: ok ? 'var(--ok-color)' : 'var(--critical-color)', background: ok ? 'var(--ok-bg)' : 'var(--critical-bg)', padding: '3px 10px', borderRadius: 20 }}>
+            {ok ? 'OK' : `${Math.round((pct ?? 0) * 100)} % zlyhaní`}
+          </span>
+        )}
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Načítavam…</div>
+      ) : error ? (
+        <div style={{ fontSize: 13, color: 'var(--critical-color)' }}>Nepodarilo sa načítať: {error}</div>
+      ) : !activeRow ? (
+        <div style={{ background: 'var(--surface-secondary)', borderRadius: 10, padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+          Monitoring e-mailov: agent na tomto webe nenašiel FluentSMTP ani WP Mail Logging.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13.5 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Provider</span>
+            <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{activeRow.provider}</strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Za 1 hodinu</span>
+            <span style={{ ...mono, display: 'flex', gap: 6, alignItems: 'baseline' }}>
+              <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{activeRow.sent_1h ?? '—'}</strong>
+              <span style={{ color: 'var(--text-tertiary)', fontFamily: 'inherit' }}>odoslaných ·</span>
+              <strong style={{ color: (activeRow.failed_1h ?? 0) > 0 ? 'var(--critical-color)' : 'var(--text-primary)', fontWeight: 600 }}>{activeRow.failed_1h ?? 0}</strong>
+              <span style={{ color: 'var(--text-tertiary)', fontFamily: 'inherit' }}>zlyhaní</span>
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Za 24 hodín</span>
+            <span style={{ ...mono, display: 'flex', gap: 6, alignItems: 'baseline' }}>
+              <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{activeRow.sent_24h ?? '—'}</strong>
+              <span style={{ color: 'var(--text-tertiary)', fontFamily: 'inherit' }}>odoslaných ·</span>
+              <strong style={{ color: (activeRow.failed_24h ?? 0) > 0 ? 'var(--critical-color)' : 'var(--text-primary)', fontWeight: 600 }}>{activeRow.failed_24h ?? 0}</strong>
+              <span style={{ color: 'var(--text-tertiary)', fontFamily: 'inherit' }}>zlyhaní</span>
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Posledný úspešný e-mail</span>
+            <strong style={{ ...mono, color: 'var(--text-primary)', fontWeight: 600 }}>{fmtDate(activeRow.last_success_at)}</strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 14px', background: 'var(--surface-secondary)', borderRadius: 10 }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Posledné zlyhanie</span>
+            <strong style={{ ...mono, color: activeRow.last_failure_at ? 'var(--critical-color)' : 'var(--text-primary)', fontWeight: 600 }}>{fmtDate(activeRow.last_failure_at)}</strong>
+          </div>
+          {activeRow.last_failure_message && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: '9px 13px', borderRadius: 10 }}>
+              Posledná chyba: {truncate(activeRow.last_failure_message, 140)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabInfra({ site }: { site: SiteVM }) {
   const [openVuln, setOpenVuln] = useState<string | null>(null);
   const sec = site.security;
@@ -734,6 +840,8 @@ function TabInfra({ site }: { site: SiteVM }) {
           </div>
         </div>
       )}
+
+      <EmailHealthPanel siteId={site.id} />
 
       {/* Hosting & infra (zvonku, pre každý web) */}
       <div style={{ ...card, padding: 16 }}>
