@@ -2,6 +2,7 @@ import type { Env } from './env';
 import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
 import { runJobHealth } from './runJobHealth';
+import { runEmailHealth } from './runEmailHealth';
 import { runWpCronKick } from './runWpCronKick';
 import { serviceClient } from './supabase';
 import { wpIngest } from './wpIngest';
@@ -58,6 +59,7 @@ export interface TickSteps {
   runDomains?: (env: Env) => Promise<unknown>;
   runWpCronKick?: (env: Env) => Promise<unknown>;
   runJobHealth?: (env: Env) => Promise<unknown>;
+  runEmailHealth?: (env: Env) => Promise<unknown>;
   runAlerts?: (env: Env) => Promise<unknown>;
   recordSchedulerRun?: (env: Env, status: 'ok' | 'error', error: string | null) => Promise<void>;
 }
@@ -83,6 +85,7 @@ export async function runTick(env: Env, steps: TickSteps = {}): Promise<void> {
     });
   const wpCron = steps.runWpCronKick ?? ((e: Env) => runWpCronKick(e, { limit: 3 }));
   const jobHealth = steps.runJobHealth ?? ((e: Env) => runJobHealth(e));
+  const emailHealth = steps.runEmailHealth ?? ((e: Env) => runEmailHealth(e));
   const alerts = steps.runAlerts ?? ((e: Env) => runAlerts(e));
   const record = steps.recordSchedulerRun ?? recordSchedulerRun;
 
@@ -101,6 +104,7 @@ export async function runTick(env: Env, steps: TickSteps = {}): Promise<void> {
   await step('domains', () => domains(env)); // round-robin doména (>20 h)
   await step('wp_cron_kick', () => wpCron(env)); // kopni wp-cron.php na zaspatých WP weboch (>25h bez push)
   await step('job_health', () => jobHealth(env)); // dead-man's switch — insertne job_overdue/job_failed alert
+  await step('email_health', () => emailHealth(env)); // e-mail deliverability (Rules 2 & 3)
   await step('alerts', () => alerts(env)); // odoslanie nevyslaných alertov (dedupe už v DB) — VŽDY, aj po zlyhaní vyššie
 
   await record(env, errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);

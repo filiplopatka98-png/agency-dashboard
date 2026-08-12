@@ -17,6 +17,8 @@ export interface FakeStore {
   monitored_pages?: Record<string, unknown>[];
   scan_jobs?: Record<string, unknown>[];
   perf_runs?: Record<string, unknown>[];
+  wp_email_health?: Record<string, unknown>[];
+  sites?: Record<string, unknown>[];
 }
 
 export interface FakeAlertRow {
@@ -41,7 +43,7 @@ export interface FakeJobRunRow {
   finished_at: string | null;
 }
 
-type Filter = ['is' | 'eq', string, unknown];
+type Filter = ['is' | 'eq' | 'gte', string, unknown];
 
 class FakeQuery {
   private filters: Filter[] = [];
@@ -77,6 +79,10 @@ class FakeQuery {
   }
   eq(col: string, val: unknown): this {
     this.filters.push(['eq', col, val]);
+    return this;
+  }
+  gte(col: string, val: unknown): this {
+    this.filters.push(['gte', col, val]);
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }): this {
@@ -117,7 +123,7 @@ class FakeQuery {
   }
 
   private matches(row: Record<string, unknown>): boolean {
-    return this.filters.every(([, col, val]) => row[col] === val);
+    return this.filters.every(([op, col, val]) => (op === 'gte' ? String(row[col]) >= String(val) : row[col] === val));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

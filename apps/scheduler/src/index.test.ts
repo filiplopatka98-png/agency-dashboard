@@ -16,6 +16,7 @@ describe('runTick — odolnosť ticku (FIX 1)', () => {
       runDomains: async () => {},
       runWpCronKick: async () => {},
       runJobHealth: async () => {},
+      runEmailHealth: async () => {},
       runAlerts,
       recordSchedulerRun,
     });
@@ -33,6 +34,7 @@ describe('runTick — odolnosť ticku (FIX 1)', () => {
       runDomains: async () => {},
       runWpCronKick: async () => {},
       runJobHealth: async () => {},
+      runEmailHealth: async () => {},
       runAlerts: async () => ({ sent: 0, deferred: 0, failed: 0 }),
       recordSchedulerRun,
     });
