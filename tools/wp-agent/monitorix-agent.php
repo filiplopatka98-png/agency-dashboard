@@ -29,9 +29,33 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MONITORIX_AGENT_VERSION', '2.2.0');
+define('MONITORIX_AGENT_VERSION', '2.2.1');
 define('MONITORIX_INGEST_URL', 'https://agency-dashboard-scheduler.filip-lopatka98.workers.dev/wp-ingest');
-define('MONITORIX_INGEST_TOKEN', '__MONITORIX_INGEST_TOKEN__');
+
+// Ingest token — riešený tak, aby update pluginu NEVYMAZAL token. Starý súbor sa
+// pri update prepíše, preto sa token číta v poradí:
+//   1) konštanta MONITORIX_INGEST_TOKEN z wp-config.php (ak je tam nastavená),
+//   2) uložená WP option `monitorix_ingest_token` (raz nastavená, prežije každý
+//      ďalší update pluginu),
+//   3) placeholder nižšie (kým nie je nastavené nič → /wp-ingest vráti 401).
+// Reálnu konštantu (z wp-config) si plugin sám uloží do option, takže token stačí
+// nastaviť JEDENkrát a všetky budúce ZIP updaty sa nahrávajú bez úprav.
+if (!defined('MONITORIX_INGEST_TOKEN')) {
+    define('MONITORIX_INGEST_TOKEN', '__MONITORIX_INGEST_TOKEN__');
+}
+
+function monitorix_agent_token()
+{
+    $c = MONITORIX_INGEST_TOKEN;
+    if ($c && $c !== '__MONITORIX_INGEST_TOKEN__') {
+        if (get_option('monitorix_ingest_token') !== $c) {
+            update_option('monitorix_ingest_token', $c, false); // persist real token cez update
+        }
+        return $c;
+    }
+    $opt = get_option('monitorix_ingest_token');
+    return $opt ? $opt : '';
+}
 
 // Okamžitý push pri (re)aktivácii — len regulárny plugin (mu-plugin tento hook
 // nikdy nespustí, viď komentár vyššie). Doplnok k plánovanému behu, nie náhrada.
@@ -128,7 +152,7 @@ function monitorix_agent_do_push($source = 'heartbeat')
         'blocking' => false,
         'headers'  => [
             'Content-Type'      => 'application/json',
-            'X-Monitorix-Token' => MONITORIX_INGEST_TOKEN,
+            'X-Monitorix-Token' => monitorix_agent_token(),
             'X-Monitorix-Source'=> is_string($source) ? $source : 'heartbeat',
         ],
         'body'     => wp_json_encode($payload),
