@@ -100,39 +100,44 @@ export async function wpIngest(request: Request, env: Env): Promise<Response> {
   // is untrusted → Zod at the boundary. source distinguishes the wp_mail_failed
   // event push from the hourly heartbeat.
   if (body.email_health !== undefined) {
-    const parsed = emailHealthPayloadSchema.safeParse(body.email_health);
-    if (!parsed.success) {
-      console.log(JSON.stringify({ ev: 'wp.email_health_invalid', site_id: site.id, issues: parsed.error.issues.length }));
-    } else {
-      const reading = readingFromPayload(parsed.data);
-      const source = request.headers.get('x-monitorix-source') === 'event' ? 'event' : 'heartbeat';
-      const { error: ehErr } = await db.from('wp_email_health').insert({
-        site_id: site.id,
-        org_id: site.org_id,
-        provider: reading.provider,
-        sent_1h: reading.sent_1h,
-        failed_1h: reading.failed_1h,
-        failed_pct_1h: reading.failed_pct_1h,
-        sent_24h: reading.sent_24h,
-        failed_24h: reading.failed_24h,
-        last_success_at: reading.last_success_at,
-        last_failure_at: reading.last_failure_at,
-        last_failure_message: reading.last_failure_message,
-        queue_depth: reading.queue_depth,
-        source,
-      });
-      if (ehErr) console.log(JSON.stringify({ ev: 'wp.email_health_insert_fail', site_id: site.id, message: ehErr.message }));
+    try {
+      const parsed = emailHealthPayloadSchema.safeParse(body.email_health);
+      if (!parsed.success) {
+        console.log(JSON.stringify({ ev: 'wp.email_health_invalid', site_id: site.id, issues: parsed.error.issues.length }));
+      } else {
+        const reading = readingFromPayload(parsed.data);
+        const source = request.headers.get('x-monitorix-source') === 'event' ? 'event' : 'heartbeat';
+        const { error: ehErr } = await db.from('wp_email_health').insert({
+          site_id: site.id,
+          org_id: site.org_id,
+          provider: reading.provider,
+          sent_1h: reading.sent_1h,
+          failed_1h: reading.failed_1h,
+          failed_pct_1h: reading.failed_pct_1h,
+          sent_24h: reading.sent_24h,
+          failed_24h: reading.failed_24h,
+          last_success_at: reading.last_success_at,
+          last_failure_at: reading.last_failure_at,
+          last_failure_message: reading.last_failure_message,
+          queue_depth: reading.queue_depth,
+          source,
+        });
+        if (ehErr) console.log(JSON.stringify({ ev: 'wp.email_health_insert_fail', site_id: site.id, message: ehErr.message }));
 
-      // Rule 1 at ingest → fastest path for the acute case.
-      const alerts = evaluateIngest(reading, { siteId: site.id, domain: site.domain, now: new Date() });
-      if (alerts.length) {
-        const { error: aErr } = await db.from('alerts').upsert(
-          alerts.map((a) => ({ org_id: site.org_id, site_id: site.id, type: a.type, severity: a.severity, title: a.title, body: a.body, dedupe_key: a.dedupeKey })),
-          { onConflict: 'dedupe_key', ignoreDuplicates: true },
-        );
-        if (aErr) console.log(JSON.stringify({ ev: 'wp.email_alert_fail', site_id: site.id, message: aErr.message }));
-        else console.log(JSON.stringify({ ev: 'wp.email_alert', site_id: site.id, types: alerts.map((a) => a.type) }));
+        // Rule 1 at ingest → fastest path for the acute case.
+        const alerts = evaluateIngest(reading, { siteId: site.id, domain: site.domain, now: new Date() });
+        if (alerts.length) {
+          const { error: aErr } = await db.from('alerts').upsert(
+            alerts.map((a) => ({ org_id: site.org_id, site_id: site.id, type: a.type, severity: a.severity, title: a.title, body: a.body, dedupe_key: a.dedupeKey })),
+            { onConflict: 'dedupe_key', ignoreDuplicates: true },
+          );
+          if (aErr) console.log(JSON.stringify({ ev: 'wp.email_alert_fail', site_id: site.id, message: aErr.message }));
+          else console.log(JSON.stringify({ ev: 'wp.email_alert', site_id: site.id, types: alerts.map((a) => a.type) }));
+        }
       }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(JSON.stringify({ ev: 'wp.email_health_error', site_id: site.id, message }));
     }
   }
 
