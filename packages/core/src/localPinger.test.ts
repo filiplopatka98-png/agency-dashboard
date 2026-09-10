@@ -148,6 +148,24 @@ describe('LocalPinger', () => {
     expect(r!.error).toContain('timeout');
   });
 
+  it('neprečítané telo sa ZRUŠÍ — uvoľní in-flight spojenie (inak Cloudflare ruší odpovede v ticku)', async () => {
+    const cancel = vi.fn(async () => {});
+    const res = { status: 200, body: { cancel }, text: async () => 'nemá sa čítať' } as unknown as Response;
+    const p = new LocalPinger({ fetchImpl: (async () => res) as unknown as typeof fetch, now: seqNow(0, 1), sleep: noSleep });
+    const [r] = await p.checkAll([site()]);
+    expect(r!.ok).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('pri expected_string sa telo ČÍTA (nezruší)', async () => {
+    const cancel = vi.fn(async () => {});
+    const res = { status: 200, body: { cancel }, text: async () => '<h1>detskom svete</h1>' } as unknown as Response;
+    const p = new LocalPinger({ fetchImpl: (async () => res) as unknown as typeof fetch, now: seqNow(0, 1), sleep: noSleep });
+    const [r] = await p.checkAll([site({ expectedString: 'detskom svete' })]);
+    expect(r!.ok).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   it('checkAll zvládne viac webov paralelne', async () => {
     const p = new LocalPinger({
       fetchImpl: queuedFetch([

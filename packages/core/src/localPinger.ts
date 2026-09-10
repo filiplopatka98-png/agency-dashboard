@@ -60,26 +60,26 @@ export class LocalPinger implements UptimeProvider {
       const status = res.status;
       const httpOk = status >= 200 && status <= 399;
 
+      // Telo KAŽDEJ odpovede treba prečítať alebo ZRUŠIŤ. Na Cloudflare Workers
+      // neprečítané telo drží spojenie otvorené, a keďže sa všetky weby pingujú
+      // súbežne (Promise.all v checkAll), rýchlo sa dosiahne strop súbežných
+      // in-flight spojení — Cloudflare potom ruší najstaršie odpovede (vrátane
+      // neskoršieho zápisu job_runs v TOM ISTOM ticku), čo spôsobovalo falošné
+      // „scheduler mešká". Telo čítame LEN keď ho reálne treba (WAF marker pri
+      // 403/429, alebo expected_string), inak ho hneď zrušíme.
+      const needsBody = (!httpOk && (status === 403 || status === 429)) || (httpOk && !!site.expectedString);
+      const body = needsBody ? await this.safeText(res) : await this.drain(res);
+
       // WAF blok (403/429) nie je výpadok, ak telo prezrádza CF/Wordfence.
       if (!httpOk && (status === 403 || status === 429)) {
-        const body = await this.safeText(res);
         if (WAF_MARKERS.test(body)) {
           return { siteId: site.id, ok: true, statusCode: status, responseMs, error: 'blocked' };
         }
         return { siteId: site.id, ok: false, statusCode: status, responseMs };
       }
 
-      if (httpOk && site.expectedString) {
-        const body = await this.safeText(res);
-        if (!body.includes(site.expectedString)) {
-          return {
-            siteId: site.id,
-            ok: false,
-            statusCode: status,
-            responseMs,
-            error: 'expected_string_missing',
-          };
-        }
+      if (httpOk && site.expectedString && !body.includes(site.expectedString)) {
+        return { siteId: site.id, ok: false, statusCode: status, responseMs, error: 'expected_string_missing' };
       }
 
       return { siteId: site.id, ok: httpOk, statusCode: status, responseMs };
@@ -96,5 +96,15 @@ export class LocalPinger implements UptimeProvider {
     } catch {
       return '';
     }
+  }
+
+  /** Zruší nečítané telo (uvoľní spojenie). Vracia '' kvôli jednotnému typu v attempt(). */
+  private async drain(res: Response): Promise<string> {
+    try {
+      await res.body?.cancel();
+    } catch {
+      /* žiadne telo / už spotrebované */
+    }
+    return '';
   }
 }

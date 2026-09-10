@@ -55,7 +55,15 @@ export async function runWpCronKick(env: Env, deps: RunWpCronKickDeps = {}): Pro
   for (const s of rows) {
     const kickUrl = `https://${s.domain}/wp-cron.php?doing_wp_cron=${Math.floor(now.getTime() / 1000)}`;
     try {
-      await fetcher(kickUrl);
+      const res = await fetcher(kickUrl);
+      // Telo nečítame (zaujíma nás len že sme kopli), ale MUSÍME ho zrušiť —
+      // neprečítané telo drží spojenie a súbežne s pingami/DB dotazmi ticku
+      // preteká strop in-flight spojení Cloudflare (viď localPinger.ts drain()).
+      try {
+        await res.body?.cancel();
+      } catch {
+        /* žiadne telo / už spotrebované */
+      }
       kicked++;
     } catch (err: unknown) {
       // Očakávané (mŕtvy web / vypnutý wp-cron) — loguj a pokračuj, nikdy nehádž.
