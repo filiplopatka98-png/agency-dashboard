@@ -12,6 +12,7 @@
 import { runJob } from '../_shared/runJob.mjs';
 import { raiseAlerts } from '../_shared/raiseAlert.mjs';
 import { extractStylesheets, extractMenuLinks, classifyAsset } from '../../packages/core/dist/assetCheck.js';
+import { resolveSiteOrigin } from '../../packages/core/dist/siteOrigin.js';
 
 const UA = 'Mozilla/5.0 (Monitorix asset-check; +https://dash.lopatka.sk)';
 const PAGE_TIMEOUT = 20_000;
@@ -25,14 +26,15 @@ function restHeaders(key) {
   return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
 }
 
-// Vráti { status, bytes, text } | { status: null } pri sieťovej chybe/timeoute.
+// Vráti { status, bytes, text, url } | { status: null } pri sieťovej chybe/timeoute.
+// `url` = finálna URL po redirectoch.
 async function fetchText(url) {
   try {
     const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(PAGE_TIMEOUT), headers: { 'User-Agent': UA } });
     const text = await res.text();
-    return { status: res.status, bytes: text.length, text };
+    return { status: res.status, bytes: text.length, text, url: res.url };
   } catch {
-    return { status: null, bytes: null, text: '' };
+    return { status: null, bytes: null, text: '', url: null };
   }
 }
 
@@ -74,8 +76,7 @@ async function run() {
 
   for (const s of sites) {
     try {
-      const origin = `https://${s.domain}`;
-      const home = await fetchText(origin + '/');
+      const home = await fetchText(`https://${s.domain}/`);
       // 503 = úmyselná údržba → preskoč (konzistentne s aeo/seo). Web dole
       // (status null / iný non-2xx na HOMEPAGE) rieši uptime, nie tento job.
       if (home.status === 503) {
@@ -86,6 +87,9 @@ async function run() {
         console.log(JSON.stringify({ ev: 'asset.skip_home_unreachable', domain: s.domain, status: home.status }));
         continue;
       }
+      // Origin z redirectu homepage (apex → www) — menu odkazy aj vlastné CSS sú
+      // na ňom; s holým https://<domain> by sa všetky zahodili (core siteOrigin.ts).
+      const origin = resolveSiteOrigin(s.domain, home.url);
 
       // 5 stránok: homepage + menu. Zbieraj CSS → množina stránok, čo naň odkazujú.
       const menu = extractMenuLinks(home.text, origin, MAX_MENU);

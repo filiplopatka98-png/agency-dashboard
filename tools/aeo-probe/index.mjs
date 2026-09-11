@@ -9,6 +9,7 @@
 //
 // Env (DB režim): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { scoreAeo } from '../../packages/core/dist/aeo.js';
+import { resolveSiteOrigin } from '../../packages/core/dist/siteOrigin.js';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 const TIMEOUT = 12_000;
@@ -72,8 +73,10 @@ async function discoverPages(origin, robotsTxt, homepageHtml) {
 }
 
 export async function probeAeo(domain) {
-  const origin = `https://${domain}`;
-  const res = await tryFetch(origin);
+  const res = await tryFetch(`https://${domain}`);
+  // Origin z redirectu homepage (apex → www) — sitemap URL aj odkazy sú na ňom;
+  // s holým https://<domain> by ich discoverPages všetky zahodil (core siteOrigin.ts).
+  const origin = resolveSiteOrigin(domain, res?.url);
   // 503 = web v úmyselnej údržbe (pred-launch maintenance stránka). Obsah sa
   // nedá hodnotiť, ale NIE je to chyba zberu — označ to rozlíšiteľne, nech to
   // `run()` preskočí bez `failed++` (inak by seo/aeo hlásili job_failed každý

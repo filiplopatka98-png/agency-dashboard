@@ -8,6 +8,7 @@
 // Env (DB režim): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 import { analyzePage, buildSeoIssues, parseSitemapUrls, isBrokenStatus } from '../../packages/core/dist/seo.js';
 import { diffSeoIssues } from '../../packages/core/dist/events.js';
+import { resolveSiteOrigin } from '../../packages/core/dist/siteOrigin.js';
 
 const UA = 'AgencyDashboard/1.0 (+https://dash.lopatka.sk)';
 const TIMEOUT = 12_000;
@@ -26,7 +27,12 @@ async function get(url, method = 'GET') {
 }
 
 export async function crawlSite(domain) {
-  const origin = `https://${domain}`;
+  // Origin z redirectu homepage (apex → www) — sitemap URL aj odkazy sú na ňom;
+  // s holým https://<domain> by sa všetky odfiltrovali (viď core siteOrigin.ts).
+  // Telo nečítame — zruš ho, nech nedrží spojenie.
+  const home = await get(`https://${domain}/`);
+  const origin = resolveSiteOrigin(domain, home?.url);
+  await home?.body?.cancel().catch(() => {});
   const robotsRes = await get(`${origin}/robots.txt`);
   const robotsOk = Boolean(robotsRes && robotsRes.ok);
 

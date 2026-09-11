@@ -107,4 +107,6 @@ export { isoWeek, isDrop } from './proactive';
 
 export { extractStylesheets, extractMenuLinks, classifyAsset, type AssetVerdict } from './assetCheck';
 
+export { resolveSiteOrigin } from './siteOrigin';
+
 export * from './emailHealth.js';
