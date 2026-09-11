@@ -23,6 +23,15 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const prevFocus = useRef<HTMLElement | null>(null);
+  // Volajúci posielajú `onClose` ako inline arrow → nová funkcia pri KAŽDOM
+  // renderi. Keby bol v deps efektu nižšie, efekt by sa pri každom stlačení
+  // klávesu vo formulári (setState rodiča → re-render) spustil znova a
+  // presunul fokus späť na prvé pole. Preto najnovší onClose cez ref a efekt
+  // (fokus + focus-trap) beží len raz — pri otvorení.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     prevFocus.current = document.activeElement as HTMLElement | null;
@@ -33,7 +42,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key === 'Tab' && panel) {
@@ -55,7 +64,7 @@ export function Modal({
       document.removeEventListener('keydown', onKey, true);
       prevFocus.current?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
