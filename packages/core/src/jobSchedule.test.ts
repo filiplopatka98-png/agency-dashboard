@@ -18,6 +18,9 @@ describe('expectedIntervalMs', () => {
     expect(expectedIntervalMs({ kind: 'hourly' })).toBe(3_600_000);
     expect(expectedIntervalMs({ kind: 'sixhourly' })).toBe(6 * 3_600_000);
   });
+  it('every15 = 15 minút', () => {
+    expect(expectedIntervalMs({ kind: 'every15' })).toBe(15 * 60_000);
+  });
 });
 
 describe('isOverdue', () => {
@@ -51,8 +54,12 @@ describe('isOverdue', () => {
 });
 
 describe('JOB_SCHEDULES', () => {
-  it('obsahuje presne 13 jobov (12 collectorov + scheduler)', () => {
-    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(13);
+  it('obsahuje presne 14 jobov (12 collectorov + scheduler + jeho watchdog)', () => {
+    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(14);
+  });
+
+  it('scheduler-watchdog je every15 (GitHub Action každých 15 min)', () => {
+    expect(JOB_SCHEDULES['scheduler-watchdog']!.kind).toBe('every15');
   });
 
   it('kľúče zodpovedajú job_runs.job hodnotám použitým v collectoroch', () => {
@@ -79,6 +86,9 @@ describe('overdueFactor', () => {
   });
   it('sixhourly (asset-check) dostáva 4× → 24 h tolerancia', () => {
     expect(overdueFactor({ kind: 'sixhourly' })).toBe(4);
+  });
+  it('every15 (watchdog v GitHub Actions) dostáva 24× → 6 h tolerancia na GitHub cron výpadky', () => {
+    expect(overdueFactor({ kind: 'every15' })).toBe(24);
   });
   it('ostatné kindy = 2×', () => {
     expect(overdueFactor({ kind: 'every5' })).toBe(2);

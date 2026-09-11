@@ -1,0 +1,37 @@
+name: scheduler-watchdog
+
+# Externá poistka pre scheduler Worker: každých 15 min overí posledný heartbeat
+# schedulera (job_runs); ak je starší než 20 min, vloží job_overdue alert a pošle
+# e-mail priamo cez Resend. runJobHealth beží v samotnom Workeri, takže jeho smrť
+# (napr. Cloudflare prestane volať cron — incident 2026-09-11) neodhalí.
+# Logika: packages/core/src/schedulerWatchdog.ts, IO: tools/scheduler-watchdog.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: scheduler-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agency/core build
+      - name: Run scheduler watchdog
+        run: node tools/scheduler-watchdog/index.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}

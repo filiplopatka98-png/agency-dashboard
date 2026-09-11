@@ -13,6 +13,7 @@
 
 export type JobSchedule =
   | { kind: 'every5' }
+  | { kind: 'every15' }
   | { kind: 'hourly' }
   | { kind: 'sixhourly' }
   | { kind: 'daily'; hh: number; mm: number }
@@ -39,6 +40,11 @@ export const JOB_SCHEDULES: Record<string, JobSchedule> = {
   // = 24 šancí naraziť na „job not acquired by hosted runner"). 6 h kadencia
   // + 24 h tolerancia (overdueFactor 4×) planý overdue eliminuje.
   'asset-check': { kind: 'sixhourly' },
+  // scheduler-watchdog.yml (*/15) — externá poistka pre `scheduler`: beží v
+  // GitHub Actions, nie v Workeri, takže odhalí aj jeho smrť (viď
+  // schedulerWatchdog.ts). Tu je, aby naopak scheduler strážil watchdog
+  // (GitHub vypína scheduled workflows po 60 dňoch bez pushu).
+  'scheduler-watchdog': { kind: 'every15' },
 };
 
 // Očakávaný interval medzi behmi v ms — vychádza len z `kind` (presný
@@ -49,6 +55,8 @@ export function expectedIntervalMs(sched: JobSchedule): number {
   switch (sched.kind) {
     case 'every5':
       return 5 * 60_000;
+    case 'every15':
+      return 15 * 60_000;
     case 'hourly':
       return 3_600_000;
     case 'sixhourly':
@@ -92,10 +100,13 @@ export function isOverdue(
 //   - hourly → 6× (~6 h ticha = naozaj mŕtvy)
 //   - sixhourly (asset-check, 6 h kadencia) → 4× = 24 h ticha; nízka hodnota
 //     jobu neospravedlňuje same-day alert pri bežnom GitHub runner výpadku.
+//   - every15 (scheduler-watchdog, GitHub Actions) → 24× = 6 h ticha, rovnaká
+//     tolerancia ako hourly; */15 GitHub cron vynecháva ešte častejšie.
 // Denné/týždenné/mesačné majú aj pri 2× obrovskú rezervu (48 h / 2 týž. /
 // 62 dní) a Cloudflare `every5` je spoľahlivý, tým 2× stačí.
 export function overdueFactor(sched: JobSchedule): number {
   if (sched.kind === 'hourly') return 6;
   if (sched.kind === 'sixhourly') return 4;
+  if (sched.kind === 'every15') return 24;
   return 2;
 }

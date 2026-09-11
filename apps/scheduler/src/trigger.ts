@@ -31,6 +31,7 @@ const WORKFLOWS: Record<string, string> = {
   digest: 'digest.yml',
   report: 'report.yml',
   'asset-check': 'asset-check.yml',
+  'scheduler-watchdog': 'scheduler-watchdog.yml',
 };
 
 const json = (body: unknown, status: number) =>

@@ -109,4 +109,14 @@ export { extractStylesheets, extractMenuLinks, classifyAsset, type AssetVerdict 
 
 export { resolveSiteOrigin } from './siteOrigin';
 
+export {
+  schedulerHeartbeat,
+  jobOverdueDedupeKey,
+  schedulerStaleAlertRows,
+  renderSchedulerStaleEmail,
+  SCHEDULER_WATCHDOG_FACTOR,
+  type SchedulerHeartbeat,
+  type SchedulerStaleAlertRow,
+} from './schedulerWatchdog';
+
 export * from './emailHealth.js';

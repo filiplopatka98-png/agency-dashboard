@@ -1,4 +1,4 @@
-import { JOB_SCHEDULES, isOverdue, overdueFactor } from '@agency/core';
+import { JOB_SCHEDULES, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
@@ -21,11 +21,11 @@ import { serviceClient } from './supabase';
  *
  * POZOR — hranica tohto riešenia: tento kód beží LEN vtedy, keď Worker tikne.
  * Ak zomrie samotný Worker (Cloudflare cron trigger prestane volať
- * `scheduled()`), NIČ si to nevšimne — dead-man's switch nemôže odhaliť
- * vlastnú smrť. Skutočné pokrytie tohto prípadu by vyžadovalo externý
- * heartbeat (napr. healthchecks.io, pingovaný z Workera) — owner ho pre fázu
- * 1 explicitne odmietol (žiadna závislosť na ďalšom externom serveri), takže
- * tu ostáva len ako známa medzera, nie predstieraná istota.
+ * `scheduled()` — reálne 2026-09-11, 70 min), dead-man's switch nemôže odhaliť
+ * vlastnú smrť. To pokrýva scheduler-watchdog (GitHub Action každých 15 min, bez novej
+ * externej služby — viď core schedulerWatchdog.ts): pozrie heartbeat
+ * schedulera v job_runs a e-mail pošle priamo cez Resend. Jeho job_overdue
+ * alert má rovnaký dedupe_key ako tunajší, takže po zotavení nepríde druhý.
  */
 export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; now?: Date } = {}): Promise<void> {
   const supabase = deps.supabase ?? serviceClient(env);
@@ -120,7 +120,6 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   if (orgErr) throw new Error(`organizations select: ${orgErr.message}`);
   if (!orgs?.length) return;
 
-  const day = now.toISOString().slice(0, 10); // dedupe: max 1× per job per deň
   const overdueRows = orgs.flatMap((org: { id: string }) =>
     overdueJobs.map((job) => ({
       org_id: org.id,
@@ -129,7 +128,8 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
       severity: 'warning' as const,
       title: `Job „${job}" mešká`,
       body: `Posledný zaznamenaný beh jobu „${job}" je starší než 2× jeho očakávaný interval — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.`,
-      dedupe_key: `job_overdue:${job}:${day}`,
+      // max 1× per job per deň; zdieľaný kľúč so scheduler-watchdog (core)
+      dedupe_key: jobOverdueDedupeKey(job, now),
     })),
   );
 
@@ -145,7 +145,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
       // dní — s `day` (dnešok) by re-alertoval každý deň (nový deň = nový kľúč).
       // S dátumom behu upozorní jeden zlyhaný beh práve raz; ďalší (nový) beh
       // má nový finished_at → nový alert, keď zlyhá znova.
-      const runDay = (run.finished_at ?? '').slice(0, 10) || day;
+      const runDay = (run.finished_at ?? '').slice(0, 10) || now.toISOString().slice(0, 10);
       return {
         org_id: org.id,
         site_id: null,

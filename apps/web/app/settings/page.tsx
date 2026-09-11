@@ -25,6 +25,7 @@ const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] =
   { key: 'digest', label: 'Týždenný digest (e-mail)', desc: 'pondelok 08:00 UTC' },
   { key: 'report', label: 'Mesačný report (e-mail)', desc: '1. deň mesiaca 07:00 UTC' },
   { key: 'asset-check', label: 'Kontrola CSS (rozbité assety)', desc: 'každých 6 h' },
+  { key: 'scheduler-watchdog', label: 'Poistka schedulera (e-mail pri výpadku)', desc: 'každých 15 minút' },
 ].map((j) => ({ ...j, sched: JOB_SCHEDULES[j.key]! }));
 
 function nextRun(sched: JobSchedule, from: Date): Date {
@@ -32,6 +33,11 @@ function nextRun(sched: JobSchedule, from: Date): Date {
   if (sched.kind === 'every5') {
     n.setUTCSeconds(0, 0);
     n.setUTCMinutes(Math.floor(from.getUTCMinutes() / 5) * 5 + 5);
+    return n;
+  }
+  if (sched.kind === 'every15') {
+    n.setUTCSeconds(0, 0);
+    n.setUTCMinutes(Math.floor(from.getUTCMinutes() / 15) * 15 + 15);
     return n;
   }
   if (sched.kind === 'hourly') {
@@ -71,7 +77,7 @@ function rel(ms: number): string {
   return `${Math.round(h / 24)} d`;
 }
 
-const DISPATCHABLE = new Set(['psi', 'tls', 'security', 'aeo', 'gsc', 'seo', 'infra', 'cve', 'history', 'digest', 'report', 'asset-check']);
+const DISPATCHABLE = new Set(['psi', 'tls', 'security', 'aeo', 'gsc', 'seo', 'infra', 'cve', 'history', 'digest', 'report', 'asset-check', 'scheduler-watchdog']);
 
 const jobStatusColor: Record<string, [string, string]> = {
   ok: ['var(--ok-color)', 'var(--ok-bg)'],
