@@ -75,11 +75,15 @@ export function analyzePage(html: string, pageUrl: string, xRobotsTag?: string):
   const imgs = html.match(/<img\b[^>]*>/gi) ?? [];
   const imagesNoAlt = imgs.filter((tag) => !/\balt\s*=\s*["'][^"']*["']/i.test(tag)).length;
 
-  // interné odkazy (same-origin), absolútne, bez hash/mailto/tel
+  // interné odkazy (same-origin), absolútne, bez hash/mailto/tel. Obsah <script>
+  // blokov vynechaj — WP šablóny médií (`<script type="text/html">`) majú
+  // `href="{{ data.link }}"` a odkazy do /wp-admin/, ktoré nie sú reálne odkazy
+  // stránky (crawl by ich hlásil ako nefunkčné / noindex = falošné criticaly).
   const links = new Set<string>();
+  const linkHtml = html.replace(/<script\b[\s\S]*?<\/script>/gi, '');
   const linkRe = /<a\b[^>]*href=["']([^"'#]+)["']/gi;
   let m: RegExpExecArray | null;
-  while ((m = linkRe.exec(html))) {
+  while ((m = linkRe.exec(linkHtml))) {
     const href = m[1]!.trim();
     if (/^(mailto:|tel:|javascript:|data:)/i.test(href)) continue;
     try {

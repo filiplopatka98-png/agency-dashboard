@@ -71,6 +71,17 @@ describe('analyzePage — opravy správnosti', () => {
     expect(analyzePage('<html></html>', 'https://x.sk/').noindex).toBe(false);
   });
 
+  it('odkazy vnútri <script> (WP šablóny médií, {{ data.link }}) NIE sú interné odkazy', () => {
+    const html =
+      '<html><body>' +
+      '<a href="/kontakt">Kontakt</a>' +
+      '<script type="text/html" id="tmpl-attachment-details">' +
+      '<a href="{{ data.link }}">x</a><a href="https://x.sk/wp-admin/upload.php?mode=grid">y</a>' +
+      '</script>' +
+      '</body></html>';
+    expect(analyzePage(html, 'https://x.sk/').internalLinks).toEqual(['https://x.sk/kontakt']);
+  });
+
   it('detekuje noindex z X-Robots-Tag hlavičky', () => {
     expect(analyzePage('<html></html>', 'https://x.sk/', 'noindex').noindex).toBe(true);
     expect(analyzePage('<html></html>', 'https://x.sk/', 'none').noindex).toBe(true);
