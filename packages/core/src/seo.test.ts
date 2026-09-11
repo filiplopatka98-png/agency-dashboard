@@ -120,6 +120,9 @@ describe('isBrokenStatus', () => {
     expect(isBrokenStatus(403)).toBe(false);
     expect(isBrokenStatus(429)).toBe(false);
   });
+  it('509 (hosting Bandwidth/Resource Limit Exceeded) je škrtenie, NIE broken', () => {
+    expect(isBrokenStatus(509)).toBe(false);
+  });
   it('2xx/3xx nie sú broken', () => {
     expect(isBrokenStatus(200)).toBe(false);
     expect(isBrokenStatus(301)).toBe(false);

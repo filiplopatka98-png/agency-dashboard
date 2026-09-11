@@ -127,7 +127,9 @@ export function analyzePage(html: string, pageUrl: string, xRobotsTag?: string):
 export function isBrokenStatus(status: number): boolean {
   // 401/403/429 = auth / anti-bot / rate-limit — nie je to rozbitý odkaz, len
   // nás server odmietol. Rátať ich ako broken = falošné criticaly v reporte.
-  if (status === 401 || status === 403 || status === 429) return false;
+  // 509 = hosting škrtí (Bandwidth/Resource Limit Exceeded, zdieľaný hosting pri
+  // súbežných crawloch) — rovnaký prípad ako 429.
+  if (status === 401 || status === 403 || status === 429 || status === 509) return false;
   return status === 0 || status >= 400;
 }
 
