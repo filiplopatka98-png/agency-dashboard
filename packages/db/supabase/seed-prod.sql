@@ -12,12 +12,17 @@ insert into clients (id, org_id, name, company, contract_type, monthly_fee_eur, 
   ('000000cc-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', 'Lopatka',          'Filip Lopatka', 'Vlastný',  0.00,  'active'),
   ('000000cc-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1', 'Krivošík',         'Krivošík',      'Standard', 39.00, 'active'),
   ('000000cc-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a1', 'Profihouse',       'Profihouse',    'Standard', 39.00, 'active'),
-  ('000000cc-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', 'Kuko detský svet', 'Kuko',          'Standard', 39.00, 'active')
+  ('000000cc-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', 'Kuko detský svet', 'Kuko',          'Standard', 39.00, 'active'),
+  ('000000cc-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', 'Welltis',          'Welltis Group', null,       null,  'active')
 on conflict (id) do nothing;
 
 insert into sites (id, org_id, client_id, name, url, domain, cms, is_free, expected_string) values
   ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000001', 'Lopatka portfólio', 'https://lopatka.sk',        'lopatka.sk',        'static',    true,  null),
   ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000002', 'Krivošík',          'https://krivosik.sk',       'krivosik.sk',       'wordpress', false, null),
   ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000003', 'Profihouse',        'https://profihouse.sk',     'profihouse.sk',     'wordpress', false, null),
-  ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000004', 'Kuko detský svet',  'https://kukodetskysvet.sk', 'kukodetskysvet.sk', 'other',     false, null)
+  ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000004', 'Kuko detský svet',  'https://kukodetskysvet.sk', 'kukodetskysvet.sk', 'other',     false, null),
+  ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis',            'https://welltis.sk',       'welltis.sk',       'wordpress', false, null),
+  ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Byty Lazovná',       'https://bytylazovna.sk',   'bytylazovna.sk',   'wordpress', false, null),
+  ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis Group (SK)', 'https://welltisgroup.sk',  'welltisgroup.sk',  'wordpress', false, null),
+  ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis Group (EN)', 'https://welltisgroup.com', 'welltisgroup.com', 'wordpress', false, null)
 on conflict (id) do nothing;
