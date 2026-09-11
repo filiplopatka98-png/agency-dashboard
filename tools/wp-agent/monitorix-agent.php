@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Monitorix Agent
  * Description: Posiela stav webu (WP/PHP/MySQL verzie, pluginy + updaty, téma, záloha) do Monitorix dashboardu. Stačí nainštalovať a aktivovať — žiadna konfigurácia.
- * Version: 2.2.0
+ * Version: 2.2.1
  * Author: Lopatka
  *
  * Inštalácia (nič iné netreba):
