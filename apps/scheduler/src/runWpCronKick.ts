@@ -31,11 +31,22 @@ interface WpKickSiteRow {
  *    kopnutiu webu, ktorý aj po kicku mlčí (vypnutý DISABLE_WP_CRON, neaktívny plugin, mŕtvy web),
  *  - `limit` obmedzuje subrequesty za tick (zdieľaný rozpočet s runUptime/runDomains/runAlerts).
  *
- * Kick = obyčajný GET na `wp-cron.php?doing_wp_cron=<unix ts>` — presne ako si
- * WordPress sám spúšťa cron pri návšteve stránky. Zlyhanie je OČAKÁVANÉ (mŕtvy
- * web, vypnutý wp-cron, firewall) — loguje sa a ide sa ďalej, nikdy nehádže,
- * lebo beží v tej istej invokácii ako runUptime.
+ * Kick = obyčajný GET na `wp-cron.php` (viď wpCronKickUrl). Zlyhanie je
+ * OČAKÁVANÉ (mŕtvy web, vypnutý wp-cron, firewall) — loguje sa a ide sa ďalej,
+ * nikdy nehádže, lebo beží v tej istej invokácii ako runUptime.
  */
+/**
+ * URL kicku BEZ `doing_wp_cron`. wp-cron.php porovná GET `doing_wp_cron` s
+ * transientom `doing_cron`, ktorý si nastaví LEN sám `spawn_cron()` tesne pred
+ * vlastným requestom — cudzia hodnota (napr. náš timestamp) nesedí a skript
+ * skončí bez spustenia jobov. Bez parametra ide vetva „volané z externého
+ * cronu": wp-cron si zámok nastaví sám a spustí splatné joby (aj hodinový
+ * push Monitorix agenta).
+ */
+export function wpCronKickUrl(domain: string): string {
+  return `https://${domain}/wp-cron.php`;
+}
+
 export async function runWpCronKick(env: Env, deps: RunWpCronKickDeps = {}): Promise<void> {
   const supabase = deps.supabase ?? serviceClient(env);
   const limit = deps.limit ?? 3;
@@ -53,7 +64,7 @@ export async function runWpCronKick(env: Env, deps: RunWpCronKickDeps = {}): Pro
 
   let kicked = 0;
   for (const s of rows) {
-    const kickUrl = `https://${s.domain}/wp-cron.php?doing_wp_cron=${Math.floor(now.getTime() / 1000)}`;
+    const kickUrl = wpCronKickUrl(s.domain);
     try {
       const res = await fetcher(kickUrl);
       // Telo nečítame (zaujíma nás len že sme kopli), ale MUSÍME ho zrušiť —

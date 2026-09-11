@@ -79,7 +79,7 @@ describe.skipIf(!enabled)('runWpCronKick (integration)', () => {
     expect(hit.some((u) => u.includes('fresh.example'))).toBe(false);
     expect(hit.some((u) => u.includes('static.example'))).toBe(false);
     expect(hit.some((u) => u.includes('cooldown.example'))).toBe(false);
-    hit.forEach((u) => expect(u).toMatch(/^https:\/\/[^/]+\/wp-cron\.php\?doing_wp_cron=\d+$/));
+    hit.forEach((u) => expect(u).toMatch(/^https:\/\/[^/]+\/wp-cron\.php$/));
   });
 
   it('zapíše cron_kicked_at (partial upsert, nedotkne sa measured_at)', async () => {
