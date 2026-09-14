@@ -1,5 +1,24 @@
-import { describe, expect, it } from 'vitest';
-import { isNightInBratislava, NIGHT_DEFERRED_TYPES, hourBucketUtc } from './schedule';
+import { describe, expect, it, vi } from 'vitest';
+import { bratislavaHour, isNightInBratislava, NIGHT_DEFERRED_TYPES, hourBucketUtc } from './schedule';
+
+describe('bratislavaHour (bez Intl)', () => {
+  it('zhoduje sa s Intl Europe/Bratislava pre každú hodinu 2026–2028 (vrátane prechodov času)', () => {
+    const oracle = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Bratislava', hour: '2-digit', hour12: false });
+    const mismatches: string[] = [];
+    for (let t = Date.UTC(2026, 0, 1); t < Date.UTC(2029, 0, 1); t += 3_600_000) {
+      const d = new Date(t + 30 * 60_000); // polhodina — nech hranica hodiny nie je v hre
+      const expected = Number(oracle.format(d)) % 24;
+      if (bratislavaHour(d) !== expected) mismatches.push(d.toISOString());
+    }
+    expect(mismatches).toEqual([]);
+  });
+  it('isNightInBratislava nevolá Intl.DateTimeFormat (studené ICU časové zóny stoja ~14 ms CPU)', () => {
+    const spy = vi.spyOn(Intl, 'DateTimeFormat');
+    isNightInBratislava(new Date('2026-07-15T21:30:00Z'));
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
 
 describe('isNightInBratislava', () => {
   // Zima: Bratislava = UTC+1. 03:00 UTC = 04:00 lokál → noc.

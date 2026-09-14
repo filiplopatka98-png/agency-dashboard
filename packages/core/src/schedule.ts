@@ -1,15 +1,30 @@
+// Posledná nedeľa mesiaca o 01:00 UTC — okamih EU prechodu času.
+function lastSundayUtc(year: number, month: number): number {
+  const lastDay = new Date(Date.UTC(year, month + 1, 0));
+  return Date.UTC(year, month, lastDay.getUTCDate() - lastDay.getUTCDay(), 1);
+}
+
+/**
+ * Lokálna hodina v Bratislave BEZ Intl. `Intl.DateTimeFormat` s timeZone pri
+ * prvom použití v studenom izoláte načítava ICU dáta časových zón (~14 ms CPU)
+ * — scheduler Worker na Free pláne má 10 ms na celé spustenie. EU pravidlo:
+ * letný čas (UTC+2) od poslednej nedele v marci do poslednej nedele v októbri,
+ * vždy o 01:00 UTC; inak UTC+1.
+ */
+export function bratislavaHour(date: Date): number {
+  const t = date.getTime();
+  const y = date.getUTCFullYear();
+  const summer = t >= lastSundayUtc(y, 2) && t < lastSundayUtc(y, 9);
+  return (date.getUTCHours() + (summer ? 2 : 1)) % 24;
+}
+
 /**
  * Nočné okno pre Europe/Bratislava (22:00–06:00 lokálneho času).
  * V noci sa neposielajú site_up ani region_outage alerty — zaradia sa do rannej
  * správy. critical (site_down) sa posiela vždy.
  */
 export function isNightInBratislava(date: Date): boolean {
-  const hourStr = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Bratislava',
-    hour: '2-digit',
-    hour12: false,
-  }).format(date);
-  const hour = Number(hourStr) % 24; // niektoré enginy dávajú "24" pre polnoc
+  const hour = bratislavaHour(date);
   return hour >= 22 || hour < 6;
 }
 
