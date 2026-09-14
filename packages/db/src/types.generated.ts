@@ -1392,6 +1392,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      email_health_inputs: {
+        Args: { _since: string }
+        Returns: {
+          site_id: string
+          org_id: string
+          domain: string
+          provider: string | null
+          sent_1h: number | null
+          failed_1h: number | null
+          failed_pct_1h: number | null
+          sent_24h: number | null
+          failed_24h: number | null
+          last_success_at: string | null
+          last_failure_at: string | null
+          last_failure_message: string | null
+          queue_depth: number | null
+          typical_daily_14d: number
+        }[]
+      }
       get_domains_to_check: {
         Args: { _limit?: number }
         Returns: {
@@ -1412,6 +1431,17 @@ export type Database = {
         }[]
       }
       insert_expiry_alerts: { Args: never; Returns: undefined }
+      latest_job_runs: {
+        Args: never
+        Returns: {
+          job: string
+          status: string
+          ok: number | null
+          failed: number | null
+          error: string | null
+          finished_at: string
+        }[]
+      }
       persist_uptime: {
         Args: {
           _checks: Json
