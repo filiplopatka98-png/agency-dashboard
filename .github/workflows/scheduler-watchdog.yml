@@ -5,9 +5,14 @@ name: scheduler-watchdog
 # e-mail priamo cez Resend. runJobHealth beží v samotnom Workeri, takže jeho smrť
 # (napr. Cloudflare prestane volať cron — incident 2026-09-11) neodhalí.
 # Logika: packages/core/src/schedulerWatchdog.ts, IO: tools/scheduler-watchdog.
+#
+# Plán NIE je `*/15`: s ním GitHub od 11. 9. nespustil ani jeden beh (ostatné
+# plánované workflows v repe bežia). GitHub odporúča vyhnúť sa začiatku hodiny
+# a štvrťhodinám, keď je plánovač preťažený — preto nepárne minúty. Stále každých
+# 15 min, takže JOB_SCHEDULES `every15` platí.
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch: {}
 
 concurrency:
