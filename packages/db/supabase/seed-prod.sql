@@ -24,5 +24,6 @@ insert into sites (id, org_id, client_id, name, url, domain, cms, is_free, expec
   ('00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis',            'https://welltis.sk',       'welltis.sk',       'wordpress', false, null),
   ('00000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Byty Lazovná',       'https://bytylazovna.sk',   'bytylazovna.sk',   'wordpress', false, null),
   ('00000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis Group (SK)', 'https://welltisgroup.sk',  'welltisgroup.sk',  'wordpress', false, null),
-  ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis Group (EN)', 'https://welltisgroup.com', 'welltisgroup.com', 'wordpress', false, null)
+  ('00000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis Group (EN)', 'https://welltisgroup.com', 'welltisgroup.com', 'wordpress', false, null),
+  ('00000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-0000000000a1', '000000cc-0000-0000-0000-000000000005', 'Welltis (EN)',       'https://www.welltis.com',  'welltis.com',      'wordpress', false, null)
 on conflict (id) do nothing;
