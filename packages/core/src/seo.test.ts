@@ -82,6 +82,29 @@ describe('analyzePage — opravy správnosti', () => {
     expect(analyzePage(html, 'https://x.sk/').internalLinks).toEqual(['https://x.sk/kontakt']);
   });
 
+  it('mixed content NEráta <link>, ktoré prehliadač nesťahuje (rel=profile, alternate/hreflang)', () => {
+    const html =
+      '<html><head>' +
+      '<link rel="profile" href="http://gmpg.org/xfn/11">' + // WP téma, nič sa nesťahuje
+      '<link rel="alternate" hreflang="sk" href="http://x.sk/sk/">' + // len odkaz
+      '<link rel="icon" href="http://cdn.old/favicon.png">' + // mixed (resource)
+      '</head><body></body></html>';
+    expect(analyzePage(html, 'https://x.sk/').mixedContent).toBe(1);
+  });
+
+  it('meta description so znakmi < a > v texte rozpozná (lopatka.sk: „<30 % … >60 %")', () => {
+    const html =
+      '<html><head>' +
+      '<meta name="description" content="Tri modely, jedno pravidlo: <30 % scope drift = fix, 30–60 % = hybrid, >60 % = hodinovka.">' +
+      '</head><body></body></html>';
+    expect(analyzePage(html, 'https://x.sk/').hasMetaDesc).toBe(true);
+  });
+
+  it('alt so znakom > v texte NEráta ako chýbajúci alt', () => {
+    const html = '<html><body><img src="/graf.png" alt="LCP > 2,5 s"></body></html>';
+    expect(analyzePage(html, 'https://x.sk/').imagesNoAlt).toBe(0);
+  });
+
   it('detekuje noindex z X-Robots-Tag hlavičky', () => {
     expect(analyzePage('<html></html>', 'https://x.sk/', 'noindex').noindex).toBe(true);
     expect(analyzePage('<html></html>', 'https://x.sk/', 'none').noindex).toBe(true);

@@ -45,13 +45,19 @@ export function analyzePage(html: string, pageUrl: string, xRobotsTag?: string):
   // Atribúty v HTML môžu byť v ľubovoľnom poradí (napr. `content` pred `name`),
   // preto meta/link/img vyhodnocujeme tag-po-tagu, nie jedným regexom s pevným
   // poradím — inak by validný CMS výstup padal ako „chýbajúci".
-  const metaTags = html.match(/<meta\b[^>]*>/gi) ?? [];
-  const linkTags = html.match(/<link\b[^>]*>/gi) ?? [];
+  // Tag končí prvým `>` MIMO úvodzoviek: `[^>]*` by `content="… >60 % …"` uťal
+  // v polovici hodnoty a atribút by „chýbal" (falošný nález na lopatka.sk).
+  const tagsOf = (name: string) => html.match(new RegExp(`<${name}\\b(?:[^>"']|"[^"]*"|'[^']*')*>`, 'gi')) ?? [];
+  const metaTags = tagsOf('meta');
+  const linkTags = tagsOf('link');
+  const attr = (tag: string, name: string): string | null => {
+    const m = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i'));
+    return m ? (m[1] ?? m[2] ?? '') : null;
+  };
   const hasAttr = (tag: string, name: string, value?: RegExp) => {
-    const re = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i');
-    const m = tag.match(re);
-    if (!m) return false;
-    return value ? value.test(m[1]!) : m[1]!.length > 0;
+    const v = attr(tag, name);
+    if (v === null) return false;
+    return value ? value.test(v) : v.length > 0;
   };
 
   const hasMetaDesc = metaTags.some(
@@ -72,8 +78,7 @@ export function analyzePage(html: string, pageUrl: string, xRobotsTag?: string):
 
   // obrázky bez alt — `alt=""` (dekoratívny obrázok, odporúčaný a11y zápis) je
   // VALIDNÝ, ráta sa len úplne chýbajúci `alt` atribút.
-  const imgs = html.match(/<img\b[^>]*>/gi) ?? [];
-  const imagesNoAlt = imgs.filter((tag) => !/\balt\s*=\s*["'][^"']*["']/i.test(tag)).length;
+  const imagesNoAlt = tagsOf('img').filter((tag) => attr(tag, 'alt') === null).length;
 
   // interné odkazy (same-origin), absolútne, bez hash/mailto/tel. Obsah <script>
   // blokov vynechaj — WP šablóny médií (`<script type="text/html">`) majú
@@ -98,13 +103,19 @@ export function analyzePage(html: string, pageUrl: string, xRobotsTag?: string):
   }
 
   // mixed content = LEN subresource na http:// (img/script/iframe/audio/video/
-  // source `src`, alebo `<link href>` = stylesheet/icon/preload). Obyčajný
-  // `<a href="http://…">` (externý odkaz) NIE je mixed content — starý regex ho
-  // falošne rátal a hlásil critical za jediný HTTP odkaz.
+  // source `src`, alebo `<link href>`, ktorý prehliadač stiahne: stylesheet/
+  // icon/preload/manifest). Obyčajný `<a href="http://…">` (externý odkaz) NIE je
+  // mixed content — starý regex ho falošne rátal a hlásil critical za jediný
+  // HTTP odkaz. Rovnako `<link rel="profile" href="http://gmpg.org/xfn/11">`
+  // (hlavička WP tém) či rel=alternate/hreflang: nič sa nesťahuje, a predtým to
+  // dávalo critical na každej stránke (soccercoacheshub.com, 43 nálezov).
+  const FETCHED_LINK_REL = /\b(stylesheet|icon|apple-touch-icon(-precomposed)?|mask-icon|preload|modulepreload|prefetch|manifest)\b/i;
   let mixedContent = 0;
   if (secure) {
     const srcHttp = (html.match(/\bsrc\s*=\s*["']http:\/\/[^"']+["']/gi) ?? []).length;
-    const linkHttp = (html.match(/<link\b[^>]*\bhref\s*=\s*["']http:\/\/[^"']+["']/gi) ?? []).length;
+    const linkHttp = linkTags.filter(
+      (t) => /^http:\/\//i.test(attr(t, 'href') ?? '') && FETCHED_LINK_REL.test(attr(t, 'rel') ?? ''),
+    ).length;
     mixedContent = srcHttp + linkHttp;
   }
 
