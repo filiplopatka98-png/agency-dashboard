@@ -19,6 +19,9 @@ export interface FakeStore {
   perf_runs?: Record<string, unknown>[];
   wp_email_health?: Record<string, unknown>[];
   sites?: Record<string, unknown>[];
+  // Záznam volaní (`from:<tabuľka>` / `rpc:<funkcia>`) — každé = 1 subrequest
+  // na Workeri; testy tak strážia rozpočet 50 subrequestov na spustenie.
+  calls?: string[];
 }
 
 export interface FakeAlertRow {
@@ -172,10 +175,49 @@ class FakeQuery {
   }
 }
 
+// Sémantika SQL `latest_job_runs()` (migrácia 0041): posledný beh každého jobu.
+function latestJobRuns(rows: FakeJobRunRow[]): FakeJobRunRow[] {
+  const latest = new Map<string, FakeJobRunRow>();
+  for (const r of rows) {
+    const cur = latest.get(r.job);
+    if (!cur || String(r.finished_at ?? '') > String(cur.finished_at ?? '')) latest.set(r.job, r);
+  }
+  return [...latest.values()];
+}
+
+// Sémantika SQL `email_health_inputs(_since)` (0041): posledný reading každého
+// aktívneho webu s providerom + medián sent_24h > 0 od `_since` (bez → 0).
+function emailHealthInputs(store: FakeStore, since: string): Record<string, unknown>[] {
+  const readings = store.wp_email_health ?? [];
+  const out: Record<string, unknown>[] = [];
+  for (const s of store.sites ?? []) {
+    if (!s.is_active) continue;
+    const mine = readings.filter((r) => r.site_id === s.id);
+    const latest = [...mine].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)))[0];
+    if (!latest || latest.provider == null) continue;
+    const vals = mine
+      .filter((r) => String(r.measured_at) >= since && Number(r.sent_24h ?? 0) > 0)
+      .map((r) => Number(r.sent_24h))
+      .sort((a, b) => a - b);
+    const m = Math.floor(vals.length / 2);
+    const median = !vals.length ? 0 : vals.length % 2 ? vals[m]! : (vals[m - 1]! + vals[m]!) / 2;
+    out.push({ ...latest, site_id: s.id, org_id: s.org_id, domain: s.domain, typical_daily_14d: median });
+  }
+  return out;
+}
+
 export function fakeSupabase(store: FakeStore): SupabaseClient {
+  const calls = (store.calls ??= []);
   return {
     from(table: keyof FakeStore) {
+      calls.push(`from:${String(table)}`);
       return new FakeQuery(store, table);
+    },
+    async rpc(fn: string, args: Record<string, unknown> = {}) {
+      calls.push(`rpc:${fn}`);
+      if (fn === 'latest_job_runs') return { data: latestJobRuns(store.job_runs), error: null };
+      if (fn === 'email_health_inputs') return { data: emailHealthInputs(store, String(args._since)), error: null };
+      return { data: null, error: { message: `fakeSupabase: neznáme rpc ${fn}` } };
     },
   } as unknown as SupabaseClient;
 }

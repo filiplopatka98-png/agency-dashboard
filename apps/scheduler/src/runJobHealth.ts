@@ -33,11 +33,11 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
 
   const jobs = Object.keys(JOB_SCHEDULES);
 
-  // Najnovší finished_at per job — samostatný dotaz na job (nie jeden veľký
-  // `order + limit`), lebo `job_runs` je z >97 % scheduler (audit 3.4): jeden
-  // spoločný limit by mohol vypadnúť skôr, než sa dostane k riedkemu
-  // týždennému/mesačnému jobu, a ten by sa nesprávne javil ako „nikdy
-  // nevidený" → falošné negatívum (žiadny alert namiesto potrebného).
+  // Najnovší beh per job JEDNÝM rpc `latest_job_runs` (DISTINCT ON v SQL,
+  // migrácia 0041) — nie spoločný `order + limit` (job_runs je z >97 %
+  // scheduler, audit 3.4: riedky týždenný job by vypadol z okna → falošné
+  // „nikdy") a už ani 1 dotaz per job: 14 subrequestov z limitu 50 na
+  // spustenie Workera (Free) bolo priveľa.
   interface LatestRun {
     finished_at: string | null;
     status: string | null;
@@ -46,33 +46,21 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
     ok: number | null;
   }
   const latest = new Map<string, LatestRun>();
-  await Promise.all(
-    jobs.map(async (job) => {
-      const { data, error } = await supabase
-        .from('job_runs')
-        .select('finished_at, status, error, failed, ok')
-        .eq('job', job)
-        .order('finished_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) {
-        // Best-effort per job — nedostupnosť pre jeden job nesmie zablokovať
-        // kontrolu ostatných. Bez záznamu radšej mlčíme (fail-safe), než aby
-        // sme falošne alertovali.
-        console.log(JSON.stringify({ ev: 'job_health.check_fail', job, error: error.message }));
-        return;
-      }
-      if (data) {
-        latest.set(job, {
-          finished_at: data.finished_at ?? null,
-          status: data.status ?? null,
-          error: data.error ?? null,
-          failed: data.failed ?? null,
-          ok: data.ok ?? null,
-        });
-      }
-    }),
-  );
+  const { data: runs, error: runsErr } = await supabase.rpc('latest_job_runs');
+  if (runsErr) {
+    // Bez záznamov radšej mlčíme (fail-safe), než aby sme falošne alertovali.
+    console.log(JSON.stringify({ ev: 'job_health.check_fail', error: runsErr.message }));
+    return;
+  }
+  for (const r of (runs ?? []) as ({ job: string } & LatestRun)[]) {
+    latest.set(r.job, {
+      finished_at: r.finished_at ?? null,
+      status: r.status ?? null,
+      error: r.error ?? null,
+      failed: r.failed ?? null,
+      ok: r.ok ?? null,
+    });
+  }
 
   // Dead-man's switch: job „mešká" (žiadny čerstvý zaznamenaný beh).
   const overdueJobs = jobs.filter((job) =>
@@ -93,7 +81,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   // (zlyhanie zberača → e-mail) cieli len na COLLECTORY. Vlastné zdravie schedulera
   // rieši zápis statusu + (akceptovaná) medzera vlastnej smrti, nie job_failed.
   const failedJobs = jobs.filter((job) => {
-    if (job === 'scheduler') return false;
+    if (job === 'scheduler' || job === 'scheduler-upkeep') return false; // oba crony Workera sú meta-runnery
     const run = latest.get(job);
     if (!run) return false;
     // `error` = systémové zlyhanie (celý beh hodil — chýbajúci/mŕtvy token cez

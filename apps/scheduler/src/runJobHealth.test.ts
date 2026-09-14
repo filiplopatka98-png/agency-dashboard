@@ -112,4 +112,21 @@ describe('runJobHealth — job_failed pri zlyhanom zbere (FIX 2)', () => {
     const rows = jobFailed(store);
     expect(rows.map((r) => r.dedupe_key)).toEqual(['job_failed:psi:2026-07-20']);
   });
+
+  it('meta-job „scheduler-upkeep" (druhý cron) so status=error tiež NEgeneruje job_failed', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'error', error: 'domains: whois timeout', finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobFailed(store)).toHaveLength(0);
+  });
+});
+
+describe('runJobHealth — rozpočet subrequestov (Workers Free: 50 na spustenie)', () => {
+  it('posledné behy načíta JEDNÝM rpc latest_job_runs, nie 1 dotazom per job', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'psi', status: 'ok', finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(store.calls!.filter((c) => c === 'rpc:latest_job_runs')).toHaveLength(1);
+    expect(store.calls!.filter((c) => c === 'from:job_runs')).toHaveLength(0);
+  });
 });

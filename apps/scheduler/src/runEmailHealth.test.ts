@@ -73,3 +73,12 @@ describe('runEmailHealth — Rule 3 (silence) + typicalDaily14d median', () => {
     expect(s.alerts).toHaveLength(0);
   });
 });
+
+describe('runEmailHealth — rozpočet subrequestov (Workers Free: 50 na spustenie)', () => {
+  it('vstupy všetkých webov načíta JEDNÝM rpc email_health_inputs, nie 1 + 2 dotazmi per web', async () => {
+    const s = store([{ site_id: 'site-1', org_id: 'org-1', provider: 'FluentSMTP', last_success_at: h(8), queue_depth: 0, sent_24h: 5, failed_1h: 0, measured_at: h(0.1) }]);
+    await runEmailHealth(env, { supabase: fakeSupabase(s), now: NOW });
+    expect(s.calls!.filter((c) => c === 'rpc:email_health_inputs')).toHaveLength(1);
+    expect(s.calls!.filter((c) => c === 'from:wp_email_health' || c === 'from:sites')).toHaveLength(0);
+  });
+});
