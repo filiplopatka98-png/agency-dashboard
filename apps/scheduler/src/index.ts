@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
 import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
@@ -17,15 +18,28 @@ const CORS = {
 };
 
 /**
- * Cloudflare Worker — jeden cron trigger, každých 5 minút. Vetvenie podľa času vnútri.
- * Uptime beží vždy. Doména/TLS (round-robin), WP-cron kick a expiry/region alerty pridajú kroky 7–9.
+ * Dva cron triggery (wrangler.jsonc). Workers Free dáva 10 ms CPU a 50
+ * subrequestov na JEDNO spustenie — pôvodný jediný tick potreboval 32–55 ms a
+ * ~50+ subrequestov a Cloudflare ho 2026-09-11 → 09-14 zabíjal (exceededCpu),
+ * takže nedobehli alerty ani heartbeat. Preto:
+ *  - MONITOR_CRON (*∕5): uptime + job health + odoslanie alertov → heartbeat `scheduler`,
+ *  - UPKEEP_CRON (2-59∕5, posunutý o 2 min): domény + wp-cron kick + e-mail health
+ *    → heartbeat `scheduler-upkeep`. Jeho alerty odošle najbližší monitor tick;
+ *    jeho smrť nahlási job health v monitor ticku, smrť monitora scheduler-watchdog.
  */
+export const MONITOR_CRON = '*/5 * * * *';
+export const UPKEEP_CRON = '2-59/5 * * * *';
+
+// Neznámy výraz (ručný test trigger v Cloudflare) → monitor: kritický tick radšej navyše než vôbec.
+export function tickKind(cron: string): 'monitor' | 'upkeep' {
+  return cron === UPKEEP_CRON ? 'upkeep' : 'monitor';
+}
+
 export default {
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const now = new Date(event.scheduledTime);
-    console.log(JSON.stringify({ ev: 'scheduled.tick', at: now.toISOString() }));
-    ctx.waitUntil(runTick(env));
-    // TODO(krok 8): region_outage alert (insert) + expiry alerty (GitHub Action alebo tu)
+    const kind = tickKind(event.cron);
+    console.log(JSON.stringify({ ev: 'scheduled.tick', kind, at: new Date(event.scheduledTime).toISOString() }));
+    ctx.waitUntil(kind === 'upkeep' ? runUpkeep(env) : runTick(env));
   },
 
   // HTTP endpoint — WP agent push + ručné spustenie jobu z UI.
@@ -50,47 +64,39 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-/**
- * Injektovateľné kroky ticku — pre testovanie odolnosti (FIX 1). V produkcii
- * zostávajú default implementácie.
- */
-export interface TickSteps {
-  runUptime?: (env: Env) => Promise<unknown>;
-  runDomains?: (env: Env) => Promise<unknown>;
-  runWpCronKick?: (env: Env) => Promise<unknown>;
-  runJobHealth?: (env: Env) => Promise<unknown>;
-  runEmailHealth?: (env: Env) => Promise<unknown>;
-  runAlerts?: (env: Env) => Promise<unknown>;
-  recordSchedulerRun?: (env: Env, status: 'ok' | 'error', error: string | null) => Promise<void>;
+type StepFn = (env: Env) => Promise<unknown>;
+export type SchedulerJob = 'scheduler' | 'scheduler-upkeep';
+export type RecordRun = (env: Env, job: SchedulerJob, status: 'ok' | 'error', error: string | null) => Promise<void>;
+
+/** Injektovateľné kroky — pre testy odolnosti (FIX 1). V produkcii default implementácie. */
+export interface MonitorSteps {
+  runUptime?: StepFn;
+  runJobHealth?: StepFn;
+  runAlerts?: StepFn;
+  recordRun?: RecordRun;
+}
+export interface UpkeepSteps {
+  runDomains?: StepFn;
+  runWpCronKick?: StepFn;
+  runEmailHealth?: StepFn;
+  recordRun?: RecordRun;
+}
+
+// Jeden Supabase klient na celé spustenie (predtým createClient v každom kroku)
+// — vytvorí sa až keď ho potrebuje default krok, testy s injektovanými krokmi ho nechcú.
+function lazyClient(env: Env): () => SupabaseClient {
+  let client: SupabaseClient | undefined;
+  return () => (client ??= serviceClient(env));
 }
 
 /**
- * Jeden tick, ODOLNE (FIX 1): každý krok je zabalený tak, aby jeho zlyhanie
- * nezabránilo bežať ostatným — hlavne `runAlerts` (drain e-mailov) beží NAKONIEC
- * VŽDY, aj keď skorší krok (uptime/domains/wp-cron/job-health) hodil. Predtým
- * bola sekvencia v jednom try a throw v skoršom kroku prerušil drain → kritický
- * site_down sa neodoslal. Chyby sa zozbierajú a zapíšu ako status 'error' (aby
- * to dead-man's switch aj UI videli), ale tick sa už NEprerušuje.
+ * Kroky ODOLNE (FIX 1): zlyhanie kroku nezabráni ďalším — hlavne `runAlerts`
+ * (drain e-mailov) beží v monitor ticku vždy, aj keď uptime/job health hodil.
+ * Chyby sa zozbierajú a zapíšu ako status 'error' (vidí to dead-man's switch aj UI).
  */
-export async function runTick(env: Env, steps: TickSteps = {}): Promise<void> {
-  const uptime = steps.runUptime ?? ((e: Env) => runUptime(e));
-  // runDomains → domainResolver → whois používa `cloudflare:sockets` (Workers-only
-  // runtime import). Lazy `import()` v defaultnom kroku drží modul-graf ticku
-  // čistý, aby ho bolo možné importovať v jednotkovom teste bez Workers runtime.
-  const domains =
-    steps.runDomains ??
-    (async (e: Env) => {
-      const [{ runDomains }, { defaultDomainResolver }] = await Promise.all([import('./runDomains'), import('./domainResolver')]);
-      return runDomains(e, defaultDomainResolver, { limit: 3 });
-    });
-  const wpCron = steps.runWpCronKick ?? ((e: Env) => runWpCronKick(e, { limit: 3 }));
-  const jobHealth = steps.runJobHealth ?? ((e: Env) => runJobHealth(e));
-  const emailHealth = steps.runEmailHealth ?? ((e: Env) => runEmailHealth(e));
-  const alerts = steps.runAlerts ?? ((e: Env) => runAlerts(e));
-  const record = steps.recordSchedulerRun ?? recordSchedulerRun;
-
+async function runSteps(steps: [string, () => Promise<unknown>][]): Promise<string[]> {
   const errors: string[] = [];
-  const step = async (name: string, fn: () => Promise<unknown>): Promise<void> => {
+  for (const [name, fn] of steps) {
     try {
       await fn();
     } catch (err: unknown) {
@@ -98,23 +104,49 @@ export async function runTick(env: Env, steps: TickSteps = {}): Promise<void> {
       console.log(JSON.stringify({ ev: 'scheduled.step_error', step: name, message }));
       errors.push(`${name}: ${message}`);
     }
-  };
-
-  await step('uptime', () => uptime(env)); // uptime + otvorenie/zatvorenie incidentov (+ insert alertov)
-  await step('domains', () => domains(env)); // round-robin doména (>20 h)
-  await step('wp_cron_kick', () => wpCron(env)); // kopni wp-cron.php na zaspatých WP weboch (>25h bez push)
-  await step('job_health', () => jobHealth(env)); // dead-man's switch — insertne job_overdue/job_failed alert
-  await step('email_health', () => emailHealth(env)); // e-mail deliverability (Rules 2 & 3)
-  await step('alerts', () => alerts(env)); // odoslanie nevyslaných alertov (dedupe už v DB) — VŽDY, aj po zlyhaní vyššie
-
-  await record(env, errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);
+  }
+  return errors;
 }
 
-/** Zapíše beh scheduler ticku do job_runs (best-effort — nezhodí tick). */
-async function recordSchedulerRun(env: Env, status: 'ok' | 'error', error: string | null): Promise<void> {
+/** Monitor tick (MONITOR_CRON): uptime → job health → odoslanie alertov → heartbeat `scheduler`. */
+export async function runTick(env: Env, steps: MonitorSteps = {}): Promise<void> {
+  const db = lazyClient(env);
+  const record = steps.recordRun ?? ((e, job, status, error) => recordRun(e, job, status, error, db()));
+  const errors = await runSteps([
+    ['uptime', () => (steps.runUptime ?? ((e) => runUptime(e, { supabase: db() })))(env)], // + incidenty a site_down/up alerty
+    ['job_health', () => (steps.runJobHealth ?? ((e) => runJobHealth(e, { supabase: db() })))(env)], // dead-man's switch (aj pre upkeep)
+    ['alerts', () => (steps.runAlerts ?? ((e) => runAlerts(e, { supabase: db() })))(env)], // VŽDY, aj po zlyhaní vyššie
+  ]);
+  await record(env, 'scheduler', errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);
+}
+
+/** Údržba (UPKEEP_CRON): domény → wp-cron kick → e-mail health → heartbeat `scheduler-upkeep`. */
+export async function runUpkeep(env: Env, steps: UpkeepSteps = {}): Promise<void> {
+  const db = lazyClient(env);
+  const record = steps.recordRun ?? ((e, job, status, error) => recordRun(e, job, status, error, db()));
+  // runDomains → domainResolver → whois používa `cloudflare:sockets` (Workers-only
+  // runtime import). Lazy `import()` drží modul-graf čistý pre jednotkové testy.
+  const domains =
+    steps.runDomains ??
+    (async (e: Env) => {
+      const [{ runDomains }, { defaultDomainResolver }] = await Promise.all([import('./runDomains'), import('./domainResolver')]);
+      return runDomains(e, defaultDomainResolver, { limit: 3, supabase: db() });
+    });
+  const errors = await runSteps([
+    ['domains', () => domains(env)], // round-robin doména (>20 h)
+    ['wp_cron_kick', () => (steps.runWpCronKick ?? ((e) => runWpCronKick(e, { limit: 3, supabase: db() })))(env)],
+    ['email_health', () => (steps.runEmailHealth ?? ((e) => runEmailHealth(e, { supabase: db() })))(env)],
+  ]);
+  await record(env, 'scheduler-upkeep', errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);
+}
+
+/** Heartbeat do job_runs (best-effort — nezhodí tick, ale zlyhanie zaloguje). */
+async function recordRun(env: Env, job: SchedulerJob, status: 'ok' | 'error', error: string | null, db: SupabaseClient): Promise<void> {
   try {
-    await serviceClient(env).from('job_runs').insert({ job: 'scheduler', status, error, finished_at: new Date().toISOString() });
-  } catch {
-    /* best-effort */
+    const { error: insErr } = await db.from('job_runs').insert({ job, status, error, finished_at: new Date().toISOString() });
+    // Predtým sa chyba zápisu zahadzovala — heartbeat potichu chýbal a „scheduler mešká" nemal v logoch stopu.
+    if (insErr) console.log(JSON.stringify({ ev: 'scheduler.record_fail', job, message: insErr.message }));
+  } catch (err: unknown) {
+    console.log(JSON.stringify({ ev: 'scheduler.record_fail', job, message: err instanceof Error ? err.message : String(err) }));
   }
 }

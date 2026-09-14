@@ -9,8 +9,10 @@ Uptime monitoring, incidenty, e-mailové alerty a expirácia domén/TLS certifik
 ```
 apps/web        Next.js 16, output:'export' → Cloudflare Pages. Statické UI,
                 anon key + RLS. Magic-link auth. Žiadny SSR/Server Actions/API routes.
-apps/scheduler  Cloudflare Worker, cron */5. Uptime + incidenty + doména (round-robin)
-                + odosielanie alertov. Používa service_role (RLS bypass).
+apps/scheduler  Cloudflare Worker, 2 crony (Free: 10 ms CPU a 50 subrequestov na
+                spustenie): */5 monitor (uptime + incidenty + job health + alerty),
+                2-59/5 údržba (doména round-robin, wp-cron, e-mail health).
+                Používa service_role (RLS bypass).
 packages/core   Čistý TS bez runtime: LocalPinger, decideIncidents, RDAP/whois parser,
                 ResendNotifier, nočné dávkovanie. Neimportuje cloudflare:*/next/*/node:*.
 packages/db     supabase/migrations + generované typy.
@@ -19,9 +21,12 @@ tools/tls-probe Node skript pre GitHub Action (týždenný TLS probe — Worker 
 ```
 
 **Toky dát:**
-- Worker (každých 5 min): pingne weby → `decideIncidents` → zapíše `uptime_checks`
+- Worker monitor (každých 5 min): pingne weby → `decideIncidents` → zapíše `uptime_checks`
   + otvorí/zatvorí `incidents` + vloží `site_down`/`site_up` alerty (dedupe cez DB) →
-  round-robin obnoví `domains` → odošle nevyslané alerty cez Resend.
+  job health (dead-man's switch) → odošle nevyslané alerty cez Resend → heartbeat `scheduler`.
+- Worker údržba (každých 5 min, posun +2 min): round-robin obnoví `domains` → wp-cron kick →
+  e-mail health → heartbeat `scheduler-upkeep`. Smrť monitora hlási `scheduler-watchdog`
+  (GitHub Action každých 15 min, e-mail priamo cez Resend).
 - pg_cron: denne rollup `uptime_checks` → `uptime_daily` (+ retencia 30 dní),
   denne expiry alerty (doména 30/14/7 d, TLS 21/7 d).
 - GitHub Action: týždenne TLS probe → `tls_certs` (zdroj pravdy pre `valid_to`).

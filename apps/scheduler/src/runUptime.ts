@@ -1,5 +1,6 @@
 import { decideIncidents, hourBucketUtc, LocalPinger, type UptimeProvider } from '@agency/core';
 import type { SiteForCheck } from '@agency/shared';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
 
@@ -24,8 +25,8 @@ function providerFor(env: Env): UptimeProvider {
  * Jeden beh uptime monitoringu (každých 5 min).
  * Subrequesty: 1 rpc get + N pingov (+retry) + 1 rpc persist. Ďaleko pod limitom 50.
  */
-export async function runUptime(env: Env): Promise<void> {
-  const supabase = serviceClient(env);
+export async function runUptime(env: Env, deps: { supabase?: SupabaseClient } = {}): Promise<void> {
+  const supabase = deps.supabase ?? serviceClient(env);
 
   const { data, error } = await supabase.rpc('get_sites_to_check');
   if (error) throw new Error(`get_sites_to_check: ${error.message}`);

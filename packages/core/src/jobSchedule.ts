@@ -22,7 +22,12 @@ export type JobSchedule =
 
 // Kľúč zodpovedá `job_runs.job` (aj UI kľúču v JOBS v settings/page.tsx).
 export const JOB_SCHEDULES: Record<string, JobSchedule> = {
+  // Worker má dva crony (Free limit 10 ms CPU / 50 subrequestov na spustenie):
+  // `scheduler` = monitor (uptime, job health, alerty), `scheduler-upkeep` =
+  // údržba (domény, wp-cron, e-mail health). Smrť upkeepu nahlási job health
+  // v monitore, smrť monitora scheduler-watchdog.
   scheduler: { kind: 'every5' },
+  'scheduler-upkeep': { kind: 'every5' },
   psi: { kind: 'daily', hh: 2, mm: 0 },
   tls: { kind: 'weekly', dow: 1, hh: 3, mm: 0 },
   security: { kind: 'weekly', dow: 1, hh: 3, mm: 0 },

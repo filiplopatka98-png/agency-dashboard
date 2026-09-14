@@ -65,7 +65,11 @@ wrangler secret put UPTIME_PROVIDER        # hodnota: local
 wrangler deploy
 wrangler tail                              # over: CPU < 8 ms/invokáciu, žiadne chyby
 ```
-Cron `*/5 * * * *` je vo `wrangler.jsonc` — po `deploy` sa registruje automaticky.
+Crony `*/5 * * * *` (monitor) a `2-59/5 * * * *` (údržba) sú vo `wrangler.jsonc` — po `deploy`
+sa registrujú automaticky. Workers Free dáva 10 ms CPU a 50 subrequestov na JEDNO spustenie;
+CPU a výsledok (`exceededCpu`) vidno v Cloudflare → Workers → Observability → Invocations.
+Secrety Workera po zmene v dashboarde radšej prenasaď (tag deploy) — 2026-09-11 verzia
+vytvorená zmenou secretu ticky zabíjala na 10 ms.
 
 ## 5. Web — Cloudflare Pages  **[JA nasadím]**
 ```bash

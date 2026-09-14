@@ -54,8 +54,12 @@ describe('isOverdue', () => {
 });
 
 describe('JOB_SCHEDULES', () => {
-  it('obsahuje presne 14 jobov (12 collectorov + scheduler + jeho watchdog)', () => {
-    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(14);
+  it('obsahuje presne 15 jobov (12 collectorov + 2 scheduler crony + watchdog)', () => {
+    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(15);
+  });
+
+  it('scheduler-upkeep (druhý cron Workera) je every5', () => {
+    expect(JOB_SCHEDULES['scheduler-upkeep']!.kind).toBe('every5');
   });
 
   it('scheduler-watchdog je every15 (GitHub Action každých 15 min)', () => {

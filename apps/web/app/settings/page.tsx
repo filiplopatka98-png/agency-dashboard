@@ -12,7 +12,8 @@ import { WORKER_URL } from '../lib/worker';
 type JobRun = { status: string; ok: number | null; failed: number | null; error: string | null; finished_at: string };
 
 const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] = [
-  { key: 'scheduler', label: 'Scheduler — uptime + domény', desc: 'každých 5 minút' },
+  { key: 'scheduler', label: 'Scheduler — uptime + alerty', desc: 'každých 5 minút' },
+  { key: 'scheduler-upkeep', label: 'Scheduler — údržba (domény, WP, e-maily)', desc: 'každých 5 minút' },
   { key: 'psi', label: 'PageSpeed / výkon', desc: 'denne 02:00 UTC' },
   { key: 'tls', label: 'TLS certifikáty', desc: 'pondelok 03:00 UTC' },
   { key: 'security', label: 'Security + Safe Browsing', desc: 'pondelok 03:00 UTC' },
@@ -141,14 +142,11 @@ export default function SettingsPage() {
     const headCount = (table: 'perf_snapshots' | 'gsc_snapshots' | 'security_snapshots' | 'aeo_snapshots' | 'seo_snapshots') =>
       supabase.from(table).select('site_id', { count: 'exact', head: true });
     (async () => {
-      // job_runs: scheduler píše každých 5 min a pri dlhšom chybovom stave
-      // (status != 'ok', ktorý retencia 0031 NEmaže) by tisíce scheduler riadkov
-      // vytlačili posledné behy denných/týždenných jobov z jedného plochého
-      // `.limit()` okna → dead-man's-switch (audit 3.3) by ich hlásil ako „nikdy".
-      // Preto scheduler čítame ZVLÁŠŤ (najnovší 1) a non-scheduler joby druhým
-      // dotazom (nízkoobjemové, 0035 drží najnovší riadok per job navždy).
-      const jobCols = 'job, status, ok, failed, error, finished_at';
-      const [o, u, s, perf, gsc, sec, aeo, seo, jrSched, jrOther, ns] = await Promise.all([
+      // job_runs: posledný beh každého jobu cez rpc latest_job_runs (DISTINCT ON
+      // v SQL, migrácia 0041). Ploché `.limit()` okno nestačí — scheduler (každých
+      // 5 min) aj scheduler-watchdog (každých 15 min) by vytlačili posledné behy
+      // denných/týždenných jobov → dead-man's-switch (audit 3.3) by hlásil „nikdy".
+      const [o, u, s, perf, gsc, sec, aeo, seo, jr, ns] = await Promise.all([
         supabase.from('organizations').select('id, name').limit(1).maybeSingle(),
         supabase.auth.getUser(),
         supabase.from('sites').select('id', { count: 'exact', head: true }).eq('is_active', true),
@@ -157,8 +155,7 @@ export default function SettingsPage() {
         headCount('security_snapshots'),
         headCount('aeo_snapshots'),
         headCount('seo_snapshots'),
-        supabase.from('job_runs').select(jobCols).eq('job', 'scheduler').order('finished_at', { ascending: false }).limit(1),
-        supabase.from('job_runs').select(jobCols).neq('job', 'scheduler').order('finished_at', { ascending: false }).limit(500),
+        supabase.rpc('latest_job_runs'),
         supabase.from('notification_settings').select('org_id, weekly_digest, monthly_report, recipients').limit(1).maybeSingle(),
       ]);
       if (!active) return;
@@ -180,8 +177,7 @@ export default function SettingsPage() {
         seo_snapshots: seo.count ?? 0,
       });
       const latest: Record<string, JobRun> = {};
-      for (const r of [...(jrSched.data ?? []), ...(jrOther.data ?? [])])
-        if (!latest[r.job]) latest[r.job] = r as JobRun; // prvý výskyt = najnovší (order desc)
+      for (const r of jr.data ?? []) latest[r.job] = r as JobRun;
       setJobs(latest);
       setNow(new Date());
     })();
