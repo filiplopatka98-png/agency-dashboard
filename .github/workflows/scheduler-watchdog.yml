@@ -8,8 +8,12 @@ name: scheduler-watchdog
 #
 # Plán NIE je `*/15`: s ním GitHub od 11. 9. nespustil ani jeden beh (ostatné
 # plánované workflows v repe bežia). GitHub odporúča vyhnúť sa začiatku hodiny
-# a štvrťhodinám, keď je plánovač preťažený — preto nepárne minúty. Stále každých
-# 15 min, takže JOB_SCHEDULES `every15` platí.
+# a štvrťhodinám, keď je plánovač preťažený — preto nepárne minúty. Plán je stále
+# každých 15 min, takže JOB_SCHEDULES `every15` platí.
+#
+# Realita (merané 29. 9. 2026): GitHub tento workflow spúšťa raz za 5–6 h, nie
+# každých 15 min. Preto má `every15` v overdueFactor toleranciu 48× (12 h) —
+# s pôvodnými 6 h chodili falošné job_overdue alerty, hoci monitoring bežal.
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'

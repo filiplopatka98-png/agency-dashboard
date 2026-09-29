@@ -105,13 +105,16 @@ export function isOverdue(
 //   - hourly → 6× (~6 h ticha = naozaj mŕtvy)
 //   - sixhourly (asset-check, 6 h kadencia) → 4× = 24 h ticha; nízka hodnota
 //     jobu neospravedlňuje same-day alert pri bežnom GitHub runner výpadku.
-//   - every15 (scheduler-watchdog, GitHub Actions) → 24× = 6 h ticha, rovnaká
-//     tolerancia ako hourly; */15 GitHub cron vynecháva ešte častejšie.
+//   - every15 (scheduler-watchdog, GitHub Actions) → 48× = 12 h ticha. Merané
+//     29. 9. 2026: GitHub spúšťa tento */15 workflow reálne raz za 5–6 h, takže
+//     6 h prah (24×) generoval falošné job_overdue alerty aj vtedy, keď celý
+//     monitoring bežal. 12 h stále odhalí skutočnú smrť poistky (GitHub vypína
+//     scheduled workflows po 60 dňoch bez pushu) — len o pol dňa neskôr.
 // Denné/týždenné/mesačné majú aj pri 2× obrovskú rezervu (48 h / 2 týž. /
 // 62 dní) a Cloudflare `every5` je spoľahlivý, tým 2× stačí.
 export function overdueFactor(sched: JobSchedule): number {
   if (sched.kind === 'hourly') return 6;
   if (sched.kind === 'sixhourly') return 4;
-  if (sched.kind === 'every15') return 24;
+  if (sched.kind === 'every15') return 48;
   return 2;
 }

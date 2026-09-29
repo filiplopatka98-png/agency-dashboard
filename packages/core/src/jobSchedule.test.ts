@@ -91,8 +91,8 @@ describe('overdueFactor', () => {
   it('sixhourly (asset-check) dostáva 4× → 24 h tolerancia', () => {
     expect(overdueFactor({ kind: 'sixhourly' })).toBe(4);
   });
-  it('every15 (watchdog v GitHub Actions) dostáva 24× → 6 h tolerancia na GitHub cron výpadky', () => {
-    expect(overdueFactor({ kind: 'every15' })).toBe(24);
+  it('every15 (watchdog v GitHub Actions) dostáva 48× → 12 h tolerancia na GitHub cron výpadky', () => {
+    expect(overdueFactor({ kind: 'every15' })).toBe(48);
   });
   it('ostatné kindy = 2×', () => {
     expect(overdueFactor({ kind: 'every5' })).toBe(2);
@@ -107,6 +107,14 @@ describe('overdueFactor', () => {
     // s overdueFactor (6×) — prah je 6 h
     expect(isOverdue(new Date(now - 2.5 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(false);
     expect(isOverdue(new Date(now - 7 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(true);
+  });
+  it('every15 (scheduler-watchdog): beh spred 8 h NIE je overdue, spred 13 h ÁNO', () => {
+    const now = Date.parse('2026-09-29T12:00:00Z');
+    const h = 3_600_000;
+    const sched = { kind: 'every15' } as const;
+    // GitHub reálne spúšťa */15 workflow raz za 5–6 h (merané 29. 9. 2026) — prah je 12 h
+    expect(isOverdue(new Date(now - 8 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(false);
+    expect(isOverdue(new Date(now - 13 * h).toISOString(), sched, now, overdueFactor(sched))).toBe(true);
   });
   it('sixhourly (asset-check): beh spred 12 h NIE je overdue, spred 25 h ÁNO', () => {
     const now = Date.parse('2026-07-20T12:00:00Z');
