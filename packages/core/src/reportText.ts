@@ -9,7 +9,9 @@ export function isClientVisible(ev: ChangeEvent): boolean {
   const dir = (ev.payload as { direction?: string }).direction;
   switch (ev.kind) {
     case 'update':
-      return true;
+      // Downgrade (napr. návrat PHP na staršiu verziu po probléme) je zmena,
+      // ktorú klientovi nehlásime ako „aktualizované" — smer by veta tvrdila zle.
+      return !(ev.payload as { downgrade?: boolean }).downgrade;
     case 'cve':
     case 'seo':
       return dir === 'fixed';

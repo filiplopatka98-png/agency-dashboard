@@ -1,4 +1,4 @@
-import { diffCore, diffPlugins, emailHealthPayloadSchema, readingFromPayload, evaluateIngest, type ChangeEvent } from '@agency/core';
+import { diffCore, diffPhp, diffPlugins, emailHealthPayloadSchema, readingFromPayload, evaluateIngest, type ChangeEvent } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient } from './supabase';
 
@@ -55,7 +55,7 @@ export async function wpIngest(request: Request, env: Env): Promise<Response> {
   // (žiadny predchádzajúci riadok) zámerne nelogujeme.
   const { data: prevSnap, error: prevErr } = await db
     .from('wp_snapshots')
-    .select('wp_version, plugins')
+    .select('wp_version, php_version, plugins')
     .eq('site_id', site.id)
     .maybeSingle();
   if (prevErr) console.log(JSON.stringify({ ev: 'wp.prev_read_fail', message: prevErr.message }));
@@ -68,6 +68,7 @@ export async function wpIngest(request: Request, env: Env): Promise<Response> {
     try {
       events = [
         ...diffCore(prevSnap.wp_version, body.wp_version ?? null),
+        ...diffPhp(prevSnap.php_version, body.php_version ?? null),
         ...diffPlugins(prevSnap.plugins, body.plugins ?? []),
       ];
     } catch (err: unknown) {

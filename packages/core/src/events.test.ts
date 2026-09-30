@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { diffCore, diffPlugins, diffVulns, diffSeoIssues, type PluginInfo, type VulnInfo } from './events';
+import { isClientVisible, renderClient } from './reportText';
+import { diffCore, diffPhp, diffPlugins, diffVulns, diffSeoIssues, type PluginInfo, type VulnInfo } from './events';
 
 const plugin = (o: Partial<PluginInfo>): PluginInfo => ({ name: 'WooCommerce', slug: 'woocommerce', version: '5.1', ...o });
 const vuln = (o: Partial<VulnInfo>): VulnInfo => ({ cve: 'CVE-2024-1', target: 'WooCommerce', slug: 'woocommerce', title: 'XSS', severity: 'high', ...o });
@@ -149,5 +150,44 @@ describe('diffCore — non-string vstupy', () => {
   });
   it('next nie je string (objekt) → žiadne udalosti, nehádže', () => {
     expect(diffCore('6.4', { foo: 'bar' } as unknown as string)).toEqual([]);
+  });
+});
+
+describe('diffPhp', () => {
+  it('prechod na novšie PHP → update udalosť', () => {
+    const [ev] = diffPhp('7.4.33', '8.3.2');
+    expect(ev!.kind).toBe('update');
+    expect(ev!.severity).toBe('info');
+    expect(ev!.message).toBe('PHP 7.4.33 → 8.3.2');
+    expect(ev!.payload).toEqual({ target: 'php', name: 'PHP', slug: 'php', from: '7.4.33', to: '8.3.2' });
+  });
+  it('prvý ingest / chýbajúca hodnota → nič (nehlásime celý stav ako zmenu)', () => {
+    expect(diffPhp(null, '8.3.2')).toEqual([]);
+    expect(diffPhp('8.3.2', null)).toEqual([]);
+    expect(diffPhp(undefined, undefined)).toEqual([]);
+  });
+  it('bez zmeny → nič', () => {
+    expect(diffPhp('8.3.2', '8.3.2')).toEqual([]);
+  });
+  it('porovnáva číselne, nie textom (8.3 < 8.10)', () => {
+    const [up] = diffPhp('8.3.2', '8.10.0');
+    expect(up!.severity).toBe('info');
+    expect((up!.payload as { downgrade?: boolean }).downgrade).toBeUndefined();
+  });
+  it('downgrade → varovanie pre admina, klientovi sa NEukáže', () => {
+    const [ev] = diffPhp('8.3.2', '7.4.33');
+    expect(ev!.severity).toBe('warning');
+    expect(ev!.message).toBe('PHP 8.3.2 → 7.4.33 (downgrade)');
+    expect((ev!.payload as { downgrade?: boolean }).downgrade).toBe(true);
+    expect(isClientVisible(ev!)).toBe(false);
+  });
+  it('nečíselný odpad → nič (nedôveryhodný vstup z agenta)', () => {
+    expect(diffPhp('8.3.2', 'neznáma')).toEqual([]);
+    expect(diffPhp(42 as unknown as string, '8.3.2')).toEqual([]);
+  });
+  it('klient vidí prechod na novšie PHP ako bežnú aktualizáciu', () => {
+    const [ev] = diffPhp('7.4.33', '8.3.2');
+    expect(isClientVisible(ev!)).toBe(true);
+    expect(renderClient(ev!)).toBe('PHP bol aktualizovaný na verziu 8.3.2.');
   });
 });

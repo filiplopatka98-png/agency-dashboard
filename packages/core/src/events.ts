@@ -5,7 +5,7 @@
 export type EventKind = 'update' | 'cve' | 'seo' | 'score';
 export type Severity = 'info' | 'warning' | 'critical';
 
-export interface UpdatePayload { target: 'plugin' | 'core'; name: string; slug: string; from: string; to: string }
+export interface UpdatePayload { target: 'plugin' | 'core' | 'php'; name: string; slug: string; from: string; to: string; downgrade?: boolean }
 export interface CvePayload { direction: 'fixed' | 'new'; cve: string | null; target: string; severity: string }
 export interface SeoPayload { direction: 'fixed' | 'new'; type: string; was_count: number }
 export interface ScorePayload { metric: string; from: number; to: number; direction: 'up' | 'down' }
@@ -56,6 +56,51 @@ export function diffCore(prev: unknown, next: unknown): ChangeEvent[] {
     severity: 'info',
     message: `WordPress ${prev} → ${next}`,
     payload: { target: 'core', name: 'WordPress', slug: 'wordpress', from: prev, to: next },
+  }];
+}
+
+// PHP verzia hostingu — agent ju posiela v každom snímku (php_version), ale do
+// septembra 2026 sa nediffovala, takže prechod na novšie PHP (bežná časť
+// údržby, ktorá rieši aj bezpečnostné opravy) sa v reporte nikde neobjavil.
+//
+// Porovnávame ČÍSELNE po zložkách, nie textom: '8.3' < '8.10' je pravda len
+// numericky, lexikograficky vyjde opak. Hodnoty typu '8.3.2-1+ubuntu' sú na
+// hostingoch bežné — berieme z nich vedúcu číselnú časť, zvyšok ignorujeme.
+// Nečíselný odpad (agent je nedôveryhodná hranica) = žiadna udalosť.
+function phpParts(v: unknown): number[] | null {
+  if (typeof v !== 'string') return null;
+  const m = v.trim().match(/^\d+(?:\.\d+)*/);
+  if (!m) return null;
+  return m[0].split('.').map(Number);
+}
+
+function cmpVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+// prev == null → prvý ingest: rovnaké pravidlo ako diffCore (nehlásime stav ako zmenu).
+// Downgrade (návrat na staršie PHP — typicky keď sa po prepnutí niečo rozbilo)
+// je pre admina varovanie, ale klientovi sa NEUKÁŽE: „PHP bolo aktualizované na
+// verziu 7.4" by bola nepravda o smere. Zariaďuje to `downgrade` v payloade,
+// ktoré číta isClientVisible.
+export function diffPhp(prev: unknown, next: unknown): ChangeEvent[] {
+  const a = phpParts(prev);
+  const b = phpParts(next);
+  if (!a || !b) return [];
+  const cmp = cmpVersions(a, b);
+  if (cmp === 0) return [];
+  const from = String(prev).trim();
+  const to = String(next).trim();
+  const downgrade = cmp > 0;
+  return [{
+    kind: 'update',
+    severity: downgrade ? 'warning' : 'info',
+    message: `PHP ${from} → ${to}${downgrade ? ' (downgrade)' : ''}`,
+    payload: { target: 'php', name: 'PHP', slug: 'php', from, to, ...(downgrade ? { downgrade: true } : {}) },
   }];
 }
 

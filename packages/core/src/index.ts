@@ -70,6 +70,7 @@ export { renderMonthlyReport, type ReportData, type ReportSite, type ReportChang
 
 export {
   diffCore,
+  diffPhp,
   diffPlugins,
   diffVulns,
   diffSeoIssues,
