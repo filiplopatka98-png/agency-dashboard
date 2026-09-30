@@ -121,3 +121,114 @@ describe('buildClientLines', () => {
     ]);
   });
 });
+
+describe('buildClientLines — zoskupovanie opakovaných riadkov', () => {
+  const cve = (at: string, target: string, severity: string) => ({
+    at,
+    ev: ev({ kind: 'cve', payload: { direction: 'fixed', cve: `CVE-${at}-${target}-${severity}`, target, severity } }),
+  });
+  const base = { diary: [], incidents: [] };
+
+  it('viac opravených zraniteľností v tom istom module = JEDEN riadok, nie N', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        cve('2026-09-05T10:00:00Z', 'Elementor', 'medium'),
+        cve('2026-09-05T10:00:01Z', 'Elementor', 'medium'),
+        cve('2026-09-06T10:00:00Z', 'Elementor', 'low'),
+      ],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text).toBe('V module Elementor sme odstránili 3 zraniteľnosti (2 stredné, 1 nízka).');
+  });
+
+  it('rovnaká závažnosť v celej skupine → veta bez zátvorky', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [cve('2026-09-05T10:00:00Z', 'TablePress', 'medium'), cve('2026-09-05T10:00:01Z', 'TablePress', 'medium')],
+    });
+    expect(lines[0]!.text).toBe('V module TablePress sme odstránili 2 zraniteľnosti strednej závažnosti.');
+  });
+
+  it('5 a viac → genitív („zraniteľností“)', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: Array.from({ length: 25 }, (_, i) => cve(`2026-09-05T10:00:${String(i).padStart(2, '0')}Z`, 'Post SMTP', 'high')),
+    });
+    expect(lines[0]!.text).toBe('V module Post SMTP sme odstránili 25 zraniteľností vysokej závažnosti.');
+  });
+
+  it('jedna zraniteľnosť v module → pôvodná veta (nič sa nezoskupuje)', () => {
+    const lines = buildClientLines({ ...base, events: [cve('2026-09-05T10:00:00Z', 'Yoast SEO', 'medium')] });
+    expect(lines[0]!.text).toBe('Odstránená bezpečnostná zraniteľnosť strednej závažnosti v module Yoast SEO.');
+  });
+
+  it('rôzne moduly = samostatné riadky, zoradené podľa prvého výskytu', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        cve('2026-09-08T10:00:00Z', 'Elementor', 'medium'),
+        cve('2026-09-08T10:00:01Z', 'Elementor', 'medium'),
+        cve('2026-09-02T10:00:00Z', 'TablePress', 'low'),
+        cve('2026-09-02T10:00:01Z', 'TablePress', 'low'),
+      ],
+    });
+    expect(lines.map((l) => l.text)).toEqual([
+      'V module TablePress sme odstránili 2 zraniteľnosti nízkej závažnosti.',
+      'V module Elementor sme odstránili 2 zraniteľnosti strednej závažnosti.',
+    ]);
+  });
+
+  it('neznáma závažnosť sa počíta do súčtu, ale nerozpisuje', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        cve('2026-09-05T10:00:00Z', 'X', 'medium'),
+        cve('2026-09-05T10:00:01Z', 'X', 'medium'),
+        cve('2026-09-05T10:00:02Z', 'X', 'unknown'),
+      ],
+    });
+    expect(lines[0]!.text).toBe('V module X sme odstránili 3 zraniteľnosti (2 stredné).');
+  });
+
+  it('dve zlepšenia tej istej metriky = jedna veta od prvého po posledný stav', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        { at: '2026-09-28T07:00:00Z', ev: ev({ kind: 'score', payload: { metric: 'aeo', from: 10, to: 70, direction: 'up' } }) },
+        { at: '2026-09-30T18:00:00Z', ev: ev({ kind: 'score', payload: { metric: 'aeo', from: 70, to: 80, direction: 'up' } }) },
+      ],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text).toBe('Pripravenosť webu pre AI vyhľadávače sa zlepšila zo 10 na 80 bodov.');
+  });
+
+  it('rôzne metriky sa nezlučujú', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        { at: '2026-09-28T07:00:00Z', ev: ev({ kind: 'score', payload: { metric: 'aeo', from: 10, to: 70, direction: 'up' } }) },
+        { at: '2026-09-28T07:00:01Z', ev: ev({ kind: 'score', payload: { metric: 'security', from: 0, to: 80, direction: 'up' } }) },
+      ],
+    });
+    expect(lines).toHaveLength(2);
+  });
+
+  it('aktualizácie, denník a výpadky zostávajú nedotknuté a chronologické', () => {
+    const lines = buildClientLines({
+      events: [
+        { at: '2026-09-10T10:00:00Z', ev: ev({}) },
+        cve('2026-09-11T10:00:00Z', 'Elementor', 'medium'),
+        cve('2026-09-11T10:00:01Z', 'Elementor', 'medium'),
+      ],
+      diary: [{ happened_at: '2026-09-05', text: 'Aktualizovali sme jadro WordPressu.' }],
+      incidents: [{ started_at: '2026-09-03T12:12:00Z', resolved_at: '2026-09-03T12:24:00Z' }],
+    });
+    expect(lines.map((l) => l.text)).toEqual([
+      'Zachytili sme krátky výpadok 3. 9. o 14:12, trval 12 minút.',
+      'Aktualizovali sme jadro WordPressu.',
+      'WooCommerce bol aktualizovaný na verziu 5.4.',
+      'V module Elementor sme odstránili 2 zraniteľnosti strednej závažnosti.',
+    ]);
+  });
+});
