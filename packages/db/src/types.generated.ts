@@ -87,6 +87,7 @@ export type Database = {
       }
       alerts: {
         Row: {
+          archived_at: string | null
           body: string | null
           created_at: string
           dedupe_key: string
@@ -100,6 +101,7 @@ export type Database = {
           type: string
         }
         Insert: {
+          archived_at?: string | null
           body?: string | null
           created_at?: string
           dedupe_key: string
@@ -113,6 +115,7 @@ export type Database = {
           type: string
         }
         Update: {
+          archived_at?: string | null
           body?: string | null
           created_at?: string
           dedupe_key?: string

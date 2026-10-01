@@ -5,8 +5,9 @@ import { Shell } from '../components/Shell';
 import { supabase, type Alert } from '../lib/supabase';
 import { loadDashboard } from '../lib/data';
 import { relativeTime } from '../lib/format';
+import { archivePatch, bulkSeverity, inView, viewCounts, type AlertView } from '../lib/alertActions';
 
-type Filter = 'all' | Alert['severity'];
+type Filter = AlertView;
 
 const sevMeta: Record<Alert['severity'], { glyph: string; sevColor: string; tintBg: string; sevLabel: string }> = {
   critical: { glyph: '⛔', sevColor: 'var(--critical-color)', tintBg: 'var(--critical-bg)', sevLabel: 'Kritické' },
@@ -20,6 +21,8 @@ export default function AlertsPage() {
   const [alertFilter, setAlertFilter] = useState<Filter>('all');
   const [tick, setTick] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [actionErr, setActionErr] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,9 +38,38 @@ export default function AlertsPage() {
     };
   }, [tick]);
 
-  const resolveById = async (id: string) => {
-    await supabase.from('alerts').update({ resolved_at: new Date().toISOString() }).eq('id', id);
+  // Každá akcia: zápis → pri chybe hláška (predtým sa chyba zahadzovala) → reload.
+  const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
+    setBusy(true);
+    setActionErr(null);
+    const { error } = await fn();
+    setBusy(false);
+    if (error) setActionErr(`Akcia zlyhala: ${error.message}`);
     setTick((t) => t + 1);
+  };
+  const now = () => new Date().toISOString();
+  const resolveById = (id: string) => run(() => supabase.from('alerts').update({ resolved_at: now() }).eq('id', id));
+  const archiveOne = (a: Alert) => run(() => supabase.from('alerts').update(archivePatch(a, now())).eq('id', a.id));
+  const restoreOne = (id: string) => run(() => supabase.from('alerts').update({ archived_at: null }).eq('id', id));
+  // Hromadné akcie filtrom (nie zoznamom id — URL by pri stovkách alertov pretiekla).
+  // Obmedzené na zvolenú závažnosť; RLS ich drží v rámci vlastnej organizácie.
+  const resolveAll = () => {
+    const sev = bulkSeverity(alertFilter);
+    if (!window.confirm(`Označiť ${sev ? 'všetky alerty tejto závažnosti' : 'všetky otvorené alerty'} ako vyriešené?`)) return;
+    return run(() => {
+      let q = supabase.from('alerts').update({ resolved_at: now() }).is('resolved_at', null).is('archived_at', null);
+      if (sev) q = q.eq('severity', sev);
+      return q;
+    });
+  };
+  const archiveResolved = () => {
+    const sev = bulkSeverity(alertFilter);
+    if (!window.confirm('Archivovať všetky vyriešené alerty? Zmiznú zo zoznamu, ale ostanú v Archíve a dajú sa obnoviť.')) return;
+    return run(() => {
+      let q = supabase.from('alerts').update({ archived_at: now() }).not('resolved_at', 'is', null).is('archived_at', null);
+      if (sev) q = q.eq('severity', sev);
+      return q;
+    });
   };
 
   const allAlerts = alerts.map((a) => {
@@ -55,12 +87,18 @@ export default function AlertsPage() {
       opacity: resolved ? 0.5 : 1,
       resolveLabel: resolved ? '✓ Hotové' : 'Vyriešiť',
       onResolve: resolved ? () => {} : () => resolveById(a.id),
+      onArchive: () => archiveOne(a),
+      onRestore: () => restoreOne(a.id),
     };
   });
 
-  const filteredAlerts = alertFilter === 'all' ? allAlerts : allAlerts.filter((a) => a.severity === alertFilter);
-  const openAlerts = allAlerts.filter((a) => !a.resolved).length;
-  const alertStats = `${openAlerts} otvorených`;
+  const isArchive = alertFilter === 'archive';
+  const filteredAlerts = inView(allAlerts, alertFilter);
+  const openAlerts = viewCounts(allAlerts, 'all').open;
+  const counts = viewCounts(allAlerts, alertFilter);
+  const alertStats = isArchive ? `${filteredAlerts.length} archivovaných (posledných 90 dní)` : `${openAlerts} otvorených`;
+  const bulkBtn = { padding: '7px 13px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 9, cursor: busy ? 'default' : 'pointer', fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' as const, fontWeight: 600, opacity: busy ? 0.6 : 1 };
+  const rowBtn = { padding: '7px 13px', background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 9, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap' as const, fontWeight: 600 };
 
   const fpill = (k: Filter) => ({
     bg: alertFilter === k ? 'var(--surface-primary)' : 'transparent',
@@ -87,13 +125,23 @@ export default function AlertsPage() {
             <button onClick={() => setAlertFilter('critical')} style={{ padding: '7px 15px', background: fpill('critical').bg, border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer', fontSize: 13.5, color: fpill('critical').color, fontWeight: 600 }}>Kritické</button>
             <button onClick={() => setAlertFilter('warning')} style={{ padding: '7px 15px', background: fpill('warning').bg, border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer', fontSize: 13.5, color: fpill('warning').color, fontWeight: 600 }}>Varovania</button>
             <button onClick={() => setAlertFilter('info')} style={{ padding: '7px 15px', background: fpill('info').bg, border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer', fontSize: 13.5, color: fpill('info').color, fontWeight: 600 }}>Info</button>
+            <button onClick={() => setAlertFilter('archive')} style={{ padding: '7px 15px', background: fpill('archive').bg, border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer', fontSize: 13.5, color: fpill('archive').color, fontWeight: 600 }}>Archív</button>
           </div>
+
+          {/* Hromadné akcie — len v bežných pohľadoch, obmedzené na zvolenú závažnosť */}
+          {!loading && !isArchive && (counts.open > 0 || counts.resolved > 0) && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              {counts.open > 0 && <button onClick={resolveAll} disabled={busy} style={bulkBtn}>✓ Vyriešiť všetky ({counts.open})</button>}
+              {counts.resolved > 0 && <button onClick={archiveResolved} disabled={busy} style={bulkBtn}>Archivovať vyriešené ({counts.resolved})</button>}
+            </div>
+          )}
+          {actionErr && <div role="alert" style={{ fontSize: 13, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: 10, marginBottom: 16 }}>{actionErr}</div>}
 
           {/* Alerts list */}
           {alertsPopulated && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {filteredAlerts.map((alert, i) => (
-                <div key={i} className="mx-list-row" style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: '15px 18px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: 'var(--shadow-sm)', opacity: alert.opacity, transition: 'all 0.18s' }}>
+              {filteredAlerts.map((alert) => (
+                <div key={alert.id} className="mx-list-row" style={{ background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)', padding: '15px 18px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: 'var(--shadow-sm)', opacity: alert.opacity, transition: 'all 0.18s' }}>
                   <div style={{ width: 38, height: 38, borderRadius: 10, background: alert.tintBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16 }}>{alert.glyph}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
@@ -102,7 +150,14 @@ export default function AlertsPage() {
                     </div>
                     <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{alert.siteName} · {alert.time} · <span style={{ fontFamily: "'Geist Mono', monospace", color: 'var(--text-tertiary)' }}>{alert.type}</span></div>
                   </div>
-                  <button onClick={alert.onResolve} style={{ padding: '7px 13px', background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)', borderRadius: 9, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 600 }}>{alert.resolveLabel}</button>
+                  {isArchive ? (
+                    <button onClick={alert.onRestore} disabled={busy} style={rowBtn}>Obnoviť</button>
+                  ) : (
+                    <>
+                      <button onClick={alert.onResolve} disabled={busy} style={rowBtn}>{alert.resolveLabel}</button>
+                      <button onClick={alert.onArchive} disabled={busy} title="Archivovať (skryje alert, dá sa obnoviť v Archíve)" aria-label={`Archivovať alert ${alert.title}`} style={rowBtn}>Archivovať</button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -119,8 +174,8 @@ export default function AlertsPage() {
           {alertsEmpty && (
             <div style={{ textAlign: 'center', padding: '72px 20px', background: 'var(--surface-primary)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius)' }}>
               <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--ok-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>✓</div>
-              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>Žiadne alerty</div>
-              <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Všetko beží tak, ako má.</div>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>{isArchive ? 'Archív je prázdny' : 'Žiadne alerty'}</div>
+              <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{isArchive ? 'Archivované alerty za posledných 90 dní sa zobrazia tu.' : 'Všetko beží tak, ako má.'}</div>
             </div>
           )}
         </div>
