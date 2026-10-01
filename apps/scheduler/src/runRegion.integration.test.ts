@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceClient, type Db } from './supabase';
 import { runUptime } from './runUptime';
 import type { Env } from './env';
 
@@ -14,7 +14,7 @@ const enabled = Boolean(URL_ && KEY);
 const ORG = '44444444-4444-4444-4444-444444444444';
 
 describe.skipIf(!enabled)('region_outage (integration)', () => {
-  let db: SupabaseClient;
+  let db: Db;
   let env: Env;
   let server: Server;
 
@@ -25,7 +25,7 @@ describe.skipIf(!enabled)('region_outage (integration)', () => {
     if (!addr || typeof addr === 'string') throw new Error('no port');
     const base = `http://127.0.0.1:${addr.port}`;
 
-    db = createClient(URL_!, KEY!, { auth: { persistSession: false } });
+    db = serviceClient({ SUPABASE_URL: URL_!, SUPABASE_SERVICE_ROLE_KEY: KEY! } as Env);
     env = {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,

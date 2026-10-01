@@ -1,12 +1,11 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 
 /** Injektovaný fetch — v testoch žiadna reálna sieť, presne ako `DomainResolver` v runDomains.ts. */
 export type WpCronFetcher = (url: string) => Promise<Response>;
 
 export interface RunWpCronKickDeps {
-  supabase?: SupabaseClient;
+  supabase?: Db;
   limit?: number;
   now?: Date;
   fetcher?: WpCronFetcher;

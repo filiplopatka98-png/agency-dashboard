@@ -1,12 +1,11 @@
 import type { DomainInfo } from '@agency/core';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 
 export type DomainResolver = (domain: string) => Promise<DomainInfo>;
 
 export interface RunDomainsDeps {
-  supabase?: SupabaseClient;
+  supabase?: Db;
   limit?: number;
   now?: Date;
 }

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Db } from './supabase';
 
 /**
  * Minimalistický in-memory fake Supabase klienta pre JEDNOTKOVÉ testy
@@ -206,7 +206,7 @@ function emailHealthInputs(store: FakeStore, since: string): Record<string, unkn
   return out;
 }
 
-export function fakeSupabase(store: FakeStore): SupabaseClient {
+export function fakeSupabase(store: FakeStore): Db {
   const calls = (store.calls ??= []);
   return {
     from(table: keyof FakeStore) {
@@ -219,5 +219,5 @@ export function fakeSupabase(store: FakeStore): SupabaseClient {
       if (fn === 'email_health_inputs') return { data: emailHealthInputs(store, String(args._since)), error: null };
       return { data: null, error: { message: `fakeSupabase: neznáme rpc ${fn}` } };
     },
-  } as unknown as SupabaseClient;
+  } as unknown as Db;
 }

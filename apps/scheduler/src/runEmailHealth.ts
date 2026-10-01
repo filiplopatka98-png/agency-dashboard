@@ -1,7 +1,6 @@
 import { evaluatePeriodic, type EmailHealthReading } from '@agency/core';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 
 type EmailHealthInput = { site_id: string; org_id: string; domain: string; typical_daily_14d: number | null } & Record<string, unknown>;
 
@@ -10,7 +9,7 @@ type EmailHealthInput = { site_id: string; org_id: string; domain: string; typic
  * the LATEST wp_email_health reading per active site. Rule 1 (high fail rate) is
  * handled at ingest (event-driven), not here. Never throws — collector-safe.
  */
-export async function runEmailHealth(env: Env, deps: { supabase?: SupabaseClient; now?: Date } = {}): Promise<void> {
+export async function runEmailHealth(env: Env, deps: { supabase?: Db; now?: Date } = {}): Promise<void> {
   const db = deps.supabase ?? serviceClient(env);
   const now = deps.now ?? new Date();
 

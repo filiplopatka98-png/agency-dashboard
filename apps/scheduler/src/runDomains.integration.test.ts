@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceClient, type Db } from './supabase';
 import type { DomainInfo } from '@agency/core';
 import { runDomains, type DomainResolver } from './runDomains';
 import type { Env } from './env';
@@ -31,11 +31,11 @@ const failing: DomainResolver = async (): Promise<DomainInfo> => ({
 });
 
 describe.skipIf(!enabled)('runDomains (integration)', () => {
-  let db: SupabaseClient;
+  let db: Db;
   let env: Env;
 
   beforeAll(async () => {
-    db = createClient(URL_!, KEY!, { auth: { persistSession: false } });
+    db = serviceClient({ SUPABASE_URL: URL_!, SUPABASE_SERVICE_ROLE_KEY: KEY! } as Env);
     env = {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,

@@ -1,7 +1,6 @@
 import { JOB_SCHEDULES, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 
 /**
  * Dead-man's switch (audit 3.3): kontroluje, či niektorý scheduled job
@@ -27,7 +26,7 @@ import { serviceClient } from './supabase';
  * schedulera v job_runs a e-mail pošle priamo cez Resend. Jeho job_overdue
  * alert má rovnaký dedupe_key ako tunajší, takže po zotavení nepríde druhý.
  */
-export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; now?: Date } = {}): Promise<void> {
+export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date } = {}): Promise<void> {
   const supabase = deps.supabase ?? serviceClient(env);
   const now = deps.now ?? new Date();
 
