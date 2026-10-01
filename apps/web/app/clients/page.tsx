@@ -5,6 +5,7 @@ import { Shell } from '../components/Shell';
 import { Modal } from '../components/Modal';
 import { loadDashboard, type SiteVM } from '../lib/data';
 import { supabase, type Client } from '../lib/supabase';
+import { EMPTY_CLIENT_FORM, clientPatch, clientPayload, fromClient, type ClientForm } from '../lib/clientForm';
 
 function statusMeta(status: string): { text: string; color: string; bg: string } {
   switch (status) {
@@ -18,33 +19,8 @@ function statusMeta(status: string): { text: string; color: string; bg: string }
   }
 }
 
-type Form = {
-  name: string;
-  company: string;
-  contract_type: string;
-  monthly_fee_eur: string;
-  email: string;
-  phone: string;
-  ico: string;
-  notion_page_id: string;
-  report_email: string;
-};
-
-const EMPTY: Form = { name: '', company: '', contract_type: '', monthly_fee_eur: '', email: '', phone: '', ico: '', notion_page_id: '', report_email: '' };
-
-function fromClient(c: Client): Form {
-  return {
-    name: c.name ?? '',
-    company: c.company ?? '',
-    contract_type: c.contract_type ?? '',
-    monthly_fee_eur: c.monthly_fee_eur != null ? String(c.monthly_fee_eur) : '',
-    email: c.email ?? '',
-    phone: c.phone ?? '',
-    ico: c.ico ?? '',
-    notion_page_id: c.notion_page_id ?? '',
-    report_email: c.report_email ?? '',
-  };
-}
+type Form = ClientForm;
+const EMPTY = EMPTY_CLIENT_FORM;
 
 const input: React.CSSProperties = {
   width: '100%',
@@ -113,44 +89,34 @@ function ClientsView() {
   const set = (k: keyof Form, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = async () => {
-    if (!form.name.trim()) {
-      setErr('Názov klienta je povinný.');
-      return;
-    }
-    setSaving(true);
     setErr(null);
-    const fee = form.monthly_fee_eur.trim() === '' ? null : Number(form.monthly_fee_eur.replace(',', '.'));
-    if (fee !== null && Number.isNaN(fee)) {
-      setErr('Paušál musí byť číslo.');
-      setSaving(false);
-      return;
-    }
-    const reportEmail = form.report_email.trim();
-    if (reportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reportEmail)) {
-      setErr('Report e-mail nie je platný.');
-      setSaving(false);
-      return;
-    }
-    const payload = {
-      name: form.name.trim(),
-      company: form.company.trim() || null,
-      contract_type: form.contract_type.trim() || null,
-      monthly_fee_eur: fee,
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      ico: form.ico.trim() || null,
-      notion_page_id: form.notion_page_id.trim() || null,
-      report_email: reportEmail || null,
-    };
     if (editing === 'new' && !orgId) {
       setErr('Organizácia sa nenačítala — obnov stránku a skús znova.');
-      setSaving(false);
       return;
     }
-    const res =
-      editing === 'new'
-        ? await supabase.from('clients').insert({ ...payload, org_id: orgId as string, status: 'active' })
-        : await supabase.from('clients').update(payload).eq('id', (editing as Client).id);
+    // Nový klient: všetky polia. Úprava: len zmenené polia (clientForm.ts) — nič iné sa neprepíše.
+    let res;
+    if (editing === 'new') {
+      const { payload, error } = clientPayload(form);
+      if (error || !payload) {
+        setErr(error);
+        return;
+      }
+      setSaving(true);
+      res = await supabase.from('clients').insert({ ...payload, org_id: orgId as string, status: 'active' });
+    } else {
+      const { patch, error } = clientPatch(fromClient(editing as Client), form);
+      if (error) {
+        setErr(error);
+        return;
+      }
+      if (Object.keys(patch).length === 0) {
+        setEditing(null);
+        return;
+      }
+      setSaving(true);
+      res = await supabase.from('clients').update(patch).eq('id', (editing as Client).id);
+    }
     setSaving(false);
     if (res.error) {
       setErr(`Uloženie zlyhalo: ${res.error.message}`);

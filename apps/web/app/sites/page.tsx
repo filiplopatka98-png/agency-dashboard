@@ -22,7 +22,8 @@ import { maxFixedIn, maxSev, sevMeta, type Vuln } from '../lib/vulns';
 import { TabDiary } from './TabDiary';
 import { TabPerformance } from './TabPerformance';
 import { Gauge, card, mono } from './perf/ui';
-import { EXPECTED_STRING_HINT, EXPECTED_STRING_MAX, expectedStringError, normalizeExpectedString } from '../lib/expectedString';
+import { EXPECTED_STRING_HINT, EXPECTED_STRING_MAX } from '../lib/expectedString';
+import { SITE_CMS_OPTIONS, siteEditForm, siteEditPatch, type SiteEditForm } from '../lib/siteEdit';
 
 // Čerstvosť dát — „aktualizované pred X" + výrazný štítok ak je meranie pristaré.
 function FreshLabel({ site, metric }: { site: SiteVM; metric: FreshKey }) {
@@ -145,7 +146,7 @@ function SiteDetail({ id }: { id: string }) {
   const [sites, setSites] = useState<SiteVM[] | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [tab, setTab] = useState<TabId>('overview');
-  const [edit, setEdit] = useState<null | { name: string; domain: string; cms: 'wordpress' | 'static' | 'other'; client_id: string; expected_string: string }>(null);
+  const [edit, setEdit] = useState<null | SiteEditForm>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -168,23 +169,23 @@ function SiteDetail({ id }: { id: string }) {
   const s = site;
   const openEdit = () => {
     setErr(null);
-    setEdit({ name: s.name, domain: s.domain, cms: (s.isWordPress ? 'wordpress' : 'static'), client_id: s.clientId ?? '', expected_string: s.expectedString ?? '' });
+    setEdit(siteEditForm(s));
   };
   const saveEdit = async () => {
     if (!edit) return;
-    const domain = edit.domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
-    if (!edit.name.trim() || !domain) {
-      setErr('Vyplň názov aj doménu.');
+    // Porovnáva sa so stavom pri otvorení (siteEditForm(s)) — do DB ide len to, čo používateľ zmenil.
+    const { patch, error: formErr } = siteEditPatch(siteEditForm(s), edit);
+    if (formErr) {
+      setErr(formErr);
       return;
     }
-    const expectedErr = expectedStringError(edit.expected_string);
-    if (expectedErr) {
-      setErr(expectedErr);
+    if (Object.keys(patch).length === 0) {
+      setEdit(null);
       return;
     }
     setBusy(true);
     setErr(null);
-    const { error } = await supabase.from('sites').update({ name: edit.name.trim(), domain, url: `https://${domain}`, cms: edit.cms, client_id: edit.client_id || null, expected_string: normalizeExpectedString(edit.expected_string) }).eq('id', s.id);
+    const { error } = await supabase.from('sites').update(patch).eq('id', s.id);
     setBusy(false);
     if (error) {
       setErr(`Uloženie zlyhalo: ${error.message}`);
@@ -243,16 +244,17 @@ function SiteDetail({ id }: { id: string }) {
                 ))}
                 <div>
                   <label htmlFor="edit-cms" style={{ ...label, display: 'block', marginBottom: 6 }}>Typ webu (CMS)</label>
-                  <select id="edit-cms" value={edit.cms} onChange={(e) => setEdit({ ...edit, cms: e.target.value as 'wordpress' | 'static' | 'other' })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
-                    <option value="wordpress">WordPress</option>
-                    <option value="static">Statický</option>
-                    <option value="other">Iné</option>
+                  <select id="edit-cms" value={edit.cms} onChange={(e) => setEdit({ ...edit, cms: e.target.value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
+                    {/* Neznáma/prázdna hodnota z DB sa zobrazí ako je — select ju inak vizuálne „prepne" na prvú možnosť. */}
+                    {!SITE_CMS_OPTIONS.some((o) => o.value === edit.cms) && <option value={edit.cms}>{edit.cms ? `Neznámy (${edit.cms})` : '— nenastavené —'}</option>}
+                    {SITE_CMS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
                 <div>
                   <label htmlFor="edit-client" style={{ ...label, display: 'block', marginBottom: 6 }}>Klient</label>
                   <select id="edit-client" value={edit.client_id} onChange={(e) => setEdit({ ...edit, client_id: e.target.value })} style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, cursor: 'pointer' }}>
                     <option value="">Bez klienta</option>
+                    {edit.client_id && !clients.some((c) => c.id === edit.client_id) && <option value={edit.client_id}>Neznámy klient (nenačítaný)</option>}
                     {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>

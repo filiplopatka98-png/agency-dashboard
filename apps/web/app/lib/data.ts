@@ -60,6 +60,8 @@ export interface SiteVM {
   clientName: string;
   /** sites.expected_string — text, ktorý musí byť v HTML (null = len HTTP kontrola). */
   expectedString: string | null;
+  /** sites.cms — surová hodnota (dialóg „Upraviť web" ju nesmie odvodzovať z isWordPress). */
+  cms: string;
   clientInitial: string;
   // Karta klienta — reálne z clients (fakturačné/kontaktné údaje)
   client: {
@@ -382,6 +384,7 @@ export async function loadDashboard(): Promise<{
       clientId: s.client_id,
       clientName,
       expectedString: s.expected_string ?? null,
+      cms: s.cms,
       clientInitial: (clientName || '—').replace(/^Klient\s*/i, '').charAt(0).toUpperCase() || '—',
       client: client
         ? {
