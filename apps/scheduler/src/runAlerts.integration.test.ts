@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceClient, type Db } from './supabase';
 import type { Alert } from '@agency/shared';
 import type { Notifier } from '@agency/core';
 import { runUptime } from './runUptime';
@@ -23,7 +23,7 @@ const DAY = new Date('2026-07-15T12:00:00Z'); // 14:00 lokál → deň
 const NIGHT = new Date('2026-07-15T23:30:00Z'); // 01:30 lokál → noc
 
 describe.skipIf(!enabled)('runAlerts + dedupe (integration)', () => {
-  let db: SupabaseClient;
+  let db: Db;
   let env: Env;
   let server: Server;
   let base: string;
@@ -41,7 +41,7 @@ describe.skipIf(!enabled)('runAlerts + dedupe (integration)', () => {
     if (!addr || typeof addr === 'string') throw new Error('no port');
     base = `http://127.0.0.1:${addr.port}`;
 
-    db = createClient(URL_!, KEY!, { auth: { persistSession: false } });
+    db = serviceClient({ SUPABASE_URL: URL_!, SUPABASE_SERVICE_ROLE_KEY: KEY! } as Env);
     env = {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,

@@ -1,6 +1,5 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { authenticateAdmin } from './trigger';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 import { perfRunRow, fetchPsi as coreFetchPsi } from '@agency/core';
 import type { Env } from './env';
 
@@ -14,7 +13,7 @@ const STALE_PENDING_MS = 5 * 60_000;
 
 type Ctx = { waitUntil(p: Promise<unknown>): void };
 type Deps = {
-  supabase?: SupabaseClient;
+  supabase?: Db;
   auth?: (request: Request, env: Env) => Promise<{ sub: string } | { error: Response }>;
   fetchPsi?: typeof coreFetchPsi;
 };
@@ -92,7 +91,7 @@ export async function handleScan(request: Request, env: Env, ctx: Ctx, deps: Dep
 
 async function performScan(
   env: Env,
-  supabase: SupabaseClient,
+  supabase: Db,
   fetchPsi: typeof coreFetchPsi,
   page: { id: string; org_id: string; url: string },
   strategy: 'mobile' | 'desktop',

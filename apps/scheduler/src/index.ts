@@ -1,11 +1,10 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
 import { runUptime } from './runUptime';
 import { runAlerts } from './runAlerts';
 import { runJobHealth } from './runJobHealth';
 import { runEmailHealth } from './runEmailHealth';
 import { runWpCronKick } from './runWpCronKick';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 import { wpIngest } from './wpIngest';
 import { triggerJob } from './trigger';
 import { handleScan } from './runScan';
@@ -96,8 +95,8 @@ export interface UpkeepSteps {
 
 // Jeden Supabase klient na celé spustenie (predtým createClient v každom kroku)
 // — vytvorí sa až keď ho potrebuje default krok, testy s injektovanými krokmi ho nechcú.
-function lazyClient(env: Env): () => SupabaseClient {
-  let client: SupabaseClient | undefined;
+function lazyClient(env: Env): () => Db {
+  let client: Db | undefined;
   return () => (client ??= serviceClient(env));
 }
 
@@ -160,7 +159,7 @@ export async function runUpkeep(env: Env, steps: UpkeepSteps = {}): Promise<void
  * štart čerstvý + heartbeat starý = tick sa spúšťa, ale nedobehne (CPU/subrequest
  * limit, zrušený zápis); oba staré = Cloudflare cron vôbec nevolá Worker.
  */
-async function markStart(job: SchedulerJob, db: () => SupabaseClient): Promise<void> {
+async function markStart(job: SchedulerJob, db: () => Db): Promise<void> {
   try {
     const { error } = await db().from('job_runs').insert({ job: startMarkerJob(job), status: 'started', finished_at: new Date().toISOString() });
     if (error) console.log(JSON.stringify({ ev: 'scheduler.start_mark_fail', job, message: error.message }));
@@ -170,7 +169,7 @@ async function markStart(job: SchedulerJob, db: () => SupabaseClient): Promise<v
 }
 
 /** Heartbeat do job_runs (best-effort — nezhodí tick, ale zlyhanie zaloguje). */
-async function recordRun(env: Env, job: SchedulerJob, status: 'ok' | 'error', error: string | null, db: SupabaseClient): Promise<void> {
+async function recordRun(env: Env, job: SchedulerJob, status: 'ok' | 'error', error: string | null, db: Db): Promise<void> {
   try {
     const { error: insErr } = await db.from('job_runs').insert({ job, status, error, finished_at: new Date().toISOString() });
     // Predtým sa chyba zápisu zahadzovala — heartbeat potichu chýbal a „scheduler mešká" nemal v logoch stopu.

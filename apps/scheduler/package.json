@@ -15,7 +15,7 @@
   "dependencies": {
     "@agency/core": "workspace:*",
     "@agency/shared": "workspace:*",
-    "@supabase/supabase-js": "^2.58.0"
+    "@supabase/postgrest-js": "^2.110.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260706.1",

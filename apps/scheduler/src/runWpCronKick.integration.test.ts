@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceClient, type Db } from './supabase';
 import { runWpCronKick, type WpCronFetcher } from './runWpCronKick';
 import type { Env } from './env';
 
@@ -27,11 +27,11 @@ const SITE_OTHER_CMS = '44444444-0000-0000-0000-0000000000a4'; // cms != 'wordpr
 const SITE_COOLDOWN = '44444444-0000-0000-0000-0000000000a5'; // stale, ale nedávno kopnutý → nekopne
 
 describe.skipIf(!enabled)('runWpCronKick (integration)', () => {
-  let db: SupabaseClient;
+  let db: Db;
   let env: Env;
 
   beforeAll(async () => {
-    db = createClient(URL_!, KEY!, { auth: { persistSession: false } });
+    db = serviceClient({ SUPABASE_URL: URL_!, SUPABASE_SERVICE_ROLE_KEY: KEY! } as Env);
     env = {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { serviceClient, type Db } from './supabase';
 import { runUptime } from './runUptime';
 import type { Env } from './env';
 
@@ -24,7 +24,7 @@ const SITE_OK = '11111111-0000-0000-0000-0000000000a1';
 const SITE_DOWN = '11111111-0000-0000-0000-0000000000a2';
 
 describe.skipIf(!enabled)('runUptime (integration)', () => {
-  let db: SupabaseClient;
+  let db: Db;
   let env: Env;
   let server: Server;
   let base: string;
@@ -43,7 +43,7 @@ describe.skipIf(!enabled)('runUptime (integration)', () => {
     if (!addr || typeof addr === 'string') throw new Error('no server port');
     base = `http://127.0.0.1:${addr.port}`;
 
-    db = createClient(URL_!, KEY!, { auth: { persistSession: false } });
+    db = serviceClient({ SUPABASE_URL: URL_!, SUPABASE_SERVICE_ROLE_KEY: KEY! } as Env);
     env = {
       SUPABASE_URL: URL_!,
       SUPABASE_SERVICE_ROLE_KEY: KEY!,

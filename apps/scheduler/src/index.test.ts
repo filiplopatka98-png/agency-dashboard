@@ -23,7 +23,7 @@ describe('tickKind — dva crony, každý pod 10 ms CPU / 50 subrequestov (Worke
 describe('runTick (monitor: uptime + job_health + alerty) — odolnosť (FIX 1)', () => {
   it('hodenie v runUptime NEZABRÁNI job_health ani odoslaniu alertov', async () => {
     const runJobHealth = vi.fn(async () => {});
-    const runAlerts = vi.fn(async () => ({ sent: 1, deferred: 0, failed: 0 }));
+    const runAlerts = vi.fn(async () => ({ sent: 1, deferred: 0, failed: 0, postponed: 0 }));
     const recordRun = vi.fn(async () => {});
 
     await runTick(env, {
@@ -45,7 +45,7 @@ describe('runTick (monitor: uptime + job_health + alerty) — odolnosť (FIX 1)'
     await runTick(env, {
       runUptime: async () => {},
       runJobHealth: async () => {},
-      runAlerts: async () => ({ sent: 0, deferred: 0, failed: 0 }),
+      runAlerts: async () => ({ sent: 0, deferred: 0, failed: 0, postponed: 0 }),
       recordRun,
     });
     expect(recordRun).toHaveBeenCalledWith(env, 'scheduler', 'ok', null);
@@ -110,7 +110,7 @@ describe('štartovací záznam (poistka proti tichému zlyhaniu, alert 2026-09-0
   });
 
   it('zlyhanie default zápisu štartu (bez DB) nezhodí tick — alerty aj heartbeat prebehnú', async () => {
-    const runAlerts = vi.fn(async () => ({ sent: 0, deferred: 0, failed: 0 }));
+    const runAlerts = vi.fn(async () => ({ sent: 0, deferred: 0, failed: 0, postponed: 0 }));
     const recordRun = vi.fn(async () => {});
     // env bez SUPABASE_URL → createClient hodí; markStart to musí zhltnúť
     await runTick(env, { runUptime: async () => {}, runJobHealth: async () => {}, runAlerts, recordRun });

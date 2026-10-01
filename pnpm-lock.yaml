@@ -29,8 +29,8 @@ importers:
       '@agency/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@supabase/supabase-js':
-        specifier: ^2.58.0
+      '@supabase/postgrest-js':
+        specifier: ^2.110.1
         version: 2.110.1
     devDependencies:
       '@cloudflare/workers-types':

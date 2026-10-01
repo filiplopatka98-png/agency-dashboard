@@ -1,8 +1,7 @@
 import { isNightInBratislava, NIGHT_DEFERRED_TYPES, ResendNotifier, type Notifier } from '@agency/core';
 import type { Alert } from '@agency/shared';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Env } from './env';
-import { serviceClient } from './supabase';
+import { serviceClient, type Db } from './supabase';
 
 interface AlertRow {
   id: string;
@@ -16,7 +15,7 @@ interface AlertRow {
 }
 
 export interface RunAlertsDeps {
-  supabase?: SupabaseClient;
+  supabase?: Db;
   notifier?: Notifier;
   now?: Date;
 }
@@ -41,7 +40,20 @@ export interface RunAlertsResult {
   sent: number;
   deferred: number;
   failed: number;
+  /** Nad strop MAX_SENDS_PER_TICK — ostali neodoslané, odošle ich ďalší tick. */
+  postponed: number;
 }
+
+/**
+ * Strop pokusov o odoslanie na jeden tick. Každý pokus = až 2 subrequesty
+ * (Resend + zápis sent_at) z limitu 50 na spustenie Workera (Free) a po alertoch
+ * ešte ide heartbeat. Dávka (región × všetky weby, zotavenie po výpadku) by inak
+ * vyčerpala limit a zrušila heartbeat → falošné „scheduler mešká". Čo sa
+ * nezmestí, ostane sent_at IS NULL a odíde o 5 min.
+ */
+export const MAX_SENDS_PER_TICK = 10;
+
+const SEVERITY_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 
 export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<RunAlertsResult> {
   const supabase = deps.supabase ?? serviceClient(env);
@@ -51,7 +63,7 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<Run
   if (!deps.notifier && (!env.RESEND_API_KEY || !env.RESEND_API_KEY.startsWith('re_'))) {
     const { count } = await supabase.from('alerts').select('id', { count: 'exact', head: true }).is('sent_at', null);
     console.log(JSON.stringify({ ev: 'alerts.skipped_no_resend', pending: count ?? 0 }));
-    return { sent: 0, deferred: 0, failed: 0 };
+    return { sent: 0, deferred: 0, failed: 0, postponed: 0 };
   }
 
   const notifier =
@@ -70,10 +82,15 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<Run
     .order('created_at', { ascending: true });
   if (error) throw new Error(`alerts select: ${error.message}`);
 
-  const rows = (data ?? []) as AlertRow[];
+  // Pri strope ide najprv critical (site_down), potom podľa veku — stabilné
+  // triedenie drží poradie created_at v rámci rovnakej závažnosti.
+  const rows = ((data ?? []) as AlertRow[]).sort(
+    (a, b) => (SEVERITY_RANK[a.severity] ?? 3) - (SEVERITY_RANK[b.severity] ?? 3),
+  );
   let sent = 0;
   let deferred = 0;
   let failed = 0;
+  let postponed = 0;
 
   // Per-alert try/catch (audit FIX 1): jeden „poison" riadok (napr. Resend 422
   // na zlý príjemca, oversized body, transient 5xx) NESMIE zhodiť celý drain a
@@ -85,6 +102,11 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<Run
   for (const r of rows) {
     if (night && NIGHT_DEFERRED_TYPES.has(r.type)) {
       deferred++;
+      continue;
+    }
+    // Odložené v noci sa do stropu nerátajú — nespotrebujú subrequest.
+    if (sent + failed >= MAX_SENDS_PER_TICK) {
+      postponed++;
       continue;
     }
     try {
@@ -99,6 +121,6 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<Run
     }
   }
 
-  console.log(JSON.stringify({ ev: 'alerts.run', pending: rows.length, sent, deferred, failed }));
-  return { sent, deferred, failed };
+  console.log(JSON.stringify({ ev: 'alerts.run', pending: rows.length, sent, deferred, failed, postponed }));
+  return { sent, deferred, failed, postponed };
 }
