@@ -58,6 +58,8 @@ export interface SiteVM {
   url: string;
   clientId: string | null;
   clientName: string;
+  /** sites.expected_string — text, ktorý musí byť v HTML (null = len HTTP kontrola). */
+  expectedString: string | null;
   clientInitial: string;
   // Karta klienta — reálne z clients (fakturačné/kontaktné údaje)
   client: {
@@ -379,6 +381,7 @@ export async function loadDashboard(): Promise<{
       url: s.url,
       clientId: s.client_id,
       clientName,
+      expectedString: s.expected_string ?? null,
       clientInitial: (clientName || '—').replace(/^Klient\s*/i, '').charAt(0).toUpperCase() || '—',
       client: client
         ? {

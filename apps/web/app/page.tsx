@@ -7,6 +7,7 @@ import { Modal } from './components/Modal';
 import { loadDashboard, type SiteVM } from './lib/data';
 import { supabase, type Client, type Alert } from './lib/supabase';
 import { relativeTime } from './lib/format';
+import { EXPECTED_STRING_HINT, EXPECTED_STRING_MAX, expectedStringError, normalizeExpectedString } from './lib/expectedString';
 
 const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
 
@@ -24,6 +25,7 @@ export default function OverviewPage() {
   const [addDomain, setAddDomain] = useState('');
   const [addClient, setAddClient] = useState('');
   const [addCms, setAddCms] = useState<'wordpress' | 'static' | 'other'>('wordpress');
+  const [addExpected, setAddExpected] = useState('');
   const [addBusy, setAddBusy] = useState(false);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -119,6 +121,7 @@ export default function OverviewPage() {
     setAddDomain('');
     setAddClient('');
     setAddCms('wordpress');
+    setAddExpected('');
     setAddErr(null);
     setShowAddSite(true);
   };
@@ -134,6 +137,11 @@ export default function OverviewPage() {
       setAddErr('Organizácia sa nenačítala — obnov stránku.');
       return;
     }
+    const expectedErr = expectedStringError(addExpected);
+    if (expectedErr) {
+      setAddErr(expectedErr);
+      return;
+    }
     setAddBusy(true);
     setAddErr(null);
     const { error } = await supabase.from('sites').insert({
@@ -143,6 +151,7 @@ export default function OverviewPage() {
       url: `https://${domain}`,
       domain,
       cms: addCms,
+      expected_string: normalizeExpectedString(addExpected),
       is_active: true,
     });
     setAddBusy(false);
@@ -310,6 +319,20 @@ export default function OverviewPage() {
                   <option value="static">Statický</option>
                   <option value="other">Iné</option>
                 </select>
+              </div>
+              <div>
+                <label htmlFor="add-expected" style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '7px' }}>Kontrolný text na stránke</label>
+                <input
+                  id="add-expected"
+                  type="text"
+                  value={addExpected}
+                  maxLength={EXPECTED_STRING_MAX}
+                  onInput={(e) => setAddExpected((e.target as HTMLInputElement).value)}
+                  placeholder="napr. názov firmy z pätičky"
+                  aria-describedby="add-expected-hint"
+                  style={{ width: '100%', padding: '11px 14px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: '10px', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
+                />
+                <div id="add-expected-hint" style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '6px', lineHeight: 1.45 }}>{EXPECTED_STRING_HINT}</div>
               </div>
               {addErr && <div style={{ fontSize: '13px', color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: '10px' }}>{addErr}</div>}
             </div>

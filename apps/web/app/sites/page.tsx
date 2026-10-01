@@ -22,6 +22,7 @@ import { maxFixedIn, maxSev, sevMeta, type Vuln } from '../lib/vulns';
 import { TabDiary } from './TabDiary';
 import { TabPerformance } from './TabPerformance';
 import { Gauge, card, mono } from './perf/ui';
+import { EXPECTED_STRING_HINT, EXPECTED_STRING_MAX, expectedStringError, normalizeExpectedString } from '../lib/expectedString';
 
 // Čerstvosť dát — „aktualizované pred X" + výrazný štítok ak je meranie pristaré.
 function FreshLabel({ site, metric }: { site: SiteVM; metric: FreshKey }) {
@@ -144,7 +145,7 @@ function SiteDetail({ id }: { id: string }) {
   const [sites, setSites] = useState<SiteVM[] | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [tab, setTab] = useState<TabId>('overview');
-  const [edit, setEdit] = useState<null | { name: string; domain: string; cms: 'wordpress' | 'static' | 'other'; client_id: string }>(null);
+  const [edit, setEdit] = useState<null | { name: string; domain: string; cms: 'wordpress' | 'static' | 'other'; client_id: string; expected_string: string }>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -167,7 +168,7 @@ function SiteDetail({ id }: { id: string }) {
   const s = site;
   const openEdit = () => {
     setErr(null);
-    setEdit({ name: s.name, domain: s.domain, cms: (s.isWordPress ? 'wordpress' : 'static'), client_id: s.clientId ?? '' });
+    setEdit({ name: s.name, domain: s.domain, cms: (s.isWordPress ? 'wordpress' : 'static'), client_id: s.clientId ?? '', expected_string: s.expectedString ?? '' });
   };
   const saveEdit = async () => {
     if (!edit) return;
@@ -176,9 +177,14 @@ function SiteDetail({ id }: { id: string }) {
       setErr('Vyplň názov aj doménu.');
       return;
     }
+    const expectedErr = expectedStringError(edit.expected_string);
+    if (expectedErr) {
+      setErr(expectedErr);
+      return;
+    }
     setBusy(true);
     setErr(null);
-    const { error } = await supabase.from('sites').update({ name: edit.name.trim(), domain, url: `https://${domain}`, cms: edit.cms, client_id: edit.client_id || null }).eq('id', s.id);
+    const { error } = await supabase.from('sites').update({ name: edit.name.trim(), domain, url: `https://${domain}`, cms: edit.cms, client_id: edit.client_id || null, expected_string: normalizeExpectedString(edit.expected_string) }).eq('id', s.id);
     setBusy(false);
     if (error) {
       setErr(`Uloženie zlyhalo: ${error.message}`);
@@ -249,6 +255,11 @@ function SiteDetail({ id }: { id: string }) {
                     <option value="">Bez klienta</option>
                     {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label htmlFor="edit-expected" style={{ ...label, display: 'block', marginBottom: 6 }}>Kontrolný text na stránke</label>
+                  <input id="edit-expected" value={edit.expected_string} maxLength={EXPECTED_STRING_MAX} onInput={(e) => setEdit({ ...edit, expected_string: (e.target as HTMLInputElement).value })} placeholder="napr. názov firmy z pätičky" aria-describedby="edit-expected-hint" style={{ width: '100%', padding: '10px 13px', background: 'var(--bg-base)', border: '1px solid var(--border-primary)', borderRadius: 10, color: 'var(--text-primary)', fontSize: 14, outline: 'none' }} />
+                  <div id="edit-expected-hint" style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.45 }}>{EXPECTED_STRING_HINT}</div>
                 </div>
                 {err && <div style={{ fontSize: 13, color: 'var(--critical-color)', background: 'var(--critical-bg)', padding: '9px 13px', borderRadius: 10 }}>{err}</div>}
               </div>
