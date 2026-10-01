@@ -232,3 +232,67 @@ describe('buildClientLines — zoskupovanie opakovaných riadkov', () => {
     ]);
   });
 });
+
+describe('buildClientLines — zlučovanie opakovaných aktualizácií', () => {
+  const upd = (at: string, name: string, slug: string, from: string, to: string) => ({
+    at,
+    ev: ev({ kind: 'update', payload: { target: 'plugin', name, slug, from, to } }),
+  });
+  const base = { diary: [], incidents: [] };
+
+  it('viac aktualizácií toho istého pluginu = jeden riadok od prvej po poslednú verziu', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        upd('2026-09-03T10:00:00Z', 'WordPress', 'wordpress', '5.8.15', '5.8.16'),
+        upd('2026-09-12T10:00:00Z', 'WordPress', 'wordpress', '5.8.16', '5.8.17'),
+        upd('2026-09-29T10:00:00Z', 'WordPress', 'wordpress', '5.8.17', '7.1.2'),
+      ],
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text).toBe('WordPress bol aktualizovaný z verzie 5.8.15 na 7.1.2.');
+  });
+
+  it('jedna aktualizácia → pôvodná veta', () => {
+    const lines = buildClientLines({ ...base, events: [upd('2026-09-03T10:00:00Z', 'Elementor', 'elementor', '4.2.4', '4.3.2')] });
+    expect(lines[0]!.text).toBe('Elementor bol aktualizovaný na verziu 4.3.2.');
+  });
+
+  it('návrat na pôvodnú verziu za mesiac = žiadna veta (čistá zmena je nulová)', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        upd('2026-09-03T10:00:00Z', 'WPForms', 'wpforms', '2.0.1', '2.1.0'),
+        upd('2026-09-04T10:00:00Z', 'WPForms', 'wpforms', '2.1.0', '2.0.1'),
+      ],
+    });
+    expect(lines).toEqual([]);
+  });
+
+  it('rôzne pluginy sa nezlučujú a držia poradie podľa poslednej aktualizácie', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        upd('2026-09-20T10:00:00Z', 'Yoast SEO', 'yoast', '28.4', '28.5'),
+        upd('2026-09-02T10:00:00Z', 'Elementor', 'elementor', '4.2.4', '4.3.0'),
+        upd('2026-09-05T10:00:00Z', 'Elementor', 'elementor', '4.3.0', '4.3.2'),
+      ],
+    });
+    expect(lines.map((l) => l.text)).toEqual([
+      'Elementor bol aktualizovaný z verzie 4.2.4 na 4.3.2.',
+      'Yoast SEO bol aktualizovaný na verziu 28.5.',
+    ]);
+  });
+
+  it('jadro, plugin a PHP sú samostatné skupiny (kľúč je slug)', () => {
+    const lines = buildClientLines({
+      ...base,
+      events: [
+        { at: '2026-09-10T10:00:00Z', ev: ev({ kind: 'update', payload: { target: 'core', name: 'WordPress', slug: 'wordpress', from: '6.9', to: '7.1' } }) },
+        { at: '2026-09-11T10:00:00Z', ev: ev({ kind: 'update', payload: { target: 'php', name: 'PHP', slug: 'php', from: '7.4.33', to: '8.3.2' } }) },
+        upd('2026-09-12T10:00:00Z', 'Elementor', 'elementor', '4.2.4', '4.3.2'),
+      ],
+    });
+    expect(lines).toHaveLength(3);
+  });
+});

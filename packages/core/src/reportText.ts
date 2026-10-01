@@ -194,6 +194,12 @@ function groupedVulnSentence(target: string, total: number, bySeverity: Map<stri
   return `${head} (${known.map((s) => countedSeverity(bySeverity.get(s)!, s)).join(', ')}).`;
 }
 
+// Veta za skupinu ≥ 2 aktualizácií toho istého modulu za mesiac. Klienta
+// nezaujímajú medzikroky („5.8.16", „5.8.17", „7.1", „7.1.2" ako štyri riadky) —
+// zaujíma ho, odkiaľ kam sa web pohol.
+const groupedUpdateSentence = (name: string, from: string, to: string): string =>
+  `${name} bol aktualizovaný z verzie ${from} na ${to}.`;
+
 export interface TimedLine {
   at: string;
   text: string;
@@ -213,6 +219,10 @@ export function buildClientLines(input: {
   // Zlepšenia skóre per metrika: „zo 10 na 70" + „zo 70 na 80" = „zo 10 na 80".
   // Čas berieme z POSLEDNÉHO merania — to je stav, ktorý veta tvrdí.
   const scoreGroups = new Map<string, { at: string; from: number; to: number; only: ChangeEvent }>();
+  // Aktualizácie per modul (slug — pokrýva plugin, jadro aj PHP): prvá verzia
+  // mesiaca → posledná. Čas z POSLEDNEJ aktualizácie, nech veta stojí tam, kde
+  // sa web dostal do výsledného stavu.
+  const updateGroups = new Map<string, { at: string; from: string; to: string; count: number; only: ChangeEvent }>();
   const rest: TimedLine[] = [];
 
   for (const { at, ev } of visible) {
@@ -241,6 +251,22 @@ export function buildClientLines(input: {
       }
       continue;
     }
+    if (ev.kind === 'update') {
+      const p = ev.payload as UpdatePayload;
+      const g = updateGroups.get(p.slug);
+      if (!g) {
+        updateGroups.set(p.slug, { at, from: p.from, to: p.to, count: 1, only: ev });
+      } else {
+        g.count++;
+        if (Date.parse(at) >= Date.parse(g.at)) {
+          g.at = at;
+          g.to = p.to;
+        } else {
+          g.from = p.from;
+        }
+      }
+      continue;
+    }
     rest.push({ at, text: renderClient(ev) });
   }
 
@@ -254,9 +280,20 @@ export function buildClientLines(input: {
     at: g.at,
     text: renderClient({ ...g.only, payload: { ...(g.only.payload as ScorePayload), from: g.from, to: g.to } }),
   }));
+  // Aktualizácia tam a späť (napr. rollback po probléme) nechá web na pôvodnej
+  // verzii — za mesiac sa teda nič nezmenilo a veta by klamala. Mlčíme.
+  const updateLines = [...updateGroups.values()]
+    .filter((g) => g.from !== g.to)
+    .map((g) => ({
+      at: g.at,
+      text: g.count === 1
+        ? renderClient(g.only)
+        : groupedUpdateSentence((g.only.payload as UpdatePayload).name, g.from, g.to),
+    }));
 
   const lines: TimedLine[] = [
     ...rest,
+    ...updateLines,
     ...vulnLines,
     ...scoreLines,
     ...input.diary.map((d) => ({ at: d.happened_at, text: d.text })),
