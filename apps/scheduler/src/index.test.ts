@@ -83,3 +83,38 @@ describe('runUpkeep (domény + wp-cron + e-mail health) — odolnosť', () => {
     expect(recordRun).toHaveBeenCalledWith(env, 'scheduler-upkeep', 'ok', null);
   });
 });
+
+describe('štartovací záznam (poistka proti tichému zlyhaniu, alert 2026-09-05)', () => {
+  it('monitor zapíše štart PRED prvým krokom, heartbeat až na konci', async () => {
+    const order: string[] = [];
+    await runTick(env, {
+      markStart: async (_e, job) => void order.push(`start:${job}`),
+      runUptime: async () => void order.push('uptime'),
+      runJobHealth: async () => void order.push('job_health'),
+      runAlerts: async () => void order.push('alerts'),
+      recordRun: async (_e, job) => void order.push(`end:${job}`),
+    });
+    expect(order).toEqual(['start:scheduler', 'uptime', 'job_health', 'alerts', 'end:scheduler']);
+  });
+
+  it('upkeep zapíše štart pod vlastným jobom', async () => {
+    const markStart = vi.fn(async () => {});
+    await runUpkeep(env, {
+      markStart,
+      runDomains: async () => {},
+      runWpCronKick: async () => {},
+      runEmailHealth: async () => {},
+      recordRun: async () => {},
+    });
+    expect(markStart).toHaveBeenCalledWith(env, 'scheduler-upkeep');
+  });
+
+  it('zlyhanie default zápisu štartu (bez DB) nezhodí tick — alerty aj heartbeat prebehnú', async () => {
+    const runAlerts = vi.fn(async () => ({ sent: 0, deferred: 0, failed: 0 }));
+    const recordRun = vi.fn(async () => {});
+    // env bez SUPABASE_URL → createClient hodí; markStart to musí zhltnúť
+    await runTick(env, { runUptime: async () => {}, runJobHealth: async () => {}, runAlerts, recordRun });
+    expect(runAlerts).toHaveBeenCalledTimes(1);
+    expect(recordRun).toHaveBeenCalledWith(env, 'scheduler', 'ok', null);
+  });
+});

@@ -67,6 +67,16 @@ export default {
 type StepFn = (env: Env) => Promise<unknown>;
 export type SchedulerJob = 'scheduler' | 'scheduler-upkeep';
 export type RecordRun = (env: Env, job: SchedulerJob, status: 'ok' | 'error', error: string | null) => Promise<void>;
+export type MarkStart = (env: Env, job: SchedulerJob) => Promise<void>;
+
+/**
+ * Kľúč štartovacieho záznamu v job_runs (`scheduler:start`, `scheduler-upkeep:start`).
+ * Zámerne INÝ job než heartbeat: keby štart písal do `scheduler`, tick zabitý
+ * v polovici (exceededCpu 2026-09-11 → 09-14) by vyzeral ako živý a dead-man's
+ * switch by mlčal. Nie je v JOB_SCHEDULES → sám nič nealertuje; runJobHealth
+ * ho len porovná s heartbeatom a v alerte rozlíši „neodštartoval" od „spadol".
+ */
+export const startMarkerJob = (job: SchedulerJob): string => `${job}:start`;
 
 /** Injektovateľné kroky — pre testy odolnosti (FIX 1). V produkcii default implementácie. */
 export interface MonitorSteps {
@@ -74,12 +84,14 @@ export interface MonitorSteps {
   runJobHealth?: StepFn;
   runAlerts?: StepFn;
   recordRun?: RecordRun;
+  markStart?: MarkStart;
 }
 export interface UpkeepSteps {
   runDomains?: StepFn;
   runWpCronKick?: StepFn;
   runEmailHealth?: StepFn;
   recordRun?: RecordRun;
+  markStart?: MarkStart;
 }
 
 // Jeden Supabase klient na celé spustenie (predtým createClient v každom kroku)
@@ -112,6 +124,7 @@ async function runSteps(steps: [string, () => Promise<unknown>][]): Promise<stri
 export async function runTick(env: Env, steps: MonitorSteps = {}): Promise<void> {
   const db = lazyClient(env);
   const record = steps.recordRun ?? ((e, job, status, error) => recordRun(e, job, status, error, db()));
+  await (steps.markStart ?? ((_e, job) => markStart(job, db)))(env, 'scheduler');
   const errors = await runSteps([
     ['uptime', () => (steps.runUptime ?? ((e) => runUptime(e, { supabase: db() })))(env)], // + incidenty a site_down/up alerty
     ['job_health', () => (steps.runJobHealth ?? ((e) => runJobHealth(e, { supabase: db() })))(env)], // dead-man's switch (aj pre upkeep)
@@ -124,6 +137,7 @@ export async function runTick(env: Env, steps: MonitorSteps = {}): Promise<void>
 export async function runUpkeep(env: Env, steps: UpkeepSteps = {}): Promise<void> {
   const db = lazyClient(env);
   const record = steps.recordRun ?? ((e, job, status, error) => recordRun(e, job, status, error, db()));
+  await (steps.markStart ?? ((_e, job) => markStart(job, db)))(env, 'scheduler-upkeep');
   // runDomains → domainResolver → whois používa `cloudflare:sockets` (Workers-only
   // runtime import). Lazy `import()` drží modul-graf čistý pre jednotkové testy.
   const domains =
@@ -138,6 +152,21 @@ export async function runUpkeep(env: Env, steps: UpkeepSteps = {}): Promise<void
     ['email_health', () => (steps.runEmailHealth ?? ((e) => runEmailHealth(e, { supabase: db() })))(env)],
   ]);
   await record(env, 'scheduler-upkeep', errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);
+}
+
+/**
+ * Štartovací záznam hneď na začiatku ticku (best-effort, nikdy nehádže — tick
+ * beží ďalej aj bez neho). 1 subrequest. Spolu s heartbeatom na konci rozlíši:
+ * štart čerstvý + heartbeat starý = tick sa spúšťa, ale nedobehne (CPU/subrequest
+ * limit, zrušený zápis); oba staré = Cloudflare cron vôbec nevolá Worker.
+ */
+async function markStart(job: SchedulerJob, db: () => SupabaseClient): Promise<void> {
+  try {
+    const { error } = await db().from('job_runs').insert({ job: startMarkerJob(job), status: 'started', finished_at: new Date().toISOString() });
+    if (error) console.log(JSON.stringify({ ev: 'scheduler.start_mark_fail', job, message: error.message }));
+  } catch (err: unknown) {
+    console.log(JSON.stringify({ ev: 'scheduler.start_mark_fail', job, message: err instanceof Error ? err.message : String(err) }));
+  }
 }
 
 /** Heartbeat do job_runs (best-effort — nezhodí tick, ale zlyhanie zaloguje). */

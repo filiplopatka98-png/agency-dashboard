@@ -115,7 +115,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
       type: 'job_overdue',
       severity: 'warning' as const,
       title: `Job „${job}" mešká`,
-      body: `Posledný zaznamenaný beh jobu „${job}" je starší než 2× jeho očakávaný interval — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.`,
+      body: `Posledný zaznamenaný beh jobu „${job}" je starší než 2× jeho očakávaný interval — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.${startDiagnosis(job, latest)}`,
       // max 1× per job per deň; zdieľaný kľúč so scheduler-watchdog (core)
       dedupe_key: jobOverdueDedupeKey(job, now),
     })),
@@ -153,4 +153,20 @@ export async function runJobHealth(env: Env, deps: { supabase?: SupabaseClient; 
   if (aErr) throw new Error(`job_health alert: ${aErr.message}`);
 
   console.log(JSON.stringify({ ev: 'job_health.alert', overdue: overdueJobs, failed: failedJobs }));
+}
+
+/**
+ * Pre crony Workera porovná štartovací záznam (`<job>:start`, index.ts markStart)
+ * s heartbeatom na konci ticku — rozlíši „neodštartoval" od „spadol v polovici".
+ * Pre collectory (bez štartovacieho záznamu) vráti ''.
+ */
+export function startDiagnosis(job: string, latest: Map<string, { finished_at: string | null }>): string {
+  if (job !== 'scheduler' && job !== 'scheduler-upkeep') return '';
+  const started = latest.get(`${job}:start`)?.finished_at ?? null;
+  const finished = latest.get(job)?.finished_at ?? null;
+  if (!started) return ' Štartovací záznam chýba (staršia verzia Workera alebo tick vôbec neštartuje) — skontroluj Cloudflare → Workers → Observability.';
+  if (finished && Date.parse(started) <= Date.parse(finished)) {
+    return ` Diagnóza: tick od ${finished} ani NEODŠTARTOVAL — Cloudflare cron nevolá Worker (výpadok Cron Triggers alebo zmazaný trigger).`;
+  }
+  return ` Diagnóza: tick ŠTARTUJE (posledný štart ${started}), ale NEDOBEHNE do zápisu heartbeatu — zabitý v polovici (CPU/subrequest limit, Cloudflare Observability → Invocations → outcome) alebo zrušený zápis job_runs.`;
 }

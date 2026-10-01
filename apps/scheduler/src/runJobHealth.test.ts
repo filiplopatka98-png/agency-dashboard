@@ -130,3 +130,36 @@ describe('runJobHealth — rozpočet subrequestov (Workers Free: 50 na spustenie
     expect(store.calls!.filter((c) => c === 'from:job_runs')).toHaveLength(0);
   });
 });
+
+describe('runJobHealth — diagnóza „neodštartoval" vs „spadol v polovici" (štartovací záznam)', () => {
+  const OLD = '2026-07-20T11:00:00Z'; // 60 min → scheduler-upkeep (every5, 2×) je overdue
+  const overdueBody = (store: FakeStore, job: string) =>
+    store.alerts.find((a) => a.type === 'job_overdue' && String(a.dedupe_key).includes(`:${job}:`))?.body as string;
+
+  it('štart čerstvý, heartbeat starý → tick štartuje, ale nedobehne', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'ok', finished_at: OLD });
+    store.job_runs.push({ job: 'scheduler-upkeep:start', status: 'started', finished_at: '2026-07-20T11:57:00Z' });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(overdueBody(store, 'scheduler-upkeep')).toContain('ŠTARTUJE');
+  });
+
+  it('štart aj heartbeat rovnako starý → neodštartoval (Cloudflare cron)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler-upkeep:start', status: 'started', finished_at: '2026-07-20T10:59:59Z' });
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'ok', finished_at: OLD });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(overdueBody(store, 'scheduler-upkeep')).toContain('NEODŠTARTOVAL');
+  });
+
+  it('štartovací záznam nie je job v rozvrhu → sám nikdy nealertuje', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler:start', status: 'started', finished_at: '2026-07-01T00:00:00Z' });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(store.alerts.filter((a) => String(a.dedupe_key).includes(':start'))).toHaveLength(0);
+  });
+});
