@@ -120,6 +120,7 @@ browsera len `NEXT_PUBLIC_*` premenné). Over po builde:
 | `PSI_API_KEY`, `SB_API_KEY` | ✅ | ❌ | ❌ |
 | `GSC_SA_JSON` | ✅ | ❌ | ❌ |
 | `RESEND_API_KEY`, `ALERT_EMAIL_*`, `UPTIME_PROVIDER` | ❌ | ✅ | ❌ |
+| `REPORT_EMAIL_TO` (jediný príjemca mesačných reportov — Filip; bez neho `report` nič nepošle a zlyhá) | ✅ | ❌ | ❌ |
 
 ## Čo ešte nie je hotové (nezávisí od deployu)
 - **WordPress agent** (Infra tab) — mu-plugin + HMAC na 3 WP weby (krivosik, profihouse, kukodetskysvet).
