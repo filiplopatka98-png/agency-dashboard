@@ -44,9 +44,13 @@ Zoradené podľa priority. Pri každom je uvedená **citlivosť** a **kam to da�
      profihouse.sk — ktoré sú WP). lopatka.sk je statický, ten Infra nepotrebuje.
   2. Súhlas nasadiť **mu-plugin** (`wp-content/mu-plugins/agency-agent.php` — dodám ti
      hotový súbor, ty ho nahráš, alebo mi dáš prístup).
-  3. Pre každý web **HMAC secret** (náhodný reťazec) — vygenerujem/vygeneruješ, uloží sa do
-     Supabase Vault a do plugin konfigurácie. **Nedávaj do chatu.**
-- **Citlivosť:** vysoká. Žiadne heslá sa neukladajú — len HMAC secret + `wp_agent_url`.
+  3. **Zdieľaný token** (jeden náhodný reťazec pre všetky weby) — zapečie sa do pluginu a v
+     scheduleri je ako Worker secret `WP_INGEST_TOKEN`; plugin ho posiela v hlavičke
+     `X-Monitorix-Token` na `POST /wp-ingest`. **Nedávaj do chatu.** Nie je to HMAC ani
+     secret per web: token sa len porovná a web sa určí podľa domény v tele požiadavky.
+     Prechod na per-web secret je **vedome odložený** (rozhodnutie 1. 10. 2026).
+- **Citlivosť:** vysoká — únik tokenu dovolí podvrhnúť údaje za ktorýkoľvek aktívny web
+  (zmena = nový token v plugine na všetkých weboch + `WP_INGEST_TOKEN`). Žiadne heslá sa neukladajú.
 
 ### 4. Google Safe Browsing — **Security panel (časť Infra tabu)**
 - **Načo:** kontrola, či weby nie sú na blacklistoch (malware/phishing).

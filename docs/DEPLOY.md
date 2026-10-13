@@ -123,6 +123,11 @@ browsera len `NEXT_PUBLIC_*` premenné). Over po builde:
 | `REPORT_EMAIL_TO` (jediný príjemca mesačných reportov — Filip; bez neho `report` nič nepošle a zlyhá) | ✅ | ❌ | ❌ |
 
 ## Čo ešte nie je hotové (nezávisí od deployu)
-- **WordPress agent** (Infra tab) — mu-plugin + HMAC na 3 WP weby (krivosik, profihouse, kukodetskysvet).
+- **WordPress agent** (Infra tab) — mu-plugin na WP weboch posiela stav na `POST /wp-ingest`
+  schedulera. Autentifikácia je **jeden zdieľaný token** pre všetky weby: hlavička
+  `X-Monitorix-Token` sa porovná s Worker secretom `WP_INGEST_TOKEN` (`apps/scheduler/src/wpIngest.ts`)
+  a web sa páruje len podľa domény v tele. **Nie je to HMAC ani per-web secret** — kto má token,
+  vie poslať údaje za ktorýkoľvek aktívny web. Prechod na per-web secret je **vedome odložený**
+  (rozhodnutie 1. 10. 2026; audit `AUDIT-2026-07-17.md`).
 - **Vuln/CVE** — WPScan token.
 - Detaily kľúčov: [ACCESS-KEYS.md](ACCESS-KEYS.md).
