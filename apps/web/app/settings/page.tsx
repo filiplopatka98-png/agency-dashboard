@@ -12,7 +12,9 @@ import { WORKER_URL } from '../lib/worker';
 type JobRun = { status: string; ok: number | null; failed: number | null; error: string | null; finished_at: string };
 
 const JOBS: { key: string; label: string; desc: string; sched: JobSchedule }[] = [
-  { key: 'scheduler', label: 'Scheduler — uptime + alerty', desc: 'každých 5 minút' },
+  { key: 'scheduler', label: 'Scheduler — uptime (dávka A) + alerty', desc: 'každých 5 minút' },
+  { key: 'scheduler-uptime-b', label: 'Scheduler — uptime (dávka B) + alerty', desc: 'každých 5 minút' },
+  { key: 'scheduler-uptime-c', label: 'Scheduler — uptime (dávka C) + alerty', desc: 'každých 5 minút' },
   { key: 'scheduler-upkeep', label: 'Scheduler — údržba (domény, WP, e-maily)', desc: 'každých 5 minút' },
   { key: 'psi', label: 'PageSpeed / výkon', desc: 'denne 02:00 UTC' },
   { key: 'tls', label: 'TLS certifikáty', desc: 'pondelok 03:00 UTC' },

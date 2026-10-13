@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expectedIntervalMs, isOverdue, JOB_SCHEDULES, overdueFactor, type JobSchedule } from './jobSchedule';
+import { expectedIntervalMs, isOverdue, JOB_SCHEDULES, overdueFactor, WORKER_JOBS, type JobSchedule } from './jobSchedule';
 
 describe('expectedIntervalMs', () => {
   it('every5 = 5 minút', () => {
@@ -54,8 +54,14 @@ describe('isOverdue', () => {
 });
 
 describe('JOB_SCHEDULES', () => {
-  it('obsahuje presne 15 jobov (12 collectorov + 2 scheduler crony + watchdog)', () => {
-    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(15);
+  it('obsahuje presne 17 jobov (12 collectorov + 4 scheduler crony + watchdog)', () => {
+    expect(Object.keys(JOB_SCHEDULES)).toHaveLength(17);
+  });
+
+  it('uptime dávky B/C (crony Workera) sú every5 a všetky WORKER_JOBS majú rozvrh', () => {
+    expect(JOB_SCHEDULES['scheduler-uptime-b']!.kind).toBe('every5');
+    expect(JOB_SCHEDULES['scheduler-uptime-c']!.kind).toBe('every5');
+    for (const job of WORKER_JOBS) expect(JOB_SCHEDULES[job]?.kind).toBe('every5');
   });
 
   it('scheduler-upkeep (druhý cron Workera) je every5', () => {

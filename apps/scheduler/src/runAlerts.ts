@@ -45,13 +45,14 @@ export interface RunAlertsResult {
 }
 
 /**
- * Strop pokusov o odoslanie na jeden tick. Každý pokus = až 2 subrequesty
- * (Resend + zápis sent_at) z limitu 50 na spustenie Workera (Free) a po alertoch
- * ešte ide heartbeat. Dávka (región × všetky weby, zotavenie po výpadku) by inak
- * vyčerpala limit a zrušila heartbeat → falošné „scheduler mešká". Čo sa
- * nezmestí, ostane sent_at IS NULL a odíde o 5 min.
+ * Strop pokusov o odoslanie na jedno spustenie. Každý pokus = až 2 subrequesty
+ * (Resend + zápis sent_at) a ~1–1,5 ms CPU; po alertoch ešte ide heartbeat.
+ * Dávka (zotavenie po výpadku) by inak vyčerpala limit spustenia a zrušila
+ * heartbeat → falošné „scheduler mešká". Alerty odosielajú všetky tri uptime
+ * crony (index.ts), takže 4 × 3 = 12 za 5 min (predtým 10 v jednom ticku).
+ * Čo sa nezmestí, ostane sent_at IS NULL a odíde v ďalšom spustení.
  */
-export const MAX_SENDS_PER_TICK = 10;
+export const MAX_SENDS_PER_TICK = 4;
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 

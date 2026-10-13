@@ -33,6 +33,8 @@ export const checkResultSchema = z.object({
   statusCode: z.number().int().optional(),
   responseMs: z.number().int().nonnegative().optional(),
   error: z.string().optional(),
+  /** Odpoveď prišla až po presmerovaní — každý skok je ďalší subrequest Workera. */
+  redirected: z.boolean().optional(),
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 

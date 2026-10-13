@@ -179,4 +179,18 @@ describe('LocalPinger', () => {
     expect(out).toHaveLength(2);
     expect(out.every((r) => r.ok)).toBe(true);
   });
+
+  it('presmerovaná odpoveď → redirected: true (skok = subrequest navyše, scheduler ho loguje)', async () => {
+    const res = new Response('ok', { status: 200 });
+    Object.defineProperty(res, 'redirected', { value: true });
+    const p = new LocalPinger({ fetchImpl: queuedFetch([res]), now: seqNow(0, 10), sleep: noSleep });
+    const [r] = await p.checkAll([site()]);
+    expect(r).toMatchObject({ ok: true, redirected: true });
+  });
+
+  it('bez presmerovania sa redirected vôbec neobjaví', async () => {
+    const p = new LocalPinger({ fetchImpl: queuedFetch([new Response('ok', { status: 200 })]), now: seqNow(0, 10), sleep: noSleep });
+    const [r] = await p.checkAll([site()]);
+    expect(r).not.toHaveProperty('redirected');
+  });
 });

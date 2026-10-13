@@ -65,8 +65,11 @@ wrangler secret put UPTIME_PROVIDER        # hodnota: local
 wrangler deploy
 wrangler tail                              # over: CPU < 8 ms/invokáciu, žiadne chyby
 ```
-Crony `*/5 * * * *` (monitor) a `2-59/5 * * * *` (údržba) sú vo `wrangler.jsonc` — po `deploy`
-sa registrujú automaticky. Workers Free dáva 10 ms CPU a 50 subrequestov na JEDNO spustenie;
+Crony `*/5` (monitor: uptime dávka A + job health + alerty), `1-59/5` (uptime dávka B + alerty),
+`2-59/5` (údržba) a `3-59/5` (uptime dávka C + alerty) sú vo `wrangler.jsonc` — po `deploy`
+sa registrujú automaticky (Free účet má 5 cron triggerov spolu, toto ich berie 4). Uptime sa
+delí na dávky (`apps/scheduler/src/uptimeBatch.ts`): do 15 webov každý web každých 5 min, do
+30 webov raz za 10 min, ≤ 5 pingov na spustenie; nad 30 log `overCapacity` → treba ďalší cron. Workers Free dáva 10 ms CPU a 50 subrequestov na JEDNO spustenie;
 CPU a výsledok (`exceededCpu`) vidno v Cloudflare → Workers → Observability → Invocations.
 Secrety Workera po zmene v dashboarde radšej prenasaď (tag deploy) — 2026-09-11 verzia
 vytvorená zmenou secretu ticky zabíjala na 10 ms.

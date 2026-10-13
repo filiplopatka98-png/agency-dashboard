@@ -58,6 +58,8 @@ export class LocalPinger implements UptimeProvider {
       });
       const responseMs = this.now() - t0;
       const status = res.status;
+      // Presmerovanie (http→https, holá doména→www) = ďalší subrequest; scheduler ho loguje.
+      const hop = res.redirected ? { redirected: true } : {};
       const httpOk = status >= 200 && status <= 399;
 
       // Telo KAŽDEJ odpovede treba prečítať alebo ZRUŠIŤ. Na Cloudflare Workers
@@ -73,16 +75,16 @@ export class LocalPinger implements UptimeProvider {
       // WAF blok (403/429) nie je výpadok, ak telo prezrádza CF/Wordfence.
       if (!httpOk && (status === 403 || status === 429)) {
         if (WAF_MARKERS.test(body)) {
-          return { siteId: site.id, ok: true, statusCode: status, responseMs, error: 'blocked' };
+          return { siteId: site.id, ok: true, statusCode: status, responseMs, error: 'blocked', ...hop };
         }
-        return { siteId: site.id, ok: false, statusCode: status, responseMs };
+        return { siteId: site.id, ok: false, statusCode: status, responseMs, ...hop };
       }
 
       if (httpOk && site.expectedString && !body.includes(site.expectedString)) {
-        return { siteId: site.id, ok: false, statusCode: status, responseMs, error: 'expected_string_missing' };
+        return { siteId: site.id, ok: false, statusCode: status, responseMs, error: 'expected_string_missing', ...hop };
       }
 
-      return { siteId: site.id, ok: httpOk, statusCode: status, responseMs };
+      return { siteId: site.id, ok: httpOk, statusCode: status, responseMs, ...hop };
     } catch (err) {
       const responseMs = this.now() - t0;
       const message = err instanceof Error ? err.message : String(err);

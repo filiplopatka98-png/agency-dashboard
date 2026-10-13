@@ -163,3 +163,32 @@ describe('runJobHealth — diagnóza „neodštartoval" vs „spadol v polovici"
     expect(store.alerts.filter((a) => String(a.dedupe_key).includes(':start'))).toHaveLength(0);
   });
 });
+
+describe('runJobHealth — dávkovaný uptime (crony scheduler-uptime-b/-c)', () => {
+  const WORKER = ['scheduler', 'scheduler-uptime-b', 'scheduler-uptime-c', 'scheduler-upkeep'];
+
+  it('všetky štyri heartbeaty čerstvé → žiadny job_overdue (dávky nespôsobia falošné „mešká")', async () => {
+    const store = baseStore();
+    for (const job of WORKER) store.job_runs.push({ job, status: 'ok', finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobOverdue(store)).toHaveLength(0);
+  });
+
+  it('mŕtvy cron dávky B → job_overdue s diagnózou zo štartovacieho záznamu', async () => {
+    const store = baseStore();
+    for (const job of WORKER) store.job_runs.push({ job, status: 'ok', finished_at: FRESH });
+    store.job_runs.find((r) => r.job === 'scheduler-uptime-b')!.finished_at = '2026-07-20T11:00:00Z';
+    store.job_runs.push({ job: 'scheduler-uptime-b:start', status: 'started', finished_at: '2026-07-20T11:56:00Z' });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    const rows = jobOverdue(store);
+    expect(rows.map((a) => a.dedupe_key)).toEqual(['job_overdue:scheduler-uptime-b:2026-07-20']);
+    expect(rows[0]!.body).toContain('ŠTARTUJE');
+  });
+
+  it('dávka C so status=error (transientný krok) NEgeneruje job_failed — meta-runner', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler-uptime-c', status: 'error', error: 'uptime: timeout', finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW });
+    expect(jobFailed(store)).toHaveLength(0);
+  });
+});

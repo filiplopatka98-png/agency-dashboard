@@ -13,12 +13,16 @@ export interface FakeStore {
   alerts: FakeAlertRow[];
   job_runs: FakeJobRunRow[];
   organizations: { id: string }[];
+  change_log?: Record<string, unknown>[];
   // On-demand PSI sken (SP2) — generické riadky, testy si tvar overia samy.
   monitored_pages?: Record<string, unknown>[];
   scan_jobs?: Record<string, unknown>[];
   perf_runs?: Record<string, unknown>[];
   wp_email_health?: Record<string, unknown>[];
   sites?: Record<string, unknown>[];
+  // Uptime (runUptime): incidenty + raw checky, sémantika persist_uptime (0005/0046).
+  incidents?: { id: string; site_id: string; org_id: string; resolved_at: string | null }[];
+  uptime_checks?: Record<string, unknown>[];
   // Záznam volaní (`from:<tabuľka>` / `rpc:<funkcia>`) — každé = 1 subrequest
   // na Workeri; testy tak strážia rozpočet 50 subrequestov na spustenie.
   calls?: string[];
@@ -212,7 +216,59 @@ function emailHealthInputs(store: FakeStore, since: string): Record<string, unkn
   return out;
 }
 
-export function fakeSupabase(store: FakeStore): Db {
+// Sémantika SQL `get_sites_to_check()` (0014 + 0046).
+function sitesToCheck(store: FakeStore): Record<string, unknown>[] {
+  return (store.sites ?? [])
+    .filter((s) => s.is_active !== false && !s.maintenance)
+    .map((s) => ({
+      id: s.id,
+      org_id: s.org_id,
+      url: s.url,
+      expected_string: s.expected_string ?? null,
+      consecutive_failures: s.consecutive_failures ?? 0,
+      has_open_incident: (store.incidents ?? []).some((i) => i.site_id === s.id && i.resolved_at == null),
+      last_probe_ok: s.last_probe_ok ?? null,
+      last_probe_at: s.last_probe_at ?? null,
+    }));
+}
+
+type CheckArg = { site_id: string; org_id: string; ok: boolean };
+
+function noteProbes(store: FakeStore, checks: CheckArg[], at: string): void {
+  for (const c of checks) {
+    const site = (store.sites ?? []).find((s) => s.id === c.site_id);
+    if (site) Object.assign(site, { last_probe_ok: c.ok, last_probe_at: at });
+  }
+}
+
+// Sémantika SQL `persist_uptime(...)` (0005 + 0046): checky, counts, posledný ping,
+// otvorenie/zatvorenie incidentov + site_down/site_up alert (dedupe).
+function persistUptime(store: FakeStore, args: Record<string, unknown>, at: string): void {
+  const checks = (args._checks ?? []) as CheckArg[];
+  (store.uptime_checks ??= []).push(...checks);
+  for (const c of (args._counts ?? []) as { site_id: string; failures: number }[]) {
+    const site = (store.sites ?? []).find((s) => s.id === c.site_id);
+    if (site) Object.assign(site, { consecutive_failures: c.failures, last_checked_at: at });
+  }
+  noteProbes(store, checks, at);
+  const incidents = (store.incidents ??= []);
+  for (const siteId of (args._open ?? []) as string[]) {
+    if (incidents.some((i) => i.site_id === siteId && i.resolved_at == null)) continue;
+    const c = checks.find((x) => x.site_id === siteId);
+    if (!c) continue;
+    const inc = { id: crypto.randomUUID(), site_id: siteId, org_id: c.org_id, resolved_at: null };
+    incidents.push(inc);
+    store.alerts.push({ id: crypto.randomUUID(), org_id: c.org_id, site_id: siteId, type: 'site_down', severity: 'critical', title: 'down', body: null, dedupe_key: `site:${siteId}:down:${inc.id}`, sent_at: null, created_at: at });
+  }
+  for (const siteId of (args._close ?? []) as string[]) {
+    for (const inc of incidents.filter((i) => i.site_id === siteId && i.resolved_at == null)) {
+      inc.resolved_at = at;
+      store.alerts.push({ id: crypto.randomUUID(), org_id: inc.org_id, site_id: siteId, type: 'site_up', severity: 'info', title: 'up', body: null, dedupe_key: `site:${siteId}:up:${inc.id}`, sent_at: null, created_at: at });
+    }
+  }
+}
+
+export function fakeSupabase(store: FakeStore, now: () => Date = () => new Date()): Db {
   const calls = (store.calls ??= []);
   return {
     from(table: keyof FakeStore) {
@@ -223,6 +279,9 @@ export function fakeSupabase(store: FakeStore): Db {
       calls.push(`rpc:${fn}`);
       if (fn === 'latest_job_runs') return { data: latestJobRuns(store.job_runs), error: null };
       if (fn === 'email_health_inputs') return { data: emailHealthInputs(store, String(args._since)), error: null };
+      if (fn === 'get_sites_to_check') return { data: sitesToCheck(store), error: null };
+      if (fn === 'persist_uptime') return (persistUptime(store, args, now().toISOString()), { data: null, error: null });
+      if (fn === 'note_probes') return (noteProbes(store, (args._checks ?? []) as CheckArg[], now().toISOString()), { data: null, error: null });
       return { data: null, error: { message: `fakeSupabase: neznáme rpc ${fn}` } };
     },
   } as unknown as Db;

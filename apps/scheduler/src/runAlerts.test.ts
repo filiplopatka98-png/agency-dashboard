@@ -72,8 +72,8 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
       alertRow({ id: `w${i}`, created_at: `2026-07-15T10:${String(i).padStart(2, '0')}:00Z`, type: 'metric_drop', severity: 'warning', ...over }),
     );
 
-  it('15 čakajúcich → odošle 10, 5 ostane neodoslaných a odíde ďalší tick', async () => {
-    const store: FakeStore = { alerts: many(15), job_runs: [], organizations: [] };
+  it('strop + 5 čakajúcich → odošle strop, 5 ostane neodoslaných a odíde ďalšie spustenie', async () => {
+    const store: FakeStore = { alerts: many(MAX_SENDS_PER_TICK + 5), job_runs: [], organizations: [] };
     const sent: Alert[] = [];
     const notifier: Notifier = { send: async (a) => void sent.push(a) };
 
@@ -81,14 +81,15 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
     expect(first).toMatchObject({ sent: MAX_SENDS_PER_TICK, postponed: 5 });
     expect(store.alerts.filter((a) => a.sent_at == null)).toHaveLength(5);
 
-    const second = await runAlerts(env, { supabase: fakeSupabase(store), notifier, now: DAY });
-    expect(second).toMatchObject({ sent: 5, postponed: 0 });
-    expect(sent).toHaveLength(15);
+    let next = await runAlerts(env, { supabase: fakeSupabase(store), notifier, now: DAY });
+    while (next.postponed > 0) next = await runAlerts(env, { supabase: fakeSupabase(store), notifier, now: DAY });
+    expect(sent).toHaveLength(MAX_SENDS_PER_TICK + 5);
+    expect(new Set(sent.map((a) => a.dedupeKey)).size).toBe(MAX_SENDS_PER_TICK + 5); // nič dvakrát
   });
 
   it('pri strope ide critical (site_down) pred staršími warning alertmi', async () => {
     const store: FakeStore = {
-      alerts: [...many(12), alertRow({ id: 'down', created_at: '2026-07-15T11:59:00Z' })],
+      alerts: [...many(MAX_SENDS_PER_TICK + 2), alertRow({ id: 'down', created_at: '2026-07-15T11:59:00Z' })],
       job_runs: [],
       organizations: [],
     };
@@ -99,7 +100,7 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
   });
 
   it('zlyhaný pokus sa do stropu ráta (tiež míňa subrequest)', async () => {
-    const store: FakeStore = { alerts: many(12), job_runs: [], organizations: [] };
+    const store: FakeStore = { alerts: many(MAX_SENDS_PER_TICK + 2), job_runs: [], organizations: [] };
     const res = await runAlerts(env, {
       supabase: fakeSupabase(store),
       notifier: { send: async () => { throw new Error('Resend 500'); } },

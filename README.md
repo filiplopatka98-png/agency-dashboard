@@ -9,9 +9,10 @@ Uptime monitoring, incidenty, e-mailové alerty a expirácia domén/TLS certifik
 ```
 apps/web        Next.js 16, output:'export' → Cloudflare Pages. Statické UI,
                 anon key + RLS. Magic-link auth. Žiadny SSR/Server Actions/API routes.
-apps/scheduler  Cloudflare Worker, 2 crony (Free: 10 ms CPU a 50 subrequestov na
-                spustenie): */5 monitor (uptime + incidenty + job health + alerty),
-                2-59/5 údržba (doména round-robin, wp-cron, e-mail health).
+apps/scheduler  Cloudflare Worker, 4 crony (Free: 10 ms CPU a 50 subrequestov na
+                spustenie): uptime po dávkach v */5 (+ job health), 1-59/5 a 3-59/5
+                (všetky + incidenty + alerty), 2-59/5 údržba (doména round-robin,
+                wp-cron, e-mail health).
                 Používa service_role (RLS bypass).
 packages/core   Čistý TS bez runtime: LocalPinger, decideIncidents, RDAP/whois parser,
                 ResendNotifier, nočné dávkovanie. Neimportuje cloudflare:*/next/*/node:*.

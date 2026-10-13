@@ -16,6 +16,14 @@ export interface SiteIncidentState {
 export interface DecideIncidentsInput {
   results: CheckResult[];
   sites: Map<string, SiteIncidentState>;
+  /**
+   * Dávkovanie (scheduler kontroluje v jednom spustení len časť webov): čerstvé
+   * posledné výsledky (ok?) webov MIMO tejto dávky. Region outage sa tak
+   * posudzuje na celej flotile ako pred dávkovaním, nie na 4–5 weboch dávky
+   * (tam by REGION_MIN_SITES nikdy nesplnil, alebo by 3 z 5 reálnych výpadkov
+   * na spoločnom hostingu vyzerali ako výpadok u nás). Bez dávok prázdne.
+   */
+  otherObservations?: boolean[];
 }
 
 export interface DecideIncidentsOutput {
@@ -33,7 +41,10 @@ export interface DecideIncidentsOutput {
  * Čistá funkcia — žiadne I/O. Rozhoduje o incidentoch z jednej dávky checkov.
  *
  * Pravidlá (presne v tomto poradí):
- *  1. Ak > polovica webov zlyhá (a N ≥ REGION_MIN_SITES) → regionOutage.
+ *  1. Ak > polovica pozorovaných webov zlyhá (a N ≥ REGION_MIN_SITES) → regionOutage.
+ *     Pozorované = táto dávka + `otherObservations`; navyše musí zlyhať > polovica
+ *     samotnej dávky (dávka, čo je OK, výpadok regiónu nevidí — inak by staré
+ *     pozorovania ostatných po skončení výpadku blokovali zatvorenie incidentov).
  *     Nič neotváraj ani nezatváraj, counts nechaj nezmenené. Problém je u nás.
  *  2. Fail → consecutiveFailures + 1. Ak ≥ 2 a web nemá otvorený incident → otvor.
  *  3. Úspech → consecutiveFailures = 0. Ak má otvorený incident → zatvor.
@@ -41,14 +52,16 @@ export interface DecideIncidentsOutput {
  * Detekcia výpadku teda trvá 5–10 min (dva behy). To je zámer, nie chyba.
  */
 export function decideIncidents(input: DecideIncidentsInput): DecideIncidentsOutput {
-  const { results, sites } = input;
+  const { results, sites, otherObservations = [] } = input;
 
   const stateOf = (siteId: string): SiteIncidentState =>
     sites.get(siteId) ?? { consecutiveFailures: 0, hasOpenIncident: false };
 
-  const failures = results.filter((r) => !r.ok);
+  const batchFailures = results.filter((r) => !r.ok).length;
+  const observed = results.length + otherObservations.length;
+  const observedFailures = batchFailures + otherObservations.filter((ok) => !ok).length;
   const regionOutage =
-    results.length >= REGION_MIN_SITES && failures.length > results.length / 2;
+    observed >= REGION_MIN_SITES && observedFailures > observed / 2 && batchFailures > results.length / 2;
 
   if (regionOutage) {
     // Counts ponechaj nezmenené — výpadok je na našej strane.

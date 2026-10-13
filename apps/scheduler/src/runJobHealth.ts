@@ -1,4 +1,4 @@
-import { JOB_SCHEDULES, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
+import { JOB_SCHEDULES, WORKER_JOBS, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient, type Db } from './supabase';
 
@@ -80,7 +80,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date }
   // (zlyhanie zberača → e-mail) cieli len na COLLECTORY. Vlastné zdravie schedulera
   // rieši zápis statusu + (akceptovaná) medzera vlastnej smrti, nie job_failed.
   const failedJobs = jobs.filter((job) => {
-    if (job === 'scheduler' || job === 'scheduler-upkeep') return false; // oba crony Workera sú meta-runnery
+    if (WORKER_JOBS.includes(job)) return false; // crony Workera sú meta-runnery
     const run = latest.get(job);
     if (!run) return false;
     // `error` = systémové zlyhanie (celý beh hodil — chýbajúci/mŕtvy token cez
@@ -160,7 +160,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date }
  * Pre collectory (bez štartovacieho záznamu) vráti ''.
  */
 export function startDiagnosis(job: string, latest: Map<string, { finished_at: string | null }>): string {
-  if (job !== 'scheduler' && job !== 'scheduler-upkeep') return '';
+  if (!WORKER_JOBS.includes(job)) return '';
   const started = latest.get(`${job}:start`)?.finished_at ?? null;
   const finished = latest.get(job)?.finished_at ?? null;
   if (!started) return ' Štartovací záznam chýba (staršia verzia Workera alebo tick vôbec neštartuje) — skontroluj Cloudflare → Workers → Observability.';
