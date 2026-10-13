@@ -35,6 +35,7 @@ export interface FakeAlertRow {
   dedupe_key: string;
   sent_at: string | null;
   created_at: string;
+  archived_at?: string | null;
 }
 
 export interface FakeJobRunRow {
@@ -126,7 +127,12 @@ class FakeQuery {
   }
 
   private matches(row: Record<string, unknown>): boolean {
-    return this.filters.every(([op, col, val]) => (op === 'gte' ? String(row[col]) >= String(val) : row[col] === val));
+    return this.filters.every(([op, col, val]) => {
+      if (op === 'gte') return String(row[col]) >= String(val);
+      // SQL `IS NULL`: chýbajúci stĺpec v riadku fake store = NULL.
+      if (op === 'is' && val === null) return row[col] == null;
+      return row[col] === val;
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

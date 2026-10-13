@@ -108,3 +108,32 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
     expect(res).toMatchObject({ sent: 0, failed: MAX_SENDS_PER_TICK, postponed: 2 });
   });
 });
+
+describe('runAlerts — archivovaný alert sa nikdy neodošle', () => {
+  it('neodoslaný alert s archived_at sa nepošle ani neoznačí; ostatné odídu', async () => {
+    const store: FakeStore = {
+      alerts: [
+        alertRow({ id: 'arch', created_at: '2026-07-15T10:00:00Z', archived_at: '2026-07-15T10:05:00Z' }),
+        alertRow({ id: 'live', created_at: '2026-07-15T10:01:00Z' }),
+      ],
+      job_runs: [],
+      organizations: [],
+    };
+    const sent: Alert[] = [];
+    const res = await runAlerts(env, { supabase: fakeSupabase(store), notifier: { send: async (a) => void sent.push(a) }, now: DAY });
+
+    expect(sent.map((a) => a.dedupeKey)).toEqual(['k:live']);
+    expect(res).toMatchObject({ sent: 1, postponed: 0, failed: 0 });
+    expect(store.alerts.find((a) => a.id === 'arch')!.sent_at).toBeNull();
+  });
+
+  it('archivované sa nerátajú ani do stropu — neodložia živý critical', async () => {
+    const archived = Array.from({ length: MAX_SENDS_PER_TICK + 2 }, (_, i) =>
+      alertRow({ id: `x${i}`, created_at: `2026-07-15T09:${String(i).padStart(2, '0')}:00Z`, archived_at: '2026-07-15T09:59:00Z' }),
+    );
+    const store: FakeStore = { alerts: [...archived, alertRow({ id: 'down', created_at: '2026-07-15T11:00:00Z' })], job_runs: [], organizations: [] };
+    const sent: Alert[] = [];
+    await runAlerts(env, { supabase: fakeSupabase(store), notifier: { send: async (a) => void sent.push(a) }, now: DAY });
+    expect(sent.map((a) => a.dedupeKey)).toEqual(['k:down']);
+  });
+});
