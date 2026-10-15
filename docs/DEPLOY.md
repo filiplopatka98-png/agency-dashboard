@@ -65,8 +65,11 @@ wrangler secret put UPTIME_PROVIDER        # hodnota: local
 wrangler deploy
 wrangler tail                              # over: CPU < 8 ms/invokáciu, žiadne chyby
 ```
-Crony `*/5 * * * *` (monitor) a `2-59/5 * * * *` (údržba) sú vo `wrangler.jsonc` — po `deploy`
-sa registrujú automaticky. Workers Free dáva 10 ms CPU a 50 subrequestov na JEDNO spustenie;
+Crony `*/5` (monitor: uptime dávka A + job health + alerty), `1-59/5` (uptime dávka B + alerty),
+`2-59/5` (údržba) a `3-59/5` (uptime dávka C + alerty) sú vo `wrangler.jsonc` — po `deploy`
+sa registrujú automaticky (Free účet má 5 cron triggerov spolu, toto ich berie 4). Uptime sa
+delí na dávky (`apps/scheduler/src/uptimeBatch.ts`): do 15 webov každý web každých 5 min, do
+30 webov raz za 10 min, ≤ 5 pingov na spustenie; nad 30 log `overCapacity` → treba ďalší cron. Workers Free dáva 10 ms CPU a 50 subrequestov na JEDNO spustenie;
 CPU a výsledok (`exceededCpu`) vidno v Cloudflare → Workers → Observability → Invocations.
 Secrety Workera po zmene v dashboarde radšej prenasaď (tag deploy) — 2026-09-11 verzia
 vytvorená zmenou secretu ticky zabíjala na 10 ms.
@@ -120,8 +123,14 @@ browsera len `NEXT_PUBLIC_*` premenné). Over po builde:
 | `PSI_API_KEY`, `SB_API_KEY` | ✅ | ❌ | ❌ |
 | `GSC_SA_JSON` | ✅ | ❌ | ❌ |
 | `RESEND_API_KEY`, `ALERT_EMAIL_*`, `UPTIME_PROVIDER` | ❌ | ✅ | ❌ |
+| `REPORT_EMAIL_TO` (jediný príjemca mesačných reportov — Filip; bez neho `report` nič nepošle a zlyhá) | ✅ | ❌ | ❌ |
 
 ## Čo ešte nie je hotové (nezávisí od deployu)
-- **WordPress agent** (Infra tab) — mu-plugin + HMAC na 3 WP weby (krivosik, profihouse, kukodetskysvet).
+- **WordPress agent** (Infra tab) — mu-plugin na WP weboch posiela stav na `POST /wp-ingest`
+  schedulera. Autentifikácia je **jeden zdieľaný token** pre všetky weby: hlavička
+  `X-Monitorix-Token` sa porovná s Worker secretom `WP_INGEST_TOKEN` (`apps/scheduler/src/wpIngest.ts`)
+  a web sa páruje len podľa domény v tele. **Nie je to HMAC ani per-web secret** — kto má token,
+  vie poslať údaje za ktorýkoľvek aktívny web. Prechod na per-web secret je **vedome odložený**
+  (rozhodnutie 1. 10. 2026; audit `AUDIT-2026-07-17.md`).
 - **Vuln/CVE** — WPScan token.
 - Detaily kľúčov: [ACCESS-KEYS.md](ACCESS-KEYS.md).

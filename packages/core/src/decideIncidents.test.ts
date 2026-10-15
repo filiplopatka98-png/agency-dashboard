@@ -126,3 +126,68 @@ describe('decideIncidents', () => {
     });
   });
 });
+
+describe('decideIncidents — dávky (otherObservations = čerstvé výsledky webov mimo dávky)', () => {
+  const ids = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+
+  it('dávka 4 webov, všetky down, zvyšok flotily (7) OK → NIE region; prvý fail len zvýši count', () => {
+    const batch = ids('a', 4);
+    const out = decideIncidents({
+      results: batch.map(fail),
+      sites: new Map(batch.map((id) => [id, state(0, false)])),
+      otherObservations: Array(7).fill(true),
+    });
+    expect(out.regionOutage).toBe(false);
+    expect(out.openIncident).toEqual([]);
+    expect([...out.newFailureCounts.values()]).toEqual([1, 1, 1, 1]);
+  });
+
+  it('dávka down + väčšina flotily naposledy down → region (ako keby sa pingala celá flotila naraz)', () => {
+    const batch = ids('a', 4);
+    const out = decideIncidents({
+      results: batch.map(fail),
+      sites: new Map(batch.map((id) => [id, state(1, false)])),
+      otherObservations: [false, false, false, false, true, true, true],
+    });
+    expect(out.regionOutage).toBe(true);
+    expect(out.openIncident).toEqual([]); // count 1 by inak otvoril incident
+    expect([...out.newFailureCounts.values()]).toEqual([1, 1, 1, 1]);
+  });
+
+  it('po výpadku regiónu: dávka už OK, flotila ešte naposledy down → NIE region, incidenty sa zatvoria', () => {
+    const batch = ids('a', 4);
+    const out = decideIncidents({
+      results: batch.map(ok),
+      sites: new Map(batch.map((id) => [id, state(0, true)])),
+      otherObservations: Array(7).fill(false),
+    });
+    expect(out.regionOutage).toBe(false);
+    expect(out.closeIncident).toEqual(batch);
+  });
+
+  it('malá dávka bez čerstvých pozorovaní ostatných: prah REGION_MIN_SITES platí na celé pozorovanie', () => {
+    const batch = ids('a', 4);
+    const out = decideIncidents({
+      results: batch.map(fail),
+      sites: new Map(batch.map((id) => [id, state(1, false)])),
+      otherObservations: [],
+    });
+    expect(out.regionOutage).toBe(false); // 4 < REGION_MIN_SITES → reálne výpadky sa nepotláčajú
+    expect(out.openIncident).toEqual(batch);
+  });
+
+  it('web mimo dávky sa v rozhodnutí neobjaví — žiadne otvorenie/zatvorenie ani count', () => {
+    const out = decideIncidents({
+      results: [ok('a0')],
+      sites: new Map([
+        ['a0', state(0, false)],
+        ['other-open', state(5, true)],
+        ['other-failing', state(1, false)],
+      ]),
+      otherObservations: [false, false],
+    });
+    expect(out.closeIncident).toEqual([]);
+    expect(out.openIncident).toEqual([]);
+    expect([...out.newFailureCounts.keys()]).toEqual(['a0']);
+  });
+});

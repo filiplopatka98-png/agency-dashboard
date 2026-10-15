@@ -22,11 +22,15 @@ export type JobSchedule =
 
 // Kľúč zodpovedá `job_runs.job` (aj UI kľúču v JOBS v settings/page.tsx).
 export const JOB_SCHEDULES: Record<string, JobSchedule> = {
-  // Worker má dva crony (Free limit 10 ms CPU / 50 subrequestov na spustenie):
-  // `scheduler` = monitor (uptime, job health, alerty), `scheduler-upkeep` =
-  // údržba (domény, wp-cron, e-mail health). Smrť upkeepu nahlási job health
-  // v monitore, smrť monitora scheduler-watchdog.
+  // Worker má štyri crony (Free limit 10 ms CPU / 50 subrequestov na spustenie):
+  // `scheduler` = monitor (uptime dávka lane 0, job health, alerty),
+  // `scheduler-uptime-b` / `-c` = uptime dávky lane 1/2 + alerty, `scheduler-upkeep`
+  // = údržba (domény, wp-cron, e-mail health). Každý píše heartbeat každých 5 min
+  // (aj s prázdnou dávkou). Smrť ostatných nahlási job health v monitore, smrť
+  // monitora scheduler-watchdog.
   scheduler: { kind: 'every5' },
+  'scheduler-uptime-b': { kind: 'every5' },
+  'scheduler-uptime-c': { kind: 'every5' },
   'scheduler-upkeep': { kind: 'every5' },
   psi: { kind: 'daily', hh: 2, mm: 0 },
   tls: { kind: 'weekly', dow: 1, hh: 3, mm: 0 },
@@ -51,6 +55,11 @@ export const JOB_SCHEDULES: Record<string, JobSchedule> = {
   // (GitHub vypína scheduled workflows po 60 dňoch bez pushu).
   'scheduler-watchdog': { kind: 'every15' },
 };
+
+// Heartbeaty cronov scheduler Workera (meta-runnery, nie collectory): job_failed
+// ich nealertuje a pri job_overdue sa k nim pridá diagnóza zo štartovacieho
+// záznamu `<job>:start` (runJobHealth.ts).
+export const WORKER_JOBS: readonly string[] = ['scheduler', 'scheduler-uptime-b', 'scheduler-uptime-c', 'scheduler-upkeep'];
 
 // Očakávaný interval medzi behmi v ms — vychádza len z `kind` (presný
 // hh/mm/dow slúži UI na dopočítanie ĎALŠIEHO konkrétneho behu, nie na toto).

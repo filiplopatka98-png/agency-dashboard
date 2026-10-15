@@ -1,4 +1,4 @@
-import { JOB_SCHEDULES, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
+import { JOB_SCHEDULES, WORKER_JOBS, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient, type Db } from './supabase';
 
@@ -26,7 +26,15 @@ import { serviceClient, type Db } from './supabase';
  * schedulera v job_runs a e-mail pošle priamo cez Resend. Jeho job_overdue
  * alert má rovnaký dedupe_key ako tunajší, takže po zotavení nepríde druhý.
  */
-export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date } = {}): Promise<void> {
+export async function runJobHealth(
+  env: Env,
+  deps: {
+    supabase?: Db;
+    now?: Date;
+    /** Tick Workera, v ktorom kontrola beží (jeho vlastný štart sa do diagnózy nepočíta). */
+    tick?: { job: string; startedAt: Date };
+  } = {},
+): Promise<void> {
   const supabase = deps.supabase ?? serviceClient(env);
   const now = deps.now ?? new Date();
 
@@ -80,7 +88,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date }
   // (zlyhanie zberača → e-mail) cieli len na COLLECTORY. Vlastné zdravie schedulera
   // rieši zápis statusu + (akceptovaná) medzera vlastnej smrti, nie job_failed.
   const failedJobs = jobs.filter((job) => {
-    if (job === 'scheduler' || job === 'scheduler-upkeep') return false; // oba crony Workera sú meta-runnery
+    if (WORKER_JOBS.includes(job)) return false; // crony Workera sú meta-runnery
     const run = latest.get(job);
     if (!run) return false;
     // `error` = systémové zlyhanie (celý beh hodil — chýbajúci/mŕtvy token cez
@@ -107,6 +115,27 @@ export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date }
   if (orgErr) throw new Error(`organizations select: ${orgErr.message}`);
   if (!orgs?.length) return;
 
+  // Kontrola beží VNÚTRI ticku jobu `tick.job` (monitor → `scheduler`) po jeho
+  // markStart, takže najnovší `<job>:start` je štart TOHTO ticku a diagnóza by
+  // vždy tvrdila „ŠTARTUJE, ale nedobehne" (incident 14. 10. 2026 — v skutočnosti
+  // Cloudflare ~15 min nevolal Worker). Pre vlastný job preto hľadáme štart
+  // predošlého ticku: po poslednom heartbeate a pred štartom tohto ticku.
+  // 1 subrequest, len keď je vlastný job overdue.
+  let selfStart: string | null | undefined;
+  const tick = deps.tick;
+  if (tick && overdueJobs.includes(tick.job)) {
+    const { data: starts, error: sErr } = await supabase
+      .from('job_runs')
+      .select('finished_at')
+      .eq('job', `${tick.job}:start`)
+      .gt('finished_at', latest.get(tick.job)?.finished_at ?? '')
+      .lt('finished_at', tick.startedAt.toISOString())
+      .order('finished_at', { ascending: false })
+      .limit(1);
+    // Pri chybe dotazu radšej žiadna diagnóza, než zavádzajúca.
+    selfStart = sErr ? undefined : ((starts?.[0] as { finished_at?: string } | undefined)?.finished_at ?? null);
+  }
+
   const overdueRows = orgs.flatMap((org: { id: string }) =>
     overdueJobs.map((job) => ({
       org_id: org.id,
@@ -114,7 +143,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date }
       type: 'job_overdue',
       severity: 'warning' as const,
       title: `Job „${job}" mešká`,
-      body: `Posledný zaznamenaný beh jobu „${job}" je starší než 2× jeho očakávaný interval — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.${startDiagnosis(job, latest)}`,
+      body: `Posledný zaznamenaný beh jobu „${job}" je starší než 2× jeho očakávaný interval — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.${job === tick?.job ? selfDiagnosis(job, latest, selfStart, tick.startedAt) : startDiagnosis(job, latest)}`,
       // max 1× per job per deň; zdieľaný kľúč so scheduler-watchdog (core)
       dedupe_key: jobOverdueDedupeKey(job, now),
     })),
@@ -160,7 +189,7 @@ export async function runJobHealth(env: Env, deps: { supabase?: Db; now?: Date }
  * Pre collectory (bez štartovacieho záznamu) vráti ''.
  */
 export function startDiagnosis(job: string, latest: Map<string, { finished_at: string | null }>): string {
-  if (job !== 'scheduler' && job !== 'scheduler-upkeep') return '';
+  if (!WORKER_JOBS.includes(job)) return '';
   const started = latest.get(`${job}:start`)?.finished_at ?? null;
   const finished = latest.get(job)?.finished_at ?? null;
   if (!started) return ' Štartovací záznam chýba (staršia verzia Workera alebo tick vôbec neštartuje) — skontroluj Cloudflare → Workers → Observability.';
@@ -168,4 +197,24 @@ export function startDiagnosis(job: string, latest: Map<string, { finished_at: s
     return ` Diagnóza: tick od ${finished} ani NEODŠTARTOVAL — Cloudflare cron nevolá Worker (výpadok Cron Triggers alebo zmazaný trigger).`;
   }
   return ` Diagnóza: tick ŠTARTUJE (posledný štart ${started}), ale NEDOBEHNE do zápisu heartbeatu — zabitý v polovici (CPU/subrequest limit, Cloudflare Observability → Invocations → outcome) alebo zrušený zápis job_runs.`;
+}
+
+/**
+ * Diagnóza pre job, v ktorého ticku kontrola práve beží: Worker teraz zjavne
+ * beží, otázka je, čo sa dialo MEDZI posledným heartbeatom a týmto tickom.
+ * `prevStart` = najnovší štart v tom okne (null = žiadny, undefined = dotaz zlyhal).
+ */
+export function selfDiagnosis(
+  job: string,
+  latest: Map<string, { finished_at: string | null }>,
+  prevStart: string | null | undefined,
+  tickStartedAt: Date,
+): string {
+  if (prevStart === undefined) return ' Diagnózu sa nepodarilo zistiť (dotaz na štartovacie záznamy zlyhal).';
+  const finished = latest.get(job)?.finished_at ?? null;
+  const resumed = ` Tento tick (štart ${tickStartedAt.toISOString()}) už beží.`;
+  if (prevStart) {
+    return ` Diagnóza: tick ŠTARTUJE (posledný štart pred týmto tickom ${prevStart}), ale NEDOBEHNE do zápisu heartbeatu — zabitý v polovici (CPU/subrequest limit, Cloudflare Observability → Invocations → outcome) alebo zrušený zápis job_runs.${resumed}`;
+  }
+  return ` Diagnóza: tick od ${finished} ani NEODŠTARTOVAL — Cloudflare cron nevolal Worker (výpadok Cron Triggers alebo zmazaný trigger).${resumed}`;
 }

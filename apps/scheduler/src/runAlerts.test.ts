@@ -72,8 +72,8 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
       alertRow({ id: `w${i}`, created_at: `2026-07-15T10:${String(i).padStart(2, '0')}:00Z`, type: 'metric_drop', severity: 'warning', ...over }),
     );
 
-  it('15 čakajúcich → odošle 10, 5 ostane neodoslaných a odíde ďalší tick', async () => {
-    const store: FakeStore = { alerts: many(15), job_runs: [], organizations: [] };
+  it('strop + 5 čakajúcich → odošle strop, 5 ostane neodoslaných a odíde ďalšie spustenie', async () => {
+    const store: FakeStore = { alerts: many(MAX_SENDS_PER_TICK + 5), job_runs: [], organizations: [] };
     const sent: Alert[] = [];
     const notifier: Notifier = { send: async (a) => void sent.push(a) };
 
@@ -81,14 +81,15 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
     expect(first).toMatchObject({ sent: MAX_SENDS_PER_TICK, postponed: 5 });
     expect(store.alerts.filter((a) => a.sent_at == null)).toHaveLength(5);
 
-    const second = await runAlerts(env, { supabase: fakeSupabase(store), notifier, now: DAY });
-    expect(second).toMatchObject({ sent: 5, postponed: 0 });
-    expect(sent).toHaveLength(15);
+    let next = await runAlerts(env, { supabase: fakeSupabase(store), notifier, now: DAY });
+    while (next.postponed > 0) next = await runAlerts(env, { supabase: fakeSupabase(store), notifier, now: DAY });
+    expect(sent).toHaveLength(MAX_SENDS_PER_TICK + 5);
+    expect(new Set(sent.map((a) => a.dedupeKey)).size).toBe(MAX_SENDS_PER_TICK + 5); // nič dvakrát
   });
 
   it('pri strope ide critical (site_down) pred staršími warning alertmi', async () => {
     const store: FakeStore = {
-      alerts: [...many(12), alertRow({ id: 'down', created_at: '2026-07-15T11:59:00Z' })],
+      alerts: [...many(MAX_SENDS_PER_TICK + 2), alertRow({ id: 'down', created_at: '2026-07-15T11:59:00Z' })],
       job_runs: [],
       organizations: [],
     };
@@ -99,12 +100,41 @@ describe('runAlerts — strop MAX_SENDS_PER_TICK (dávka alertov nesmie zrušiť
   });
 
   it('zlyhaný pokus sa do stropu ráta (tiež míňa subrequest)', async () => {
-    const store: FakeStore = { alerts: many(12), job_runs: [], organizations: [] };
+    const store: FakeStore = { alerts: many(MAX_SENDS_PER_TICK + 2), job_runs: [], organizations: [] };
     const res = await runAlerts(env, {
       supabase: fakeSupabase(store),
       notifier: { send: async () => { throw new Error('Resend 500'); } },
       now: DAY,
     });
     expect(res).toMatchObject({ sent: 0, failed: MAX_SENDS_PER_TICK, postponed: 2 });
+  });
+});
+
+describe('runAlerts — archivovaný alert sa nikdy neodošle', () => {
+  it('neodoslaný alert s archived_at sa nepošle ani neoznačí; ostatné odídu', async () => {
+    const store: FakeStore = {
+      alerts: [
+        alertRow({ id: 'arch', created_at: '2026-07-15T10:00:00Z', archived_at: '2026-07-15T10:05:00Z' }),
+        alertRow({ id: 'live', created_at: '2026-07-15T10:01:00Z' }),
+      ],
+      job_runs: [],
+      organizations: [],
+    };
+    const sent: Alert[] = [];
+    const res = await runAlerts(env, { supabase: fakeSupabase(store), notifier: { send: async (a) => void sent.push(a) }, now: DAY });
+
+    expect(sent.map((a) => a.dedupeKey)).toEqual(['k:live']);
+    expect(res).toMatchObject({ sent: 1, postponed: 0, failed: 0 });
+    expect(store.alerts.find((a) => a.id === 'arch')!.sent_at).toBeNull();
+  });
+
+  it('archivované sa nerátajú ani do stropu — neodložia živý critical', async () => {
+    const archived = Array.from({ length: MAX_SENDS_PER_TICK + 2 }, (_, i) =>
+      alertRow({ id: `x${i}`, created_at: `2026-07-15T09:${String(i).padStart(2, '0')}:00Z`, archived_at: '2026-07-15T09:59:00Z' }),
+    );
+    const store: FakeStore = { alerts: [...archived, alertRow({ id: 'down', created_at: '2026-07-15T11:00:00Z' })], job_runs: [], organizations: [] };
+    const sent: Alert[] = [];
+    await runAlerts(env, { supabase: fakeSupabase(store), notifier: { send: async (a) => void sent.push(a) }, now: DAY });
+    expect(sent.map((a) => a.dedupeKey)).toEqual(['k:down']);
   });
 });

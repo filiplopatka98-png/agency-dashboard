@@ -31,7 +31,7 @@ const toAlert = (r: AlertRow): Alert => ({
 });
 
 /**
- * Pošle nevyslané alerty (alerts.sent_at IS NULL). Dedupe je už vyriešený pri
+ * Pošle nevyslané a nearchivované alerty (sent_at IS NULL AND archived_at IS NULL). Dedupe je už vyriešený pri
  * inserte (unique index) — sem sa dostane každý dedupe_key nanajvýš raz.
  * V noci (Europe/Bratislava 22:00–06:00) sa site_up a region_outage odkladajú;
  * critical (site_down) sa posiela vždy.
@@ -45,13 +45,14 @@ export interface RunAlertsResult {
 }
 
 /**
- * Strop pokusov o odoslanie na jeden tick. Každý pokus = až 2 subrequesty
- * (Resend + zápis sent_at) z limitu 50 na spustenie Workera (Free) a po alertoch
- * ešte ide heartbeat. Dávka (región × všetky weby, zotavenie po výpadku) by inak
- * vyčerpala limit a zrušila heartbeat → falošné „scheduler mešká". Čo sa
- * nezmestí, ostane sent_at IS NULL a odíde o 5 min.
+ * Strop pokusov o odoslanie na jedno spustenie. Každý pokus = až 2 subrequesty
+ * (Resend + zápis sent_at) a ~1–1,5 ms CPU; po alertoch ešte ide heartbeat.
+ * Dávka (zotavenie po výpadku) by inak vyčerpala limit spustenia a zrušila
+ * heartbeat → falošné „scheduler mešká". Alerty odosielajú všetky tri uptime
+ * crony (index.ts), takže 4 × 3 = 12 za 5 min (predtým 10 v jednom ticku).
+ * Čo sa nezmestí, ostane sent_at IS NULL a odíde v ďalšom spustení.
  */
-export const MAX_SENDS_PER_TICK = 10;
+export const MAX_SENDS_PER_TICK = 4;
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, warning: 1, info: 2 };
 
@@ -61,7 +62,7 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<Run
   // Resend ešte nenakonfigurovaný (placeholder / nie 're_…') → neposielaj, ale nezhoď
   // tick. Alerty ostanú nevyslané (sent_at NULL) a odídu, keď sa doplní reálny kľúč.
   if (!deps.notifier && (!env.RESEND_API_KEY || !env.RESEND_API_KEY.startsWith('re_'))) {
-    const { count } = await supabase.from('alerts').select('id', { count: 'exact', head: true }).is('sent_at', null);
+    const { count } = await supabase.from('alerts').select('id', { count: 'exact', head: true }).is('sent_at', null).is('archived_at', null);
     console.log(JSON.stringify({ ev: 'alerts.skipped_no_resend', pending: count ?? 0 }));
     return { sent: 0, deferred: 0, failed: 0, postponed: 0 };
   }
@@ -79,6 +80,9 @@ export async function runAlerts(env: Env, deps: RunAlertsDeps = {}): Promise<Run
     .from('alerts')
     .select('id, org_id, site_id, type, severity, title, body, dedupe_key')
     .is('sent_at', null)
+    // Archivovaný (v UI „vymazaný", migrácia 0045) sa NIKDY neodosiela — ani keď
+    // ešte nestihol odísť (napr. odložený v noci alebo nad stropom ticku).
+    .is('archived_at', null)
     .order('created_at', { ascending: true });
   if (error) throw new Error(`alerts select: ${error.message}`);
 

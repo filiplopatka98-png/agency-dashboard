@@ -1,22 +1,25 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { MONITOR_CRON, UPKEEP_CRON, runTick, runUpkeep, tickKind } from './index';
+import { MONITOR_CRON, UPKEEP_CRON, UPTIME_B_CRON, UPTIME_C_CRON, runTick, runUpkeep, runUptimeLane, tickKind } from './index';
 import type { Env } from './env';
 
 const env = {} as Env;
 
-describe('tickKind — dva crony, každý pod 10 ms CPU / 50 subrequestov (Workers Free)', () => {
-  it('upkeep cron → upkeep, monitor cron → monitor', () => {
+describe('tickKind — štyri crony, každý pod 10 ms CPU / 50 subrequestov (Workers Free)', () => {
+  it('každý cron má vlastný druh spustenia', () => {
     expect(tickKind(UPKEEP_CRON)).toBe('upkeep');
     expect(tickKind(MONITOR_CRON)).toBe('monitor');
+    expect(tickKind(UPTIME_B_CRON)).toBe('uptime-b');
+    expect(tickKind(UPTIME_C_CRON)).toBe('uptime-c');
   });
   it('neznámy cron (napr. ručný test trigger) → monitor — kritický tick radšej navyše než vôbec', () => {
     expect(tickKind('0 0 * * *')).toBe('monitor');
   });
   it('wrangler.jsonc registruje presne crony, s ktorými počíta kód', () => {
     const cfg = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
-    expect(cfg).toContain(`"${MONITOR_CRON}"`);
-    expect(cfg).toContain(`"${UPKEEP_CRON}"`);
+    const crons = JSON.parse(cfg.match(/"crons":\s*(\[[^\]]*\])/)![1]!) as string[];
+    expect(crons.sort()).toEqual([MONITOR_CRON, UPKEEP_CRON, UPTIME_B_CRON, UPTIME_C_CRON].sort());
+    expect(crons.length).toBeLessThanOrEqual(5); // Workers Free: 5 cron triggerov na účet
   });
 });
 
@@ -116,5 +119,35 @@ describe('štartovací záznam (poistka proti tichému zlyhaniu, alert 2026-09-0
     await runTick(env, { runUptime: async () => {}, runJobHealth: async () => {}, runAlerts, recordRun });
     expect(runAlerts).toHaveBeenCalledTimes(1);
     expect(recordRun).toHaveBeenCalledWith(env, 'scheduler', 'ok', null);
+  });
+});
+
+describe('runUptimeLane (uptime dávky B/C + alerty)', () => {
+  it('heartbeat pod vlastným jobom; zlyhanie uptime nezabráni alertom', async () => {
+    const markStart = vi.fn(async () => {});
+    const runAlerts = vi.fn(async () => ({ sent: 0, deferred: 0, failed: 0, postponed: 0 }));
+    const recordRun = vi.fn(async () => {});
+    await runUptimeLane(env, 1, {
+      markStart,
+      runUptime: async () => {
+        throw new Error('uptime boom');
+      },
+      runAlerts,
+      recordRun,
+    });
+    expect(markStart).toHaveBeenCalledWith(env, 'scheduler-uptime-b');
+    expect(runAlerts).toHaveBeenCalledTimes(1);
+    expect(recordRun).toHaveBeenCalledWith(env, 'scheduler-uptime-b', 'error', expect.stringContaining('uptime boom'));
+  });
+
+  it('prázdna dávka (málo webov) → heartbeat ok aj tak, žiadne falošné „mešká"', async () => {
+    const recordRun = vi.fn(async () => {});
+    await runUptimeLane(env, 2, {
+      markStart: async () => {},
+      runUptime: async () => ({ checked: 0 }),
+      runAlerts: async () => ({ sent: 0, deferred: 0, failed: 0, postponed: 0 }),
+      recordRun,
+    });
+    expect(recordRun).toHaveBeenCalledWith(env, 'scheduler-uptime-c', 'ok', null);
   });
 });
