@@ -146,11 +146,12 @@ async function runSteps(steps: [string, () => Promise<unknown>][]): Promise<stri
 export async function runTick(env: Env, steps: MonitorSteps = {}, scheduledTime = Date.now()): Promise<void> {
   const db = lazyClient(env);
   const record = steps.recordRun ?? ((e, job, status, error) => recordRun(e, job, status, error, db()));
+  const startedAt = new Date(); // pred markStart → vlastný štart je v job_runs ≥ startedAt
   await (steps.markStart ?? ((_e, job) => markStart(job, db)))(env, 'scheduler');
   const errors = await runSteps([
     // + incidenty a site_down/up alerty — len dávka lane 0
     ['uptime', () => (steps.runUptime ?? ((e) => runUptime(e, { supabase: db(), batch: { lane: 0, scheduledTime } })))(env)],
-    ['job_health', () => (steps.runJobHealth ?? ((e) => runJobHealth(e, { supabase: db() })))(env)], // dead-man's switch (aj pre upkeep)
+    ['job_health', () => (steps.runJobHealth ?? ((e) => runJobHealth(e, { supabase: db(), tick: { job: 'scheduler', startedAt } })))(env)], // dead-man's switch (aj pre upkeep)
     ['alerts', () => (steps.runAlerts ?? ((e) => runAlerts(e, { supabase: db() })))(env)], // VŽDY, aj po zlyhaní vyššie
   ]);
   await record(env, 'scheduler', errors.length ? 'error' : 'ok', errors.length ? errors.join('; ') : null);

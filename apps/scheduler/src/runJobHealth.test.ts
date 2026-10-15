@@ -154,6 +154,44 @@ describe('runJobHealth — diagnóza „neodštartoval" vs „spadol v polovici"
     expect(overdueBody(store, 'scheduler-upkeep')).toContain('NEODŠTARTOVAL');
   });
 
+  // Incident 14. 10. 2026: runJobHealth beží VNÚTRI monitor ticku po jeho
+  // markStart, takže najnovší `scheduler:start` je vždy štart tohto ticku →
+  // diagnóza pre `scheduler` vždy tvrdila „ŠTARTUJE, ale NEDOBEHNE".
+  const TICK = '2026-07-20T11:59:58Z'; // štart aktuálneho monitor ticku (NOW − 2 s)
+
+  it('scheduler: medzi heartbeatom a týmto tickom žiadny štart → NEODŠTARTOVAL (vlastný štart sa nepočíta)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: OLD });
+    store.job_runs.push({ job: 'scheduler:start', status: 'started', finished_at: '2026-07-20T10:59:59Z' });
+    store.job_runs.push({ job: 'scheduler:start', status: 'started', finished_at: TICK });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW, tick: { job: 'scheduler', startedAt: new Date(TICK) } });
+    const body = overdueBody(store, 'scheduler');
+    expect(body).toContain('NEODŠTARTOVAL');
+    expect(body).not.toContain('ŠTARTUJE');
+  });
+
+  it('scheduler: predošlý tick štartoval po heartbeate → ŠTARTUJE, ale nedobehne (s jeho časom, nie s časom tohto ticku)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: OLD });
+    store.job_runs.push({ job: 'scheduler:start', status: 'started', finished_at: '2026-07-20T11:55:00Z' });
+    store.job_runs.push({ job: 'scheduler:start', status: 'started', finished_at: TICK });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW, tick: { job: 'scheduler', startedAt: new Date(TICK) } });
+    const body = overdueBody(store, 'scheduler');
+    expect(body).toContain('ŠTARTUJE');
+    expect(body).toContain('2026-07-20T11:55:00Z');
+    expect(body).not.toContain(TICK);
+  });
+
+  it('scheduler: dotaz na štarty ide len pri overdue (zdravý tick neminie subrequest)', async () => {
+    const store = baseStore();
+    store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: FRESH });
+    store.job_runs.push({ job: 'scheduler-upkeep', status: 'ok', finished_at: FRESH });
+    await runJobHealth(env, { supabase: fakeSupabase(store), now: NOW, tick: { job: 'scheduler', startedAt: new Date(TICK) } });
+    expect(store.calls!.filter((c) => c === 'from:job_runs')).toHaveLength(0);
+  });
+
   it('štartovací záznam nie je job v rozvrhu → sám nikdy nealertuje', async () => {
     const store = baseStore();
     store.job_runs.push({ job: 'scheduler', status: 'ok', finished_at: FRESH });

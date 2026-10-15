@@ -51,7 +51,7 @@ export interface FakeJobRunRow {
   finished_at: string | null;
 }
 
-type Filter = ['is' | 'eq' | 'gte', string, unknown];
+type Filter = ['is' | 'eq' | 'gte' | 'gt' | 'lt', string, unknown];
 
 class FakeQuery {
   private filters: Filter[] = [];
@@ -91,6 +91,14 @@ class FakeQuery {
   }
   gte(col: string, val: unknown): this {
     this.filters.push(['gte', col, val]);
+    return this;
+  }
+  gt(col: string, val: unknown): this {
+    this.filters.push(['gt', col, val]);
+    return this;
+  }
+  lt(col: string, val: unknown): this {
+    this.filters.push(['lt', col, val]);
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }): this {
@@ -133,6 +141,8 @@ class FakeQuery {
   private matches(row: Record<string, unknown>): boolean {
     return this.filters.every(([op, col, val]) => {
       if (op === 'gte') return String(row[col]) >= String(val);
+      if (op === 'gt') return String(row[col]) > String(val);
+      if (op === 'lt') return String(row[col]) < String(val);
       // SQL `IS NULL`: chýbajúci stĺpec v riadku fake store = NULL.
       if (op === 'is' && val === null) return row[col] == null;
       return row[col] === val;
