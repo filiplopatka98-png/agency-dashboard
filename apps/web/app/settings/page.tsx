@@ -241,8 +241,8 @@ export default function SettingsPage() {
                   const run = jobs?.[j.key];
                   // Dead-man's switch (audit 3.3): job, čo naposledy uspel pred
                   // dvoma mesiacmi, nesmie svietiť zeleno len preto, že jeho
-                  // POSLEDNÝ status bol 'ok' — ak od finished_at ubehlo > 2× jeho
-                  // očakávaný interval, je to alarmujúce bez ohľadu na status.
+                  // POSLEDNÝ status bol 'ok' — ak od finished_at ubehlo viac než
+                  // overdueFactor-násobok jeho intervalu, je to alarmujúce bez ohľadu na status.
                   const overdue = Boolean(run && now && isOverdue(run.finished_at, j.sched, now.getTime(), overdueFactor(j.sched)));
                   const [c, bg] = overdue
                     ? jobStatusColor.error

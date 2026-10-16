@@ -1,4 +1,4 @@
-import { JOB_SCHEDULES, WORKER_JOBS, isOverdue, jobOverdueDedupeKey, overdueFactor } from '@agency/core';
+import { JOB_SCHEDULES, WORKER_JOBS, expectedIntervalMs, isOverdue, jobOverdueDedupeKey, overdueFactor, type JobSchedule } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient, type Db } from './supabase';
 
@@ -6,7 +6,7 @@ import { serviceClient, type Db } from './supabase';
  * Dead-man's switch (audit 3.3): kontroluje, či niektorý scheduled job
  * (GitHub Actions collector, alebo tento Worker samotný) nezaspal — teda či
  * od jeho posledného ZAZNAMENANÉHO behu (`job_runs.finished_at`) neubehlo
- * viac než ~2× jeho očakávaný interval (`JOB_SCHEDULES` z `@agency/core` —
+ * viac než `overdueFactor`-násobok jeho očakávaného intervalu (`JOB_SCHEDULES` z `@agency/core` —
  * jediný zdroj pravdy, zdieľaný s apps/web/app/settings/page.tsx, ktorý ním
  * farbí odznak v Nastaveniach).
  *
@@ -143,7 +143,7 @@ export async function runJobHealth(
       type: 'job_overdue',
       severity: 'warning' as const,
       title: `Job „${job}" mešká`,
-      body: `Posledný zaznamenaný beh jobu „${job}" je starší než 2× jeho očakávaný interval — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.${job === tick?.job ? selfDiagnosis(job, latest, selfStart, tick.startedAt) : startDiagnosis(job, latest)}`,
+      body: `Posledný zaznamenaný beh jobu „${job}" je starší než jeho tolerancia (${toleranceText(JOB_SCHEDULES[job]!)}) — buď zlyhal potichu skôr, než stihol zapísať job_runs, alebo GitHub Actions cron/tento Worker prestali bežať.${job === tick?.job ? selfDiagnosis(job, latest, selfStart, tick.startedAt) : startDiagnosis(job, latest)}`,
       // max 1× per job per deň; zdieľaný kľúč so scheduler-watchdog (core)
       dedupe_key: jobOverdueDedupeKey(job, now),
     })),
@@ -217,4 +217,12 @@ export function selfDiagnosis(
     return ` Diagnóza: tick ŠTARTUJE (posledný štart pred týmto tickom ${prevStart}), ale NEDOBEHNE do zápisu heartbeatu — zabitý v polovici (CPU/subrequest limit, Cloudflare Observability → Invocations → outcome) alebo zrušený zápis job_runs.${resumed}`;
   }
   return ` Diagnóza: tick od ${finished} ani NEODŠTARTOVAL — Cloudflare cron nevolal Worker (výpadok Cron Triggers alebo zmazaný trigger).${resumed}`;
+}
+
+/** Tolerancia pre text alertu, napr. „20 min“ alebo „12 h“. */
+function toleranceText(sched: JobSchedule): string {
+  const min = (expectedIntervalMs(sched) * overdueFactor(sched)) / 60_000;
+  if (min < 120) return `${min} min`;
+  const h = min / 60;
+  return h < 72 ? `${h} h` : `${Math.round(h / 24)} dní`;
 }

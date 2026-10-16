@@ -221,6 +221,7 @@ describe('runJobHealth — dávkovaný uptime (crony scheduler-uptime-b/-c)', ()
     const rows = jobOverdue(store);
     expect(rows.map((a) => a.dedupe_key)).toEqual(['job_overdue:scheduler-uptime-b:2026-07-20']);
     expect(rows[0]!.body).toContain('ŠTARTUJE');
+    expect(rows[0]!.body).toContain('tolerancia (20 min)');
   });
 
   it('dávka C so status=error (transientný krok) NEgeneruje job_failed — meta-runner', async () => {

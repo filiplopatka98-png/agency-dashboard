@@ -119,9 +119,14 @@ export function isOverdue(
 //     6 h prah (24×) generoval falošné job_overdue alerty aj vtedy, keď celý
 //     monitoring bežal. 12 h stále odhalí skutočnú smrť poistky (GitHub vypína
 //     scheduled workflows po 60 dňoch bez pushu) — len o pol dňa neskôr.
+//   - every5 (crony Workera) → 4× = 20 min ticha (rovnako ako
+//     SCHEDULER_WATCHDOG_FACTOR). Cloudflare občas potichu vynechá niekoľko
+//     tickov (14. 10. 2026 všetky crony ~15 min, 15. 10. jeden cron ~25 min,
+//     bez incidentu na status stránke) — 2× (10 min) budilo už pri dvoch.
 // Denné/týždenné/mesačné majú aj pri 2× obrovskú rezervu (48 h / 2 týž. /
-// 62 dní) a Cloudflare `every5` je spoľahlivý, tým 2× stačí.
+// 62 dní), tým 2× stačí.
 export function overdueFactor(sched: JobSchedule): number {
+  if (sched.kind === 'every5') return 4;
   if (sched.kind === 'hourly') return 6;
   if (sched.kind === 'sixhourly') return 4;
   if (sched.kind === 'every15') return 48;

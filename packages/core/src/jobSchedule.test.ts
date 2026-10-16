@@ -100,8 +100,17 @@ describe('overdueFactor', () => {
   it('every15 (watchdog v GitHub Actions) dostáva 48× → 12 h tolerancia na GitHub cron výpadky', () => {
     expect(overdueFactor({ kind: 'every15' })).toBe(48);
   });
+  it('every5 (crony Workera) dostáva 4× → 20 min tolerancia na vynechané Cloudflare ticky', () => {
+    expect(overdueFactor({ kind: 'every5' })).toBe(4);
+  });
+  it('every5: heartbeat spred 18 min NIE je overdue (14. 10. 2026 Cloudflare vynechal ~3 ticky), spred 21 min ÁNO', () => {
+    const now = Date.parse('2026-10-15T15:30:00Z');
+    const min = 60_000;
+    const sched = { kind: 'every5' } as const;
+    expect(isOverdue(new Date(now - 18 * min).toISOString(), sched, now, overdueFactor(sched))).toBe(false);
+    expect(isOverdue(new Date(now - 21 * min).toISOString(), sched, now, overdueFactor(sched))).toBe(true);
+  });
   it('ostatné kindy = 2×', () => {
-    expect(overdueFactor({ kind: 'every5' })).toBe(2);
     expect(overdueFactor({ kind: 'daily', hh: 2, mm: 0 })).toBe(2);
     expect(overdueFactor({ kind: 'weekly', dow: 1, hh: 3, mm: 0 })).toBe(2);
     expect(overdueFactor({ kind: 'monthly', dom: 1, hh: 7, mm: 0 })).toBe(2);
