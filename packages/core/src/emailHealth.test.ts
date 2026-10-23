@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   emailHealthPayloadSchema, readingFromPayload,
-  evaluateIngest, evaluatePeriodic, type EmailHealthContext, type EmailHealthReading,
+  evaluateIngest, evaluatePeriodic, isEmailReadingFresh, EMAIL_READING_MAX_AGE_MIN,
+  type EmailHealthContext, type EmailHealthPeriodicContext, type EmailHealthReading,
 } from './emailHealth';
 
 const CTX: EmailHealthContext = { siteId: 'site-1', domain: 'example.com', now: new Date('2026-08-12T12:00:00Z') };
@@ -11,6 +12,8 @@ const base: EmailHealthReading = {
   last_failure_message: null, queue_depth: 0,
 };
 const h = (n: number) => new Date(CTX.now.getTime() - n * 3_600_000).toISOString();
+// Čerstvý reading (6 min starý) — periodické pravidlá sa vyhodnocujú.
+const PCTX: EmailHealthPeriodicContext = { ...CTX, measuredAt: h(0.1) };
 
 describe('emailHealthPayloadSchema', () => {
   it('rejects extra keys (strict) and wrong types', () => {
@@ -50,38 +53,64 @@ describe('Rule 1 — high fail rate (evaluateIngest)', () => {
 describe('Rule 2 — stuck with evidence (evaluatePeriodic)', () => {
   it('fires when last success >6h AND queue_depth>0', () => {
     const r = { ...base, last_success_at: h(7), queue_depth: 3 };
-    const a = evaluatePeriodic(r, 0, CTX).filter((x) => x.type === 'email_stuck');
+    const a = evaluatePeriodic(r, 0, PCTX).filter((x) => x.type === 'email_stuck');
     expect(a).toHaveLength(1);
     expect(a[0]!.severity).toBe('warning');
   });
   it('fires when last success >6h AND failed_1h>0', () => {
     const r = { ...base, last_success_at: h(7), failed_1h: 2 };
-    expect(evaluatePeriodic(r, 0, CTX).filter((x) => x.type === 'email_stuck')).toHaveLength(1);
+    expect(evaluatePeriodic(r, 0, PCTX).filter((x) => x.type === 'email_stuck')).toHaveLength(1);
   });
   it('does NOT fire for a quiet site at night (no evidence)', () => {
     const r = { ...base, last_success_at: h(9), queue_depth: 0, failed_1h: 0 };
-    expect(evaluatePeriodic(r, 0, CTX).filter((x) => x.type === 'email_stuck')).toHaveLength(0);
+    expect(evaluatePeriodic(r, 0, PCTX).filter((x) => x.type === 'email_stuck')).toHaveLength(0);
   });
   it('does NOT fire when last success is recent', () => {
     const r = { ...base, last_success_at: h(2), queue_depth: 5 };
-    expect(evaluatePeriodic(r, 0, CTX).filter((x) => x.type === 'email_stuck')).toHaveLength(0);
+    expect(evaluatePeriodic(r, 0, PCTX).filter((x) => x.type === 'email_stuck')).toHaveLength(0);
   });
 });
 
 describe('Rule 3 — total silence backstop (evaluatePeriodic)', () => {
   it('fires when typically active (>=3/day) but 0 sent in 24h', () => {
     const r = { ...base, sent_24h: 0, last_success_at: h(30) };
-    expect(evaluatePeriodic(r, 12, CTX).filter((x) => x.type === 'email_silent')).toHaveLength(1);
+    expect(evaluatePeriodic(r, 12, PCTX).filter((x) => x.type === 'email_silent')).toHaveLength(1);
   });
   it('does NOT fire for a permanently quiet site (baseline <3/day)', () => {
     const r = { ...base, sent_24h: 0 };
-    expect(evaluatePeriodic(r, 1, CTX).filter((x) => x.type === 'email_silent')).toHaveLength(0);
+    expect(evaluatePeriodic(r, 1, PCTX).filter((x) => x.type === 'email_silent')).toHaveLength(0);
   });
   it('does NOT fire when the site did send in 24h', () => {
     const r = { ...base, sent_24h: 4 };
-    expect(evaluatePeriodic(r, 12, CTX).filter((x) => x.type === 'email_silent')).toHaveLength(0);
+    expect(evaluatePeriodic(r, 12, PCTX).filter((x) => x.type === 'email_silent')).toHaveLength(0);
   });
   it('null provider → never fires either rule', () => {
-    expect(evaluatePeriodic({ ...base, provider: null, sent_24h: 0 }, 12, CTX)).toHaveLength(0);
+    expect(evaluatePeriodic({ ...base, provider: null, sent_24h: 0 }, 12, PCTX)).toHaveLength(0);
+  });
+});
+
+describe('Vek readingu — periodické pravidlá len nad čerstvými dátami', () => {
+  // Reálny prípad 23. 10. 2026 3:23 (soccercoacheshub.com): posledný reading
+  // z 21:xx mal failed_1h=1 (zlyhanie 21:18), potom v noci žiadny heartbeat.
+  const stuckEvidence = { ...base, last_success_at: h(6.2), failed_1h: 1, sent_1h: 9 };
+  const silent = { ...base, sent_24h: 0 };
+
+  it('starý reading (6 h) nevyrobí email_stuck', () => {
+    expect(evaluatePeriodic(stuckEvidence, 0, { ...CTX, measuredAt: h(6) })).toHaveLength(0);
+  });
+  it('starý reading (6 h) nevyrobí email_silent', () => {
+    expect(evaluatePeriodic(silent, 12, { ...CTX, measuredAt: h(6) })).toHaveLength(0);
+  });
+  it('reading bez measured_at = bez čerstvých dát → nič', () => {
+    expect(evaluatePeriodic(stuckEvidence, 12, { ...CTX, measuredAt: null })).toHaveLength(0);
+  });
+  it('ten istý reading čerstvý → email_stuck aj email_silent fungujú', () => {
+    expect(evaluatePeriodic(stuckEvidence, 0, PCTX).map((a) => a.type)).toEqual(['email_stuck']);
+    expect(evaluatePeriodic(silent, 12, PCTX).map((a) => a.type)).toEqual(['email_silent']);
+  });
+  it('hranica: presne EMAIL_READING_MAX_AGE_MIN je čerstvé, o minútu viac už nie', () => {
+    expect(isEmailReadingFresh(h(EMAIL_READING_MAX_AGE_MIN / 60), CTX.now)).toBe(true);
+    expect(isEmailReadingFresh(h((EMAIL_READING_MAX_AGE_MIN + 1) / 60), CTX.now)).toBe(false);
+    expect(isEmailReadingFresh('nezmysel', CTX.now)).toBe(false);
   });
 });

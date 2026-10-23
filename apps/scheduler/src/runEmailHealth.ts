@@ -2,12 +2,13 @@ import { evaluatePeriodic, type EmailHealthReading } from '@agency/core';
 import type { Env } from './env';
 import { serviceClient, type Db } from './supabase';
 
-type EmailHealthInput = { site_id: string; org_id: string; domain: string; typical_daily_14d: number | null } & Record<string, unknown>;
+type EmailHealthInput = { site_id: string; org_id: string; domain: string; measured_at: string | null; typical_daily_14d: number | null } & Record<string, unknown>;
 
 /**
  * Tick collector: evaluates the slow-burn e-mail rules (2 stuck, 3 silence) from
  * the LATEST wp_email_health reading per active site. Rule 1 (high fail rate) is
- * handled at ingest (event-driven), not here. Never throws — collector-safe.
+ * handled at ingest (event-driven), not here. A reading older than
+ * EMAIL_READING_MAX_AGE_MIN is skipped (evaluatePeriodic). Never throws — collector-safe.
  */
 export async function runEmailHealth(env: Env, deps: { supabase?: Db; now?: Date } = {}): Promise<void> {
   const db = deps.supabase ?? serviceClient(env);
@@ -29,7 +30,7 @@ export async function runEmailHealth(env: Env, deps: { supabase?: Db; now?: Date
 
   for (const input of inputs) {
     const reading = input as unknown as EmailHealthReading;
-    const alerts = evaluatePeriodic(reading, Number(input.typical_daily_14d) || 0, { siteId: input.site_id, domain: input.domain, now });
+    const alerts = evaluatePeriodic(reading, Number(input.typical_daily_14d) || 0, { siteId: input.site_id, domain: input.domain, now, measuredAt: input.measured_at });
     for (const a of alerts) {
       rows.push({
         org_id: input.org_id,

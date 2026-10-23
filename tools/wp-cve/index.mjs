@@ -26,7 +26,7 @@
 // Env: WPSCAN_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, (voliteľne) NVD_API_KEY
 import { runJob } from '../_shared/runJob.mjs';
 import { raiseAlerts } from '../_shared/raiseAlert.mjs';
-import { severityFromScore } from '../../packages/core/dist/cve.js';
+import { severityFromScore, onlyActiveSites } from '../../packages/core/dist/cve.js';
 import { diffVulns } from '../../packages/core/dist/events.js';
 import {
   buildTargets,
@@ -220,11 +220,14 @@ async function run() {
   if (!url || !srv) throw new Error('SUPABASE_URL a SUPABASE_SERVICE_ROLE_KEY sú povinné');
   const nvdKey = process.env.NVD_API_KEY || null;
 
-  const rows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,org_id,wp_version,plugins,vulns&wp_version=not.is.null`, { headers: restHeaders(srv) })).json();
+  const allRows = await (await fetch(`${url}/rest/v1/wp_snapshots?select=site_id,org_id,wp_version,plugins,vulns&wp_version=not.is.null`, { headers: restHeaders(srv) })).json();
 
-  // Domény (pre titulky kritických CVE alertov) — wp_snapshots doménu nemá.
-  const siteRows = await (await fetch(`${url}/rest/v1/sites?select=id,domain`, { headers: restHeaders(srv) })).json();
-  const domainById = new Map((Array.isArray(siteRows) ? siteRows : []).map((s) => [s.id, s.domain]));
+  // Len aktívne weby — snapshot deaktivovaného webu v DB ostáva. Domény zároveň
+  // slúžia pre titulky kritických CVE alertov (wp_snapshots doménu nemá).
+  const siteRows = await (await fetch(`${url}/rest/v1/sites?select=id,domain&is_active=eq.true`, { headers: restHeaders(srv) })).json();
+  if (!Array.isArray(siteRows)) throw new Error(`sites: neočakávaná odpoveď ${JSON.stringify(siteRows).slice(0, 200)}`);
+  const domainById = new Map(siteRows.map((s) => [s.id, s.domain]));
+  const rows = onlyActiveSites(Array.isArray(allRows) ? allRows : [], new Set(domainById.keys()));
 
   const scannable = [];
   for (const wp of rows) {

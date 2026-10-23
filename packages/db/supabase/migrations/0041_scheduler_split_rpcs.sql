@@ -25,6 +25,8 @@ grant execute on function latest_job_runs() to authenticated, service_role;
 --    webu (len s providerom) + medián sent_24h > 0 za okno od `_since`. Rovnaká
 --    sémantika ako pôvodný TS median(): párny počet → priemer dvoch stredných
 --    (= percentile_cont(0.5)), bez histórie → 0.
+--    Re-beh: 0047 zmenila návratový typ → najprv drop, 0047 ho znova nahradí.
+drop function if exists email_health_inputs(timestamptz);
 create or replace function email_health_inputs(_since timestamptz)
 returns table (
   site_id uuid, org_id uuid, domain text,

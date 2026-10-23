@@ -74,6 +74,20 @@ describe('runEmailHealth — Rule 3 (silence) + typicalDaily14d median', () => {
   });
 });
 
+describe('runEmailHealth — starý reading (agent v noci neposlal heartbeat)', () => {
+  it('reading starší než 90 min nevyrobí email_stuck ani email_silent', async () => {
+    const s = store([
+      { site_id: 'site-1', org_id: 'org-1', provider: 'FluentSMTP', last_success_at: h(25), queue_depth: 0, sent_24h: 5, failed_1h: 0, measured_at: h(24) },
+      { site_id: 'site-1', org_id: 'org-1', provider: 'FluentSMTP', last_success_at: h(49), queue_depth: 0, sent_24h: 5, failed_1h: 0, measured_at: h(48) },
+      // Posledný reading je 6 h starý: failed_1h=1 a queue_depth=4 aj sent_24h=0
+      // by nad čerstvými dátami spustili obe pravidlá.
+      { site_id: 'site-1', org_id: 'org-1', provider: 'FluentSMTP', last_success_at: h(12), queue_depth: 4, sent_24h: 0, failed_1h: 1, measured_at: h(6) },
+    ]);
+    await runEmailHealth(env, { supabase: fakeSupabase(s), now: NOW });
+    expect(s.alerts).toHaveLength(0);
+  });
+});
+
 describe('runEmailHealth — rozpočet subrequestov (Workers Free: 50 na spustenie)', () => {
   it('vstupy všetkých webov načíta JEDNÝM rpc email_health_inputs, nie 1 + 2 dotazmi per web', async () => {
     const s = store([{ site_id: 'site-1', org_id: 'org-1', provider: 'FluentSMTP', last_success_at: h(8), queue_depth: 0, sent_24h: 5, failed_1h: 0, measured_at: h(0.1) }]);

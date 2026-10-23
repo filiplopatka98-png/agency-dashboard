@@ -4,6 +4,9 @@
 -- tieto funkcie len číšajú/zapisujú.
 
 -- Aktívne weby + či majú otvorený incident (pre decideIncidents stav).
+-- Re-beh (migrate.yml aplikuje všetky súbory): 0046 zmenila návratový typ,
+-- create or replace by tu zlyhal → najprv drop, 0046 ho potom znova nahradí.
+drop function if exists get_sites_to_check();
 create or replace function get_sites_to_check()
 returns table (
   id uuid, org_id uuid, url text, expected_string text,

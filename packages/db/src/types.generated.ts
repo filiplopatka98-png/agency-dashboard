@@ -1410,6 +1410,7 @@ export type Database = {
           last_success_at: string | null
           last_failure_at: string | null
           last_failure_message: string | null
+          measured_at: string
           queue_depth: number | null
           typical_daily_14d: number
         }[]

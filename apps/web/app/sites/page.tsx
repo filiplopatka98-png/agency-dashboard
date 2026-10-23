@@ -7,7 +7,7 @@ import { Shell } from '../components/Shell';
 import { Modal } from '../components/Modal';
 import { loadDashboard, type SiteVM } from '../lib/data';
 import { supabase, type Client, type EmailHealth } from '../lib/supabase';
-import { EMAIL_FAIL_PCT_THRESHOLD } from '@agency/core';
+import { EMAIL_FAIL_PCT_THRESHOLD, EMAIL_READING_MAX_AGE_MIN, isEmailReadingFresh } from '@agency/core';
 import {
   sparklineFromValues,
   scoreColor,
@@ -663,10 +663,11 @@ function TabAeo({ site }: { site: SiteVM }) {
 
 // Najnovší riadok wp_email_health pre web. `key` sleduje siteId, ku ktorému
 // dáta patria — loading sa odvodzuje pri renderi (rovnaký vzor ako useHomepageId),
-// takže sa nevolá setState synchrónne v efekte.
-interface EmailHealthState { row: EmailHealth | null; error: string | null; key: string | null }
-function useEmailHealth(siteId: string): { row: EmailHealth | null; loading: boolean; error: string | null } {
-  const [state, setState] = useState<EmailHealthState>({ row: null, error: null, key: null });
+// takže sa nevolá setState synchrónne v efekte. `fresh` sa ráta pri načítaní
+// (nie v renderi) rovnakým pravidlom ako scheduler (isEmailReadingFresh).
+interface EmailHealthState { row: EmailHealth | null; fresh: boolean; error: string | null; key: string | null }
+function useEmailHealth(siteId: string): { row: EmailHealth | null; fresh: boolean; loading: boolean; error: string | null } {
+  const [state, setState] = useState<EmailHealthState>({ row: null, fresh: false, error: null, key: null });
   useEffect(() => {
     let cancelled = false;
     supabase
@@ -678,14 +679,14 @@ function useEmailHealth(siteId: string): { row: EmailHealth | null; loading: boo
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled) return;
-        setState({ row: data ?? null, error: error?.message ?? null, key: siteId });
+        setState({ row: data ?? null, fresh: isEmailReadingFresh(data?.measured_at, new Date()), error: error?.message ?? null, key: siteId });
       });
     return () => {
       cancelled = true;
     };
   }, [siteId]);
-  if (state.key !== siteId) return { row: null, loading: true, error: null };
-  return { row: state.row, loading: false, error: state.error };
+  if (state.key !== siteId) return { row: null, fresh: false, loading: true, error: null };
+  return { row: state.row, fresh: state.fresh, loading: false, error: state.error };
 }
 
 const truncate = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -700,7 +701,7 @@ function hasProvider(r: EmailHealth | null): r is EmailHealth & { provider: stri
 // Doručovanie e-mailov — číta z wp_email_health (WP agent, event-driven + hodinový
 // heartbeat).
 function EmailHealthPanel({ siteId }: { siteId: string }) {
-  const { row, loading, error } = useEmailHealth(siteId);
+  const { row, fresh, loading, error } = useEmailHealth(siteId);
   const activeRow = hasProvider(row) ? row : null;
   const pct = activeRow ? activeRow.failed_pct_1h : null;
   const ok = pct === null || pct < EMAIL_FAIL_PCT_THRESHOLD;
@@ -709,7 +710,12 @@ function EmailHealthPanel({ siteId }: { siteId: string }) {
     <div style={{ ...card, padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
         <h3 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Doručovanie e-mailov</h3>
-        {activeRow && (
+        {activeRow && !fresh && (
+          <span title={`Agent neposlal reading za posledných ${EMAIL_READING_MAX_AGE_MIN} min (aktualizované ${relativeTime(activeRow.measured_at)}). Čísla nižšie sú z posledného readingu — nie je to problém s odosielaním.`} style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: '3px 10px', borderRadius: 20 }}>
+            bez čerstvých dát
+          </span>
+        )}
+        {activeRow && fresh && (
           <span style={{ fontSize: 11.5, fontWeight: 700, color: ok ? 'var(--ok-color)' : 'var(--critical-color)', background: ok ? 'var(--ok-bg)' : 'var(--critical-bg)', padding: '3px 10px', borderRadius: 20 }}>
             {ok ? 'OK' : `${Math.round((pct ?? 0) * 100)} % zlyhaní`}
           </span>

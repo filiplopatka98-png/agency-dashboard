@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { severityFromScore, severityRank, maxSeverity } from './cve';
+import { severityFromScore, severityRank, maxSeverity, onlyActiveSites } from './cve';
 
 describe('severityFromScore', () => {
   it('mapuje CVSS v3.1 rozsahy', () => {
@@ -31,5 +31,13 @@ describe('maxSeverity', () => {
   it('unknown je nad low, pod medium', () => {
     expect(severityRank('unknown')).toBeGreaterThan(severityRank('low'));
     expect(severityRank('unknown')).toBeLessThan(severityRank('medium'));
+  });
+});
+
+describe('onlyActiveSites (wp-cve)', () => {
+  it('deaktivovaný web vypadne — nevygeneruje sken, záznam ani alert', () => {
+    const rows = [{ site_id: 'aktivny' }, { site_id: 'profihouse' }];
+    expect(onlyActiveSites(rows, new Set(['aktivny']))).toEqual([{ site_id: 'aktivny' }]);
+    expect(onlyActiveSites(rows, new Set())).toEqual([]);
   });
 });

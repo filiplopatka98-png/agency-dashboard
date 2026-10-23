@@ -35,3 +35,10 @@ export function maxSeverity(sevs: CveSeverity[]): CveSeverity {
   for (const s of sevs) if (severityRank(s) > severityRank(best)) best = s;
   return best;
 }
+
+// wp-cve skenuje snapshoty z wp_snapshots, ktoré ostávajú aj po deaktivácii webu.
+// Bez tohto filtra deaktivovaný web míňal denný WPScan budget, zapisoval vulns
+// a change_log a mohol spustiť cve_critical alert.
+export function onlyActiveSites<T extends { site_id: string }>(rows: readonly T[], activeSiteIds: ReadonlySet<string>): T[] {
+  return rows.filter((r) => activeSiteIds.has(r.site_id));
+}

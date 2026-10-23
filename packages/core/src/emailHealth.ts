@@ -7,6 +7,14 @@ export const EMAIL_STUCK_HOURS = 6;            // Rule 2: last success older tha
 export const EMAIL_SILENCE_HOURS = 24;         // Rule 3: window with 0 sent
 export const EMAIL_SILENCE_MIN_DAILY = 3;      // Rule 3: baseline "typically active"
 
+// Rules 2 & 3 bežia na ticku nad POSLEDNÝM uloženým readingom, nie nad čerstvým
+// ingestom. Agent posiela hodinový heartbeat cez WP-cron, ktorý beží len pri
+// návšteve — v noci reading zostane visieť a jeho failed_1h/queue_depth by sa
+// vyhodnocovali hodiny po tom, čo okno 1 h skončilo (falošný email_stuck
+// 23. 10. 2026 3:23, soccercoacheshub.com: failed_1h=1 z readingu z 21:xx).
+// 90 min = hodinový heartbeat + 30 min tolerancia na oneskorený WP-cron.
+export const EMAIL_READING_MAX_AGE_MIN = 90;
+
 // Untrusted WP payload (agent boundary). `.strict()` rejects unknown keys.
 // failed_pct is DERIVED server-side (never trust agent math).
 export const emailHealthPayloadSchema = z
@@ -73,9 +81,23 @@ export interface EmailHealthAlert {
   dedupeKey: string;
 }
 
+// Kontext periodických pravidiel — measuredAt je povinný, aby sa vek readingu
+// nedal pri volaní vynechať.
+export interface EmailHealthPeriodicContext extends EmailHealthContext {
+  measuredAt: string | null;
+}
+
 const day = (now: Date): string => now.toISOString().slice(0, 10);
 const hoursSince = (iso: string | null, now: Date): number | null =>
   iso ? (now.getTime() - Date.parse(iso)) / 3_600_000 : null;
+
+// Reading bez measured_at alebo starší než EMAIL_READING_MAX_AGE_MIN = bez
+// čerstvých dát → periodické pravidlá sa nevyhodnocujú, UI to neukazuje ako
+// problém s odosielaním.
+export function isEmailReadingFresh(measuredAt: string | null | undefined, now: Date): boolean {
+  const age = hoursSince(measuredAt ?? null, now);
+  return age !== null && !Number.isNaN(age) && age * 60 <= EMAIL_READING_MAX_AGE_MIN;
+}
 
 // Rule 1 — high failure rate. Runs at ingest (event-driven → fastest).
 export function evaluateIngest(r: EmailHealthReading, ctx: EmailHealthContext): EmailHealthAlert[] {
@@ -101,9 +123,10 @@ export function evaluateIngest(r: EmailHealthReading, ctx: EmailHealthContext): 
 export function evaluatePeriodic(
   r: EmailHealthReading,
   typicalDaily14d: number,
-  ctx: EmailHealthContext,
+  ctx: EmailHealthPeriodicContext,
 ): EmailHealthAlert[] {
   if (r.provider === null) return [];
+  if (!isEmailReadingFresh(ctx.measuredAt, ctx.now)) return [];
   const out: EmailHealthAlert[] = [];
 
   const sinceSuccess = hoursSince(r.last_success_at, ctx.now);
