@@ -11,6 +11,14 @@ import { EXPECTED_STRING_HINT, EXPECTED_STRING_MAX, expectedStringError, normali
 
 const RANK: Record<SiteVM['statusKey'], number> = { down: 0, degraded: 1, maintenance: 2, unknown: 3, up: 4 };
 
+// Poistka: region_outage starší než hodina je zastaraný (scheduler ho zatvára, ale banner nesmie
+// viseť, ak zatváranie zlyhá). Filtruje sa pri načítaní, nie počas renderu (Date.now je impure).
+const REGION_BANNER_MAX_AGE_MS = 60 * 60_000;
+function withoutStaleRegionAlerts(list: Alert[]): Alert[] {
+  const now = Date.now();
+  return list.filter((a) => a.type !== 'region_outage' || now - Date.parse(a.created_at) < REGION_BANNER_MAX_AGE_MS);
+}
+
 export default function OverviewPage() {
   const [sites, setSites] = useState<SiteVM[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -38,7 +46,7 @@ export default function OverviewPage() {
     const { sites, clients, alerts } = await loadDashboard();
     setSites(sites);
     setClients(clients);
-    setAlerts(alerts);
+    setAlerts(withoutStaleRegionAlerts(alerts));
   };
 
   useEffect(() => {
@@ -53,7 +61,7 @@ export default function OverviewPage() {
         if (!active) return;
         setSites(dash.sites);
         setClients(dash.clients);
-        setAlerts(dash.alerts);
+        setAlerts(withoutStaleRegionAlerts(dash.alerts));
         setOrgId(mem.data?.org_id ?? null);
         setChanges(chg.data ?? []);
       } catch (e) {
@@ -107,10 +115,7 @@ export default function OverviewPage() {
   // Region banner — reálny alert `region_outage`, ktorý vkladá scheduler
   // (runUptime.ts) keď padne nadpolovičná väčšina sledovaných webov naraz.
   // Žiadny vymyslený text — telo alertu už obsahuje skutočné počty (down/total).
-  // Poistka: starší než hodina = zastaraný (zatvára ho scheduler, ale banner nesmie viseť pri jeho zlyhaní).
-  const REGION_BANNER_MAX_AGE_MS = 60 * 60_000;
-  const regionOutageAlert =
-    alerts.find((a) => a.type === 'region_outage' && !a.resolved_at && Date.now() - Date.parse(a.created_at) < REGION_BANNER_MAX_AGE_MS) ?? null;
+  const regionOutageAlert = alerts.find((a) => a.type === 'region_outage' && !a.resolved_at) ?? null;
   const hasRegionOutage = regionOutageAlert !== null;
   const outageMessage = regionOutageAlert?.body ?? regionOutageAlert?.title ?? '';
 
