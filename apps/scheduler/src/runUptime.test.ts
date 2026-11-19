@@ -141,6 +141,16 @@ describe('runUptime s dávkami — incidenty sa menia LEN výsledkom vlastnej d�
     expect(openIncidents(store)).toEqual([]);
   });
 
+  it('po skončení výpadku regiónu sa otvorený region_outage alert zatvorí (banner nevisí naveky)', async () => {
+    const store = storeWith(11);
+    await runRounds(store, 3, () => false);
+    expect(store.alerts.filter((a) => a.type === 'region_outage' && a.resolved_at == null).length).toBeGreaterThan(0);
+    await runRounds(store, 1, () => true, 3);
+    const region = store.alerts.filter((a) => a.type === 'region_outage');
+    expect(region.length).toBeGreaterThan(0);
+    expect(region.every((a) => a.resolved_at != null)).toBe(true);
+  });
+
   it('reálny výpadok 3 webov jedného klienta (spoločný hosting) sa NEpovažuje za región', async () => {
     const store = storeWith(11);
     const shared = [siteId(0), siteId(1), siteId(2)];

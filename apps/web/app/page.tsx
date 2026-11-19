@@ -107,7 +107,10 @@ export default function OverviewPage() {
   // Region banner — reálny alert `region_outage`, ktorý vkladá scheduler
   // (runUptime.ts) keď padne nadpolovičná väčšina sledovaných webov naraz.
   // Žiadny vymyslený text — telo alertu už obsahuje skutočné počty (down/total).
-  const regionOutageAlert = alerts.find((a) => a.type === 'region_outage' && !a.resolved_at) ?? null;
+  // Poistka: starší než hodina = zastaraný (zatvára ho scheduler, ale banner nesmie viseť pri jeho zlyhaní).
+  const REGION_BANNER_MAX_AGE_MS = 60 * 60_000;
+  const regionOutageAlert =
+    alerts.find((a) => a.type === 'region_outage' && !a.resolved_at && Date.now() - Date.parse(a.created_at) < REGION_BANNER_MAX_AGE_MS) ?? null;
   const hasRegionOutage = regionOutageAlert !== null;
   const outageMessage = regionOutageAlert?.body ?? regionOutageAlert?.title ?? '';
 

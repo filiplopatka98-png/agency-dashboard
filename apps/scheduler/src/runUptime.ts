@@ -158,6 +158,15 @@ export async function runUptime(env: Env, deps: RunUptimeDeps = {}): Promise<Run
     return stats;
   }
 
+  // Región sa spamätal → otvorené region_outage alerty zatvor, inak banner na dashboarde
+  // (page.tsx: `type === 'region_outage' && !resolved_at`) visí naveky. Best-effort.
+  const { error: rErr } = await supabase
+    .from('alerts')
+    .update({ resolved_at: (deps.now ?? new Date()).toISOString() })
+    .eq('type', 'region_outage')
+    .is('resolved_at', null);
+  if (rErr) console.log(JSON.stringify({ ev: 'uptime.region_resolve_fail', message: rErr.message }));
+
   const counts = [...decision.newFailureCounts.entries()].map(([site_id, failures]) => ({
     site_id,
     failures,
